@@ -39,6 +39,27 @@ class PropertyRepository {
     }
   }
 
+  Future<void> upsertProperties(List<Property> properties) async {
+    if (properties.isEmpty) {
+      return;
+    }
+
+    try {
+      await _supabase
+          .from('properties')
+          .upsert(
+            properties.map((property) => property.toSupabaseJson()).toList(),
+            onConflict: 'source_id',
+          );
+    } catch (error, stackTrace) {
+      throw PropertyRepositoryException(
+        'Failed to sync TEDUH properties to Supabase.',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
   String _areaIdForRow(Map<String, dynamic> row, List<AreaData> areas) {
     final state = _normalise(row['state']);
     final district = _normalise(row['district']);

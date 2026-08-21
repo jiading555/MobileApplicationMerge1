@@ -76,6 +76,28 @@ class AreaProfile {
     );
   }
 
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'area_id': areaId,
+      'state': state,
+      'district': district,
+      'population': population,
+      'population_year': populationYear,
+      'median_household_income': medianHouseholdIncome,
+      'income_year': incomeYear,
+      'crime_count': crimeCount,
+      'crime_year': crimeYear,
+      'education_institution_count': educationInstitutionCount,
+      'education_year': educationYear,
+      'transport_stop_count': transportStopCount,
+      'transport_year': transportYear,
+      'data_year': dataYear,
+      'source': source,
+      'source_url': sourceUrl,
+      'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
+    }..removeWhere((_, value) => value == null);
+  }
+
   static String _stringFromJson(Object? value) {
     return value?.toString() ?? '';
   }

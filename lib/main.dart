@@ -18,7 +18,7 @@ Future<void> main() async {
     );
   } else if (kDebugMode) {
     debugPrint(
-      '[DEV Supabase check] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set; '
+      '[DEV Supabase check] SupabaseConfig constants are not set; '
       'starting with local JSON fallback only.',
     );
   }

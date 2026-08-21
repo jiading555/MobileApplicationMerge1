@@ -33,6 +33,27 @@ class AreaProfileRepository {
       );
     }
   }
+
+  Future<void> upsertAreaProfiles(List<AreaProfile> profiles) async {
+    if (profiles.isEmpty) {
+      return;
+    }
+
+    try {
+      await _supabase
+          .from('area_profiles')
+          .upsert(
+            profiles.map((profile) => profile.toSupabaseJson()).toList(),
+            onConflict: 'area_id',
+          );
+    } catch (error, stackTrace) {
+      throw AreaProfileRepositoryException(
+        'Failed to sync area profiles to Supabase.',
+        error,
+        stackTrace,
+      );
+    }
+  }
 }
 
 class AreaProfileRepositoryException implements Exception {

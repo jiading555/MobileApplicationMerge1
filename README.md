@@ -1,24 +1,46 @@
 # Smart Property Advisor
 
-A Flutter application for exploring property data, comparing areas, and getting property recommendations.
+A Flutter application for exploring Malaysian property information, comparing
+area indicators, and supporting property recommendations.
 
-## Getting Started
+## Data Flow
 
-Install Flutter, fetch dependencies, and run the app:
+The Area Data Analytics + Location & Property Information module now uses a
+Flutter/Dart data pipeline:
+
+```text
+Malaysian Government Data
+        |
+Flutter/Dart Data Services
+        |
+package:http
+        |
+JSON decoding / package:html parsing
+        |
+Dart Models
+        |
+Supabase
+        |
+Flutter UI
+```
+
+TEDUH project data is fetched through `TeduhService`, cleaned into the
+`Property` model, and synchronized to the Supabase `properties` table. District
+area indicators are fetched through `OpenDataService`, cleaned into
+`AreaProfile`, and synchronized to `area_profiles`.
+
+## Running
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-Useful Flutter resources:
+Supabase is initialized from `lib/core/config/supabase_config.dart`, where the
+project URL and client-safe publishable/anon key are defined as Dart constants.
+Use only a key intended for client-side Flutter apps. Never embed a Supabase
+service-role key, database password, or other server-side secret in the mobile
+application.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The app keeps local JSON fallback data for a stable assignment demo when
+Supabase or an external data source is unavailable.

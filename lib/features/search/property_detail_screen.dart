@@ -309,6 +309,12 @@ class _GovernmentProjectFacts extends StatelessWidget {
               label: 'Source',
               value: property.source,
             ),
+            if (property.sourceUrl != null)
+              _InfoRow(
+                icon: Icons.link_outlined,
+                label: 'Source URL',
+                value: property.sourceUrl!,
+              ),
             _InfoRow(
               icon: Icons.schedule_outlined,
               label: 'Retrieved',

@@ -6,6 +6,8 @@ class Property {
     required this.address,
     required this.type,
     required this.tenure,
+    this.state,
+    this.district,
     this.price,
     this.priceMin,
     this.priceMax,
@@ -20,10 +22,15 @@ class Property {
     this.source = 'Local sample listing',
     this.sourceId,
     this.scheme,
+    this.projectStatus,
     this.developerName,
     this.totalUnits,
     this.availableUnits,
+    this.unitTypes = const [],
     this.sourceUrl,
+    this.externalProjectUrl,
+    this.developerAddress,
+    this.rawLocation,
     this.retrievedAt,
   });
 
@@ -33,6 +40,8 @@ class Property {
   final String address;
   final String type;
   final String tenure;
+  final String? state;
+  final String? district;
   final int? price;
   final int? priceMin;
   final int? priceMax;
@@ -47,10 +56,15 @@ class Property {
   final String source;
   final String? sourceId;
   final String? scheme;
+  final String? projectStatus;
   final String? developerName;
   final int? totalUnits;
   final int? availableUnits;
+  final List<String> unitTypes;
   final String? sourceUrl;
+  final String? externalProjectUrl;
+  final String? developerAddress;
+  final String? rawLocation;
   final DateTime? retrievedAt;
 
   bool get isGovernmentRecord => source.toLowerCase().contains('teduh');
@@ -74,6 +88,8 @@ class Property {
       address: json['address'] as String,
       type: json['type'] as String,
       tenure: json['tenure'] as String,
+      state: json['state'] as String?,
+      district: json['district'] as String?,
       price: _intFromJson(json['price']),
       priceMin: _intFromJson(json['priceMin'] ?? json['price_min']),
       priceMax: _intFromJson(json['priceMax'] ?? json['price_max']),
@@ -88,10 +104,17 @@ class Property {
       source: json['source'] as String? ?? 'Local sample listing',
       sourceId: json['sourceId'] as String?,
       scheme: json['scheme'] as String?,
+      projectStatus: json['projectStatus'] as String?,
       developerName: json['developerName'] as String?,
       totalUnits: _intFromJson(json['totalUnits']),
       availableUnits: _intFromJson(json['availableUnits']),
+      unitTypes: (json['unitTypes'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .toList(),
       sourceUrl: json['sourceUrl'] as String?,
+      externalProjectUrl: json['externalProjectUrl'] as String?,
+      developerAddress: json['developerAddress'] as String?,
+      rawLocation: json['rawLocation'] as String?,
       retrievedAt: _dateTimeFromJson(json['retrievedAt']),
     );
   }
@@ -108,6 +131,9 @@ class Property {
     final state = _nullableStringFromJson(json['state']);
     final district = _nullableStringFromJson(json['district']);
     final scheme = _nullableStringFromJson(json['scheme']);
+    final projectStatus = _nullableStringFromJson(
+      json['project_status'] ?? json['projectStatus'],
+    );
     final priceMin = _intFromJson(json['price_min'] ?? json['priceMin']);
     final priceMax = _intFromJson(json['price_max'] ?? json['priceMax']);
     final type = _nullableStringFromJson(
@@ -116,15 +142,21 @@ class Property {
     final developer = _nullableStringFromJson(
       json['developer_name'] ?? json['developerName'],
     );
+    final address = _nullableStringFromJson(json['address']);
+    final unitTypes = _stringListFromJson(
+      json['unit_types'] ?? json['unitTypes'],
+    );
     final location = [?district, ?state].join(', ');
 
     return Property(
       id: 'teduh_$sourceId',
       name: projectName,
       areaId: areaId,
-      address: location.isEmpty ? 'Malaysia' : location,
+      address: address ?? (location.isEmpty ? 'Malaysia' : location),
       type: type ?? 'Public housing',
       tenure: scheme ?? 'Government housing',
+      state: state,
+      district: district,
       price: priceMin ?? priceMax,
       priceMin: priceMin,
       priceMax: priceMax,
@@ -145,18 +177,56 @@ class Property {
           'TEDUH - Jabatan Perumahan Negara, KPKT',
       sourceId: sourceId,
       scheme: scheme,
+      projectStatus: projectStatus,
       developerName: developer,
       totalUnits: _intFromJson(json['total_units'] ?? json['totalUnits']),
       availableUnits: _intFromJson(
         json['available_units'] ?? json['availableUnits'],
       ),
+      unitTypes: unitTypes,
       sourceUrl: _nullableStringFromJson(
         json['source_url'] ?? json['sourceUrl'],
+      ),
+      externalProjectUrl: _nullableStringFromJson(
+        json['external_project_url'] ?? json['externalProjectUrl'],
+      ),
+      developerAddress: _nullableStringFromJson(
+        json['developer_address'] ?? json['developerAddress'],
+      ),
+      rawLocation: _nullableStringFromJson(
+        json['raw_location'] ?? json['rawLocation'],
       ),
       retrievedAt: _dateTimeFromJson(
         json['retrieved_at'] ?? json['retrievedAt'],
       ),
     );
+  }
+
+  Map<String, dynamic> toSupabaseJson() {
+    return {
+      'source_id': sourceId,
+      'project_name': name,
+      'state': state,
+      'district': district,
+      'scheme': scheme,
+      'price_min': priceMin,
+      'price_max': priceMax,
+      'property_type': type,
+      'project_status': projectStatus,
+      'developer_name': developerName,
+      'address': address,
+      'latitude': latitude,
+      'longitude': longitude,
+      'total_units': totalUnits,
+      'available_units': availableUnits,
+      'unit_types': unitTypes,
+      'source': source,
+      'source_url': sourceUrl,
+      'external_project_url': externalProjectUrl,
+      'developer_address': developerAddress,
+      'raw_location': rawLocation,
+      'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
+    }..removeWhere((_, value) => value == null);
   }
 
   static String _teduhSummary({
@@ -192,7 +262,8 @@ class Property {
     if (value is num) {
       return value.round();
     }
-    return int.tryParse(value.toString());
+    final text = value.toString().replaceAll(',', '').trim();
+    return int.tryParse(text);
   }
 
   static double? _doubleFromJson(Object? value) {
@@ -202,7 +273,8 @@ class Property {
     if (value is num) {
       return value.toDouble();
     }
-    return double.tryParse(value.toString());
+    final text = value.toString().replaceAll(',', '').trim();
+    return double.tryParse(text);
   }
 
   static DateTime? _dateTimeFromJson(Object? value) {
@@ -210,5 +282,23 @@ class Property {
       return null;
     }
     return DateTime.tryParse(value.toString());
+  }
+
+  static List<String> _stringListFromJson(Object? value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    final text = _nullableStringFromJson(value);
+    if (text == null) {
+      return const [];
+    }
+    return text
+        .split(';')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 }

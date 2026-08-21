@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
@@ -85,6 +86,19 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             onPressed: _reset,
             tooltip: 'Reset filters',
             icon: const Icon(Icons.restart_alt_rounded),
+          ),
+          IconButton(
+            onPressed: state.isSyncingGovernmentData
+                ? null
+                : () => _refreshGovernmentData(state),
+            tooltip: 'Refresh government data',
+            icon: state.isSyncingGovernmentData
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_sync_outlined),
           ),
           const SizedBox(width: 8),
         ],
@@ -234,6 +248,20 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       selectedType = 'Any';
       selectedTenure = 'Any';
     });
+  }
+
+  Future<void> _refreshGovernmentData(AppState state) async {
+    await state.refreshGovernmentData();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          state.governmentDataSyncMessage ?? 'Government data refresh done.',
+        ),
+      ),
+    );
   }
 
   Future<void> _showPriceSheet() async {

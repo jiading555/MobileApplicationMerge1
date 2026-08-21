@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/line_chart.dart';
@@ -38,6 +39,19 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             onPressed: () => _showSources(context),
             tooltip: 'Data sources',
             icon: const Icon(Icons.dataset_outlined),
+          ),
+          IconButton(
+            onPressed: state.isSyncingGovernmentData
+                ? null
+                : () => _refreshGovernmentData(state),
+            tooltip: 'Refresh government data',
+            icon: state.isSyncingGovernmentData
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_sync_outlined),
           ),
           const SizedBox(width: 8),
         ],
@@ -204,6 +218,20 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _refreshGovernmentData(AppState state) async {
+    await state.refreshGovernmentData();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          state.governmentDataSyncMessage ?? 'Government data refresh done.',
         ),
       ),
     );

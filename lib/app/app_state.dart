@@ -10,7 +10,9 @@ import '../models/area_profile.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
+import '../services/open_data_service.dart';
 import '../services/recommendation_service.dart';
+import '../services/teduh_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState({
@@ -18,12 +20,17 @@ class AppState extends ChangeNotifier {
     this._areaProfileRepository = const AreaProfileRepository(),
     this._propertyRepository = const PropertyRepository(),
     this._recommendationService = const RecommendationService(),
-  });
+    OpenDataService? openDataService,
+    TeduhService? teduhService,
+  }) : _openDataService = openDataService ?? OpenDataService(),
+       _teduhService = teduhService ?? TeduhService();
 
   final AssetRepository _repository;
   final AreaProfileRepository _areaProfileRepository;
   final PropertyRepository _propertyRepository;
   final RecommendationService _recommendationService;
+  final OpenDataService _openDataService;
+  final TeduhService _teduhService;
   final Set<String> _favouriteIds = {'p01', 'p03'};
 
   bool isLoading = true;
@@ -42,7 +49,9 @@ class AppState extends ChangeNotifier {
   bool isUsingProcessedAreaProfiles = false;
   bool isUsingCloudProperties = false;
   bool isUsingProcessedTeduhProperties = false;
+  bool isSyncingGovernmentData = false;
   String? openDataLoadMessage;
+  String? governmentDataSyncMessage;
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
 
@@ -93,6 +102,41 @@ class AppState extends ChangeNotifier {
       loadError = error.toString();
     } finally {
       isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshGovernmentData() async {
+    if (!SupabaseConfig.isConfigured) {
+      governmentDataSyncMessage =
+          'Supabase is not configured. Add the project URL and client-safe '
+          'publishable key in SupabaseConfig to sync government data.';
+      notifyListeners();
+      return;
+    }
+
+    isSyncingGovernmentData = true;
+    governmentDataSyncMessage = null;
+    notifyListeners();
+
+    try {
+      final areaProfiles = await _openDataService.fetchAreaProfiles();
+      await _areaProfileRepository.upsertAreaProfiles(areaProfiles);
+
+      final teduhProjects = await _teduhService.fetchProjects(
+        maxRecords: 80,
+        maxPerState: 8,
+      );
+      await _propertyRepository.upsertProperties(teduhProjects);
+
+      await _reloadVisibleData();
+      governmentDataSyncMessage =
+          'Synced ${areaProfiles.length} area profiles and '
+          '${teduhProjects.length} TEDUH projects.';
+    } catch (error) {
+      governmentDataSyncMessage = 'Government data sync failed: $error';
+    } finally {
+      isSyncingGovernmentData = false;
       notifyListeners();
     }
   }
@@ -192,6 +236,46 @@ class AppState extends ChangeNotifier {
     } on PropertyRepositoryException catch (error) {
       openDataLoadMessage = error.toString();
       return const [];
+    }
+  }
+
+  Future<void> _reloadVisibleData() async {
+    final results = await Future.wait([
+      _repository.loadAreas(),
+      _repository.loadProperties(),
+    ]);
+    final localAreas = results[0] as List<AreaData>;
+    final localProperties = results[1] as List<Property>;
+
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingCloudProperties = false;
+    isUsingProcessedTeduhProperties = false;
+    areas = localAreas;
+    properties = localProperties;
+
+    final cloudProfiles = await _loadCloudAreaProfiles();
+    if (cloudProfiles.isNotEmpty) {
+      areas = _areasFromProfiles(cloudProfiles, localAreas);
+      isUsingCloudAreaProfiles = true;
+    } else {
+      final processedProfiles = await _repository.loadProcessedAreaProfiles();
+      if (processedProfiles.isNotEmpty) {
+        areas = _areasFromProfiles(processedProfiles, localAreas);
+        isUsingProcessedAreaProfiles = true;
+      }
+    }
+
+    final cloudProperties = await _loadCloudProperties(areas);
+    if (cloudProperties.isNotEmpty) {
+      properties = _mergeProperties(localProperties, cloudProperties);
+      isUsingCloudProperties = true;
+    } else {
+      final teduhFallback = await _repository.loadProcessedTeduhProjects(areas);
+      if (teduhFallback.isNotEmpty) {
+        properties = _mergeProperties(localProperties, teduhFallback);
+        isUsingProcessedTeduhProperties = true;
+      }
     }
   }
 
