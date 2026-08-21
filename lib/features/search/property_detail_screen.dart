@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
+import '../../models/property.dart';
 import '../../models/recommendation.dart';
 
 class PropertyDetailScreen extends StatelessWidget {
@@ -25,6 +26,8 @@ class PropertyDetailScreen extends StatelessWidget {
         recommendation = item;
       }
     }
+    final priceText = _priceText(property);
+    final pricePerSqft = property.pricePerSqft;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Property details'),
@@ -85,37 +88,46 @@ class PropertyDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    formatRinggit(property.price),
+                    priceText,
                     style: const TextStyle(
                       color: AppTheme.green,
                       fontSize: 28,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(
-                    '${formatRinggit(property.pricePerSqft.round())} psf - ${property.tenure}',
-                    style: const TextStyle(color: AppTheme.muted),
-                  ),
+                  if (pricePerSqft != null)
+                    Text(
+                      '${formatRinggit(pricePerSqft.round())} psf - ${property.tenure}',
+                      style: const TextStyle(color: AppTheme.muted),
+                    )
+                  else
+                    Text(
+                      property.tenure,
+                      style: const TextStyle(color: AppTheme.muted),
+                    ),
                   const SizedBox(height: 20),
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
                     children: [
-                      _Fact(
-                        icon: Icons.bed_rounded,
-                        value: '${property.bedrooms}',
-                        label: 'Bedrooms',
-                      ),
-                      _Fact(
-                        icon: Icons.bathtub_outlined,
-                        value: '${property.bathrooms}',
-                        label: 'Bathrooms',
-                      ),
-                      _Fact(
-                        icon: Icons.square_foot_rounded,
-                        value: '${property.sizeSqft}',
-                        label: 'Sq ft',
-                      ),
+                      if (property.bedrooms != null)
+                        _Fact(
+                          icon: Icons.bed_rounded,
+                          value: '${property.bedrooms}',
+                          label: 'Bedrooms',
+                        ),
+                      if (property.bathrooms != null)
+                        _Fact(
+                          icon: Icons.bathtub_outlined,
+                          value: '${property.bathrooms}',
+                          label: 'Bathrooms',
+                        ),
+                      if (property.sizeSqft != null)
+                        _Fact(
+                          icon: Icons.square_foot_rounded,
+                          value: '${property.sizeSqft}',
+                          label: 'Sq ft',
+                        ),
                       _Fact(
                         icon: Icons.apartment_rounded,
                         value: property.type,
@@ -130,6 +142,10 @@ class PropertyDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(property.summary),
+                  if (property.isGovernmentRecord) ...[
+                    const SizedBox(height: 16),
+                    _GovernmentProjectFacts(property: property),
+                  ],
                 ],
               );
               return Column(
@@ -219,19 +235,89 @@ class PropertyDetailScreen extends StatelessWidget {
                     medianIncome: formatRinggit(area.medianIncome),
                     schools: area.schools,
                     hospitals: area.hospitals,
-                    coordinates:
-                        '${property.latitude.toStringAsFixed(4)}, ${property.longitude.toStringAsFixed(4)}',
+                    coordinates: property.hasCoordinates
+                        ? '${property.latitude!.toStringAsFixed(4)}, ${property.longitude!.toStringAsFixed(4)}'
+                        : 'Coordinates unavailable',
                     snapshotDate: area.snapshotDate,
+                    source: area.source,
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Listing and scoring data are for assignment sample. Verify all facts before a property decision.',
+                  Text(
+                    property.isGovernmentRecord
+                        ? 'TEDUH records are Malaysian public housing/project data. Missing price or coordinate fields are left unavailable instead of filled with sample values.'
+                        : 'Listing and scoring data are for assignment sample. Verify all facts before a property decision.',
                     style: TextStyle(color: AppTheme.muted, fontSize: 12),
                   ),
                 ],
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  String _priceText(Property property) {
+    final min = property.priceMin;
+    final max = property.priceMax;
+    if (min != null && max != null && min != max) {
+      return '${formatRinggit(min)} - ${formatRinggit(max)}';
+    }
+    final price = property.price ?? min ?? max;
+    return price == null ? 'Price unavailable' : formatRinggit(price);
+  }
+}
+
+class _GovernmentProjectFacts extends StatelessWidget {
+  const _GovernmentProjectFacts({required this.property});
+
+  final Property property;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            if (property.scheme != null)
+              _InfoRow(
+                icon: Icons.account_balance_outlined,
+                label: 'Scheme',
+                value: property.scheme!,
+              ),
+            if (property.developerName != null)
+              _InfoRow(
+                icon: Icons.business_outlined,
+                label: 'Developer',
+                value: property.developerName!,
+              ),
+            if (property.totalUnits != null)
+              _InfoRow(
+                icon: Icons.home_work_outlined,
+                label: 'Total units',
+                value: '${property.totalUnits}',
+              ),
+            if (property.availableUnits != null)
+              _InfoRow(
+                icon: Icons.inventory_2_outlined,
+                label: 'Available units',
+                value: '${property.availableUnits}',
+              ),
+            _InfoRow(
+              icon: Icons.dataset_outlined,
+              label: 'Source',
+              value: property.source,
+            ),
+            _InfoRow(
+              icon: Icons.schedule_outlined,
+              label: 'Retrieved',
+              value: property.retrievedAt == null
+                  ? 'Unavailable'
+                  : property.retrievedAt!.toLocal().toString().split('.').first,
+              isLast: true,
+            ),
+          ],
         ),
       ),
     );
@@ -247,6 +333,7 @@ class _AreaProfileCard extends StatelessWidget {
     required this.hospitals,
     required this.coordinates,
     required this.snapshotDate,
+    required this.source,
   });
 
   final String areaName;
@@ -256,6 +343,7 @@ class _AreaProfileCard extends StatelessWidget {
   final int hospitals;
   final String coordinates;
   final String snapshotDate;
+  final String source;
 
   @override
   Widget build(BuildContext context) {
@@ -296,8 +384,8 @@ class _AreaProfileCard extends StatelessWidget {
             ),
             _InfoRow(
               icon: Icons.dataset_outlined,
-              label: 'Local data source',
-              value: 'assets/data, snapshot $snapshotDate',
+              label: 'Area data source',
+              value: '$source, snapshot $snapshotDate',
               isLast: true,
             ),
           ],

@@ -103,7 +103,7 @@ class _FullContent extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                formatRinggit(property.price),
+                _priceText(property),
                 style: const TextStyle(
                   color: AppTheme.green,
                   fontSize: 18,
@@ -158,7 +158,7 @@ class _CompactContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  formatRinggit(property.price),
+                  _priceText(property),
                   style: const TextStyle(
                     color: AppTheme.green,
                     fontWeight: FontWeight.w800,
@@ -197,15 +197,32 @@ class _Facts extends StatelessWidget {
       spacing: 10,
       runSpacing: 5,
       children: [
-        _Fact(icon: Icons.bed_rounded, label: '${property.bedrooms}'),
-        _Fact(icon: Icons.bathtub_outlined, label: '${property.bathrooms}'),
-        _Fact(
-          icon: Icons.square_foot_rounded,
-          label: '${property.sizeSqft} sqft',
-        ),
+        if (property.bedrooms != null)
+          _Fact(icon: Icons.bed_rounded, label: '${property.bedrooms}'),
+        if (property.bathrooms != null)
+          _Fact(icon: Icons.bathtub_outlined, label: '${property.bathrooms}'),
+        if (property.sizeSqft != null)
+          _Fact(
+            icon: Icons.square_foot_rounded,
+            label: '${property.sizeSqft} sqft',
+          ),
+        if (property.bedrooms == null &&
+            property.bathrooms == null &&
+            property.sizeSqft == null)
+          _Fact(icon: Icons.account_balance_outlined, label: property.source),
       ],
     );
   }
+}
+
+String _priceText(Property property) {
+  final min = property.priceMin;
+  final max = property.priceMax;
+  if (min != null && max != null && min != max) {
+    return '${formatRinggit(min)} - ${formatRinggit(max)}';
+  }
+  final price = property.price ?? min ?? max;
+  return price == null ? 'Price unavailable' : formatRinggit(price);
 }
 
 class _Fact extends StatelessWidget {

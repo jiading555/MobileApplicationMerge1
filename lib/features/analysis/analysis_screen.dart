@@ -25,6 +25,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final state = AppScope.of(context);
     selectedAreaId ??= state.areas.first.id;
     final area = state.areaFor(selectedAreaId!);
+    final sourceMode = state.isUsingCloudAreaProfiles
+        ? 'Supabase'
+        : state.isUsingProcessedAreaProfiles
+        ? 'processed JSON'
+        : 'local sample';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Market trend & analytics'),
@@ -77,7 +82,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Open-data snapshot ${area.snapshotDate}',
+                          area.isGovernmentProfile
+                              ? 'Government data via $sourceMode'
+                              : 'Local sample snapshot ${area.snapshotDate}',
                           style: const TextStyle(
                             color: AppTheme.green,
                             fontWeight: FontWeight.w700,
@@ -120,7 +127,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              if (selectedView == 'Overview') _Overview(area: area),
+              if (selectedView == 'Overview')
+                _Overview(area: area, sourceMode: sourceMode),
               if (selectedView == 'Price trend') _PriceTrend(area: area),
               if (selectedView == 'District comparison')
                 _DistrictComparison(areas: state.areas),
@@ -211,9 +219,10 @@ class _DataSource {
 }
 
 class _Overview extends StatelessWidget {
-  const _Overview({required this.area});
+  const _Overview({required this.area, required this.sourceMode});
 
   final AreaData area;
+  final String sourceMode;
 
   @override
   Widget build(BuildContext context) {
@@ -221,29 +230,31 @@ class _Overview extends StatelessWidget {
       MetricCard(
         label: 'Population',
         value: formatCount(area.population),
-        trend: '+${area.populationGrowth.toStringAsFixed(1)}% signal',
+        trend: _yearLabel('Year', area.populationYear),
         icon: Icons.groups_2_outlined,
       ),
       MetricCard(
         label: 'Median household income',
         value: formatRinggit(area.medianIncome),
-        trend: 'District snapshot',
+        trend: _yearLabel('Year', area.incomeYear),
         icon: Icons.account_balance_wallet_outlined,
         color: AppTheme.teal,
       ),
       MetricCard(
         label: 'Normalized safety',
         value: '${area.safetyScore.round()}/100',
-        trend: area.safetyScore >= 75
-            ? 'Above compared average'
-            : '- Below compared average',
+        trend: area.crimeYear == null
+            ? 'Compared signal'
+            : 'Crime data ${area.crimeYear}',
         icon: Icons.shield_outlined,
         color: const Color(0xFF7758C8),
       ),
       MetricCard(
         label: 'Infrastructure',
         value: '${area.infrastructureScore.round()}/100',
-        trend: '${area.schools} schools - ${area.hospitals} hospitals',
+        trend: area.educationYear == null
+            ? '${area.schools} schools'
+            : '${area.schools} schools - ${area.educationYear}',
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
@@ -274,6 +285,8 @@ class _Overview extends StatelessWidget {
             );
           },
         ),
+        const SizedBox(height: 14),
+        _SourceSummary(area: area, sourceMode: sourceMode),
         const SizedBox(height: 22),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -298,6 +311,76 @@ class _Overview extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+
+  String _yearLabel(String label, int? year) {
+    return year == null ? 'Year unavailable' : '$label $year';
+  }
+}
+
+class _SourceSummary extends StatelessWidget {
+  const _SourceSummary({required this.area, required this.sourceMode});
+
+  final AreaData area;
+  final String sourceMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final retrieved = area.retrievedAt;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE3E9F2)),
+      ),
+      child: Wrap(
+        spacing: 18,
+        runSpacing: 8,
+        children: [
+          _SourceItem(label: 'Data mode', value: sourceMode),
+          _SourceItem(label: 'Source', value: area.source),
+          _SourceItem(label: 'Latest year', value: area.snapshotDate),
+          _SourceItem(
+            label: 'Retrieved',
+            value: retrieved == null
+                ? 'Unavailable'
+                : retrieved.toLocal().toString().split('.').first,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceItem extends StatelessWidget {
+  const _SourceItem({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 180,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
     );
   }
 }

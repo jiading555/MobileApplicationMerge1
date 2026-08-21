@@ -33,24 +33,33 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     final query = searchController.text.trim().toLowerCase();
     return properties.where((property) {
       final area = _areaFor(areas, property.areaId);
-      final matchesQuery =
-          query.isEmpty ||
-          property.name.toLowerCase().contains(query) ||
-          property.address.toLowerCase().contains(query) ||
-          property.type.toLowerCase().contains(query) ||
-          area.name.toLowerCase().contains(query) ||
-          area.state.toLowerCase().contains(query);
+      final searchable = [
+        property.name,
+        property.address,
+        property.type,
+        property.tenure,
+        property.scheme,
+        property.developerName,
+        property.source,
+        area.name,
+        area.state,
+      ].whereType<String>().join(' ').toLowerCase();
+      final matchesQuery = query.isEmpty || searchable.contains(query);
       final matchesArea =
           selectedAreaId == 'Any' || property.areaId == selectedAreaId;
       final matchesType =
           selectedType == 'Any' || property.type == selectedType;
       final matchesTenure =
           selectedTenure == 'Any' || property.tenure == selectedTenure;
+      final comparablePrice =
+          property.priceMin ?? property.price ?? property.priceMax;
+      final matchesPrice =
+          comparablePrice == null || comparablePrice <= maximumPrice;
       return matchesQuery &&
           matchesArea &&
           matchesType &&
           matchesTenure &&
-          property.price <= maximumPrice;
+          matchesPrice;
     }).toList();
   }
 
@@ -58,6 +67,16 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     final results = filtered(state.properties, state.areas);
+    final typeValues = [
+      'Any',
+      ...state.properties.map((property) => property.type).toSet().toList()
+        ..sort(),
+    ];
+    final sourceLabel = state.isUsingCloudProperties
+        ? 'Supabase TEDUH + local fallback'
+        : state.isUsingProcessedTeduhProperties
+        ? 'Processed TEDUH JSON + local fallback'
+        : 'Local sample listings';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Property search'),
@@ -111,13 +130,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   const SizedBox(width: 9),
                   _DropdownFilter(
                     label: selectedType == 'Any' ? 'All types' : selectedType,
-                    values: const [
-                      'Any',
-                      'Condominium',
-                      'Apartment',
-                      'Terrace',
-                      'Semi-D',
-                    ],
+                    values: const ['Any'],
+                    extraValues: typeValues.skip(1).toList(),
                     value: selectedType,
                     onChanged: (value) => setState(() => selectedType = value),
                   ),
@@ -156,9 +170,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   color: AppTheme.muted,
                 ),
                 const SizedBox(width: 5),
-                const Text(
-                  'Local sample listings',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                Text(
+                  sourceLabel,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
               ],
             ),
@@ -279,6 +293,7 @@ class _DropdownFilter extends StatelessWidget {
     required this.values,
     required this.value,
     this.labelFor,
+    this.extraValues = const [],
     required this.onChanged,
   });
 
@@ -286,6 +301,7 @@ class _DropdownFilter extends StatelessWidget {
   final List<String> values;
   final String value;
   final String Function(String value)? labelFor;
+  final List<String> extraValues;
   final ValueChanged<String> onChanged;
 
   @override
@@ -293,7 +309,7 @@ class _DropdownFilter extends StatelessWidget {
     return PopupMenuButton<String>(
       initialValue: value,
       onSelected: onChanged,
-      itemBuilder: (_) => values
+      itemBuilder: (_) => [...values, ...extraValues]
           .map(
             (item) => PopupMenuItem(
               value: item,

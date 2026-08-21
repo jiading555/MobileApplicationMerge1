@@ -164,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               const SizedBox(height: 18),
                               const Text(
-                                'Sample mode - Firebase can be connected before deployment',
+                                'Sample mode - Supabase can be connected before deployment',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: AppTheme.muted,

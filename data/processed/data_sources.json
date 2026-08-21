@@ -1,0 +1,11 @@
+{
+  "retrievedAt": "2026-08-20T10:39:51.826327+00:00",
+  "references": {
+    "population_district": "https://open.dosm.gov.my/data-catalogue/population_district",
+    "hh_income_district": "https://open.dosm.gov.my/data-catalogue/hh_income_district",
+    "crime_district": "https://data.gov.my/data-catalogue/crime_district",
+    "schools_district": "https://data.gov.my/data-catalogue/schools_district",
+    "hh_profile": "https://data.gov.my/data-catalogue/hh_profile",
+    "gtfs_static": "https://developer.data.gov.my/realtime-api/gtfs-static"
+  }
+}

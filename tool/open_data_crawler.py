@@ -13,9 +13,13 @@ from pathlib import Path
 
 API_BASE = "https://api.data.gov.my/data-catalogue"
 GTFS_BASE = "https://api.data.gov.my/gtfs-static"
+POPULATION_DISTRICT_CSV = "https://storage.dosm.gov.my/population/population_district.csv"
+CRIME_DISTRICT_CSV = "https://storage.data.gov.my/publicsafety/crime_district.csv"
+DATASET_CACHE = {}
 
 STATE_ALIASES = {
     "pulau pinang": "penang",
+    "p pinang": "penang",
     "w.p. kuala lumpur": "kuala lumpur",
     "wp kuala lumpur": "kuala lumpur",
     "wilayah persekutuan kuala lumpur": "kuala lumpur",
@@ -34,6 +38,32 @@ SOURCE_REFERENCES = {
     "gtfs_static": "https://developer.data.gov.my/realtime-api/gtfs-static",
 }
 
+DISPLAY_NAMES = {
+    "penang": "Pulau Pinang",
+}
+
+CRIME_DISTRICT_ALIASES = {
+    ("selangor", "petaling"): [
+        "Petaling Jaya",
+        "Shah Alam",
+        "Subang Jaya",
+        "Sungai Buloh",
+        "Serdang",
+    ],
+    ("selangor", "gombak"): ["Gombak"],
+    ("selangor", "ulu langat"): ["Kajang", "Ampang Jaya"],
+    ("johor", "johor bahru"): ["Johor Bahru Selatan", "Johor Bahru Utara"],
+    ("penang", "timur laut"): ["Timur Laut"],
+}
+
+SOURCE_LABELS = {
+    "population_district": "OpenDOSM",
+    "hh_income_district": "OpenDOSM",
+    "crime_district": "data.gov.my",
+    "schools_district": "data.gov.my",
+    "gtfs_static": "data.gov.my GTFS Static",
+}
+
 
 def normalise_text(value):
     text = str(value or "").strip().lower()
@@ -42,7 +72,11 @@ def normalise_text(value):
 
 
 def title_text(value):
-    return " ".join(part.capitalize() for part in normalise_text(value).split())
+    normalised = normalise_text(value)
+    return DISPLAY_NAMES.get(
+        normalised,
+        " ".join(part.capitalize() for part in normalised.split()),
+    )
 
 
 def parse_number(value):
@@ -93,6 +127,16 @@ def fetch_dataset(dataset_id, limit=5000, **filters):
     return records_from_response(payload)
 
 
+def fetch_csv_dataset(url):
+    if url in DATASET_CACHE:
+        return DATASET_CACHE[url]
+    with urllib.request.urlopen(url, timeout=60) as response:
+        text = response.read().decode("utf-8-sig")
+    records = list(csv.DictReader(io.StringIO(text)))
+    DATASET_CACHE[url] = records
+    return records
+
+
 def newest(records):
     dated = [record for record in records if record.get("date")]
     if dated:
@@ -100,6 +144,14 @@ def newest(records):
         latest_date = dated[0].get("date")
         return [record for record in dated if record.get("date") == latest_date]
     return records
+
+
+def record_year(records):
+    for record in records:
+        date = str(record.get("date") or "").strip()
+        if len(date) >= 4 and date[:4].isdigit():
+            return int(date[:4])
+    return None
 
 
 def filter_location(records, state, district):
@@ -112,6 +164,23 @@ def filter_location(records, state, district):
         if state_key and record_state != state_key:
             continue
         if district_key and record_district != district_key:
+            continue
+        matched.append(record)
+    return matched
+
+
+def filter_crime_location(records, state, district):
+    state_key = normalise_text(state)
+    district_key = normalise_text(district)
+    aliases = CRIME_DISTRICT_ALIASES.get((state_key, district_key), [district])
+    alias_keys = {normalise_text(alias) for alias in aliases}
+    matched = []
+    for record in records:
+        if normalise_text(record.get("state")) != state_key:
+            continue
+        if normalise_text(record.get("district")) not in alias_keys:
+            continue
+        if normalise_text(record.get("type")) != "all":
             continue
         matched.append(record)
     return matched
@@ -137,40 +206,66 @@ def first_field(records, field):
 
 
 def clean_area_profile(state, district):
+    population_rows = fetch_csv_dataset(POPULATION_DISTRICT_CSV)
     population = newest(
-        fetch_dataset(
-            "population_district",
-            state=state,
-            district=district,
-            sex="both",
-            age="overall",
-            ethnicity="overall",
-        )
+        [
+            record
+            for record in filter_location(population_rows, state, district)
+            if normalise_text(record.get("sex")) == "both"
+            and normalise_text(record.get("age")) == "overall"
+            and normalise_text(record.get("ethnicity")) == "overall"
+        ]
     )
     income = newest(fetch_dataset("hh_income_district", state=state, district=district))
     schools = newest(fetch_dataset("schools_district", state=state, district=district))
-    crime = newest(fetch_dataset("crime_district", state=state, district=district))
-    latest_population = first_field(filter_location(population, state, district), "population")
+    crime = newest(fetch_csv_dataset(CRIME_DISTRICT_CSV))
+    latest_population = first_field(population, "population")
     population_value = int(latest_population * 1000) if latest_population is not None else None
     school_count = sum_field(filter_location(schools, state, district), "schools")
-    crime_count = sum_field(filter_location(crime, state, district), "crimes")
+    crime_count = sum_field(filter_crime_location(crime, state, district), "crimes")
     income_records = filter_location(income, state, district)
+    population_year = record_year(population)
+    income_year = record_year(income)
+    school_year = record_year(schools)
+    crime_year = record_year(crime)
+    years = [
+        year
+        for year in [population_year, income_year, school_year, crime_year]
+        if year is not None
+    ]
+    sources = [
+        "population_district",
+        "hh_income_district",
+        "schools_district",
+        "crime_district",
+    ]
     return {
-        "areaId": f"{normalise_text(state).replace(' ', '_')}_{normalise_text(district).replace(' ', '_')}",
+        "area_id": f"{normalise_text(state).replace(' ', '_')}_{normalise_text(district).replace(' ', '_')}",
         "state": title_text(state),
         "district": title_text(district),
         "population": population_value,
-        "medianHouseholdIncome": first_field(income_records, "income_median"),
-        "meanHouseholdIncome": first_field(income_records, "income_mean"),
-        "educationInstitutionCount": school_count,
-        "crimeCount": crime_count,
-        "dataYear": str((population or income or schools or crime or [{}])[0].get("date", ""))[:4],
-        "retrievedAt": datetime.now(timezone.utc).isoformat(),
-        "sources": [
-            "population_district",
-            "hh_income_district",
-            "schools_district",
-            "crime_district",
+        "population_year": population_year,
+        "median_household_income": first_field(income_records, "income_median"),
+        "mean_household_income": first_field(income_records, "income_mean"),
+        "income_year": income_year,
+        "crime_count": crime_count,
+        "crime_year": crime_year,
+        "education_institution_count": school_count,
+        "education_year": school_year,
+        "transport_stop_count": None,
+        "transport_year": None,
+        "data_year": max(years) if years else None,
+        "source": "OpenDOSM; data.gov.my",
+        "source_url": "; ".join(SOURCE_REFERENCES[source] for source in sources),
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "sources": sources,
+        "source_details": [
+            {
+                "source": SOURCE_LABELS[source],
+                "dataset": source,
+                "url": SOURCE_REFERENCES[source],
+            }
+            for source in sources
         ],
     }
 
@@ -212,10 +307,31 @@ def write_csv(path, rows):
     if not rows:
         path.write_text("", encoding="utf-8")
         return
+    fieldnames = [
+        "area_id",
+        "state",
+        "district",
+        "population",
+        "population_year",
+        "median_household_income",
+        "mean_household_income",
+        "income_year",
+        "crime_count",
+        "crime_year",
+        "education_institution_count",
+        "education_year",
+        "transport_stop_count",
+        "transport_year",
+        "data_year",
+        "source",
+        "source_url",
+        "retrieved_at",
+    ]
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow({field: row.get(field) for field in fieldnames})
 
 
 def parse_targets(raw_targets):
@@ -233,7 +349,13 @@ def main():
     parser.add_argument(
         "--target",
         action="append",
-        default=["Selangor,Petaling", "Selangor,Gombak", "Selangor,Ulu Langat"],
+        default=[
+            "Selangor,Petaling",
+            "Selangor,Gombak",
+            "Selangor,Ulu Langat",
+            "Johor,Johor Bahru",
+            "Pulau Pinang,Timur Laut",
+        ],
     )
     parser.add_argument("--output", default="data/processed")
     parser.add_argument("--include-gtfs", action="store_true")

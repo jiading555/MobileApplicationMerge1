@@ -15,6 +15,10 @@ class RecommendationService {
     final results =
         properties
             .where((property) {
+              if (property.price == null ||
+                  !areaIndex.containsKey(property.areaId)) {
+                return false;
+              }
               final typeMatches =
                   preferences.propertyType == 'Any' ||
                   property.type == preferences.propertyType;
@@ -37,7 +41,7 @@ class RecommendationService {
     AreaData area,
     UserPreferences preferences,
   ) {
-    final affordability = _affordability(property.price, preferences.budget);
+    final affordability = _affordability(property.price!, preferences.budget);
     final factors = preferences.goal == PropertyGoal.ownStay
         ? _ownStayFactors(area, affordability, preferences)
         : _investmentFactors(area, affordability);

@@ -29,6 +29,9 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
               selectedAreaId == 'all' || property.areaId == selectedAreaId,
         )
         .toList();
+    final mappableProperties = properties
+        .where((property) => property.hasCoordinates)
+        .toList();
     final selected = selectedPropertyId == null
         ? (properties.isEmpty ? null : properties.first)
         : state.properties.firstWhere(
@@ -49,7 +52,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 850;
           final map = _MapCanvas(
-            properties: properties,
+            properties: mappableProperties,
             selectedPropertyId: selected?.id,
             onSelect: (id) => setState(() => selectedPropertyId = id),
           );
@@ -193,7 +196,7 @@ class _MapCanvas extends StatelessWidget {
                           ],
                         ),
                         child: Text(
-                          formatRinggit(property.price, compact: true),
+                          _priceText(property, compact: true),
                           style: TextStyle(
                             color: selected ? Colors.white : AppTheme.blue,
                             fontSize: 11,
@@ -218,7 +221,7 @@ class _MapCanvas extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
-                    'Offline normalized map - Sample',
+                    'Offline normalized map - records without coordinates are not pinned',
                     style: TextStyle(
                       color: AppTheme.muted,
                       fontSize: 10,
@@ -227,6 +230,12 @@ class _MapCanvas extends StatelessWidget {
                   ),
                 ),
               ),
+              if (properties.isEmpty)
+                const Center(
+                  child: _MapEmptyState(
+                    message: 'No records with coordinates in this area.',
+                  ),
+                ),
             ],
           ),
         );
@@ -237,24 +246,28 @@ class _MapCanvas extends StatelessWidget {
   _PinPosition _pinPosition(Property property, List<Property> properties) {
     final minLat = properties
         .map((property) => property.latitude)
+        .whereType<double>()
         .reduce(math.min);
     final maxLat = properties
         .map((property) => property.latitude)
+        .whereType<double>()
         .reduce(math.max);
     final minLng = properties
         .map((property) => property.longitude)
+        .whereType<double>()
         .reduce(math.min);
     final maxLng = properties
         .map((property) => property.longitude)
+        .whereType<double>()
         .reduce(math.max);
     final latRange = maxLat - minLat;
     final lngRange = maxLng - minLng;
     final normalizedX = lngRange == 0
         ? 0.5
-        : (property.longitude - minLng) / lngRange;
+        : (property.longitude! - minLng) / lngRange;
     final normalizedY = latRange == 0
         ? 0.5
-        : (maxLat - property.latitude) / latRange;
+        : (maxLat - property.latitude!) / latRange;
     return _PinPosition(
       x: (0.08 + normalizedX * 0.84).clamp(0.08, 0.92).toDouble(),
       y: (0.10 + normalizedY * 0.78).clamp(0.10, 0.88).toDouble(),
@@ -313,7 +326,7 @@ class _LocationPanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              formatRinggit(property!.price),
+              _priceText(property!),
               style: const TextStyle(
                 color: AppTheme.green,
                 fontSize: 20,
@@ -391,6 +404,40 @@ class _LocationPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MapEmptyState extends StatelessWidget {
+  const _MapEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Text(message, style: const TextStyle(color: AppTheme.muted)),
+      ),
+    );
+  }
+}
+
+String _priceText(Property property, {bool compact = false}) {
+  final min = property.priceMin;
+  final max = property.priceMax;
+  if (min != null && max != null && min != max) {
+    return compact
+        ? '${formatRinggit(min, compact: true)}+'
+        : '${formatRinggit(min)} - ${formatRinggit(max)}';
+  }
+  final price = property.price ?? min ?? max;
+  return price == null
+      ? 'Price unavailable'
+      : formatRinggit(price, compact: compact);
 }
 
 class _MiniInsight extends StatelessWidget {

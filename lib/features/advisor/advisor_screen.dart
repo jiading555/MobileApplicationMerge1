@@ -556,7 +556,7 @@ class _TopRecommendation extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  formatRinggit(property.price),
+                  formatRinggit(property.price!),
                   style: const TextStyle(
                     color: AppTheme.green,
                     fontSize: 20,
@@ -668,7 +668,7 @@ class _RecommendationTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      formatRinggit(property.price),
+                      formatRinggit(property.price!),
                       style: const TextStyle(
                         color: AppTheme.green,
                         fontWeight: FontWeight.w800,

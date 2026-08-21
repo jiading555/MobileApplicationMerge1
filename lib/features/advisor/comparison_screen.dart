@@ -75,7 +75,7 @@ class _ComparisonColumn extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  formatRinggit(property.price),
+                  formatRinggit(property.price!),
                   style: const TextStyle(
                     color: AppTheme.green,
                     fontWeight: FontWeight.w800,
@@ -89,7 +89,9 @@ class _ComparisonColumn extends StatelessWidget {
                 ),
                 _Row(
                   label: 'Price psf',
-                  value: formatRinggit(property.pricePerSqft.round()),
+                  value: property.pricePerSqft == null
+                      ? 'Unavailable'
+                      : formatRinggit(property.pricePerSqft!.round()),
                 ),
                 _Row(label: 'Safety', value: '${area.safetyScore.round()}/100'),
                 _Row(
