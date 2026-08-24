@@ -95,7 +95,7 @@ class AreaProfile {
       'source': source,
       'source_url': sourceUrl,
       'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
-    }..removeWhere((_, value) => value == null);
+    };
   }
 
   static String _stringFromJson(Object? value) {

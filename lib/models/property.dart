@@ -226,7 +226,7 @@ class Property {
       'developer_address': developerAddress,
       'raw_location': rawLocation,
       'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
-    }..removeWhere((_, value) => value == null);
+    };
   }
 
   static String _teduhSummary({

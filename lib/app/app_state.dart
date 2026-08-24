@@ -87,14 +87,14 @@ class AppState extends ChangeNotifier {
 
       final cloudProperties = await _loadCloudProperties(areas);
       if (cloudProperties.isNotEmpty) {
-        properties = _mergeProperties(localProperties, cloudProperties);
+        properties = cloudProperties;
         isUsingCloudProperties = true;
       } else {
         final teduhFallback = await _repository.loadProcessedTeduhProjects(
           areas,
         );
         if (teduhFallback.isNotEmpty) {
-          properties = _mergeProperties(localProperties, teduhFallback);
+          properties = teduhFallback;
           isUsingProcessedTeduhProperties = true;
         }
       }
@@ -268,12 +268,12 @@ class AppState extends ChangeNotifier {
 
     final cloudProperties = await _loadCloudProperties(areas);
     if (cloudProperties.isNotEmpty) {
-      properties = _mergeProperties(localProperties, cloudProperties);
+      properties = cloudProperties;
       isUsingCloudProperties = true;
     } else {
       final teduhFallback = await _repository.loadProcessedTeduhProjects(areas);
       if (teduhFallback.isNotEmpty) {
-        properties = _mergeProperties(localProperties, teduhFallback);
+        properties = teduhFallback;
         isUsingProcessedTeduhProperties = true;
       }
     }
@@ -293,20 +293,6 @@ class AppState extends ChangeNotifier {
       ...converted,
       ...localAreas.where((area) => !convertedIds.contains(area.id)),
     ];
-  }
-
-  List<Property> _mergeProperties(
-    List<Property> localProperties,
-    List<Property> openDataProperties,
-  ) {
-    final seen = <String>{};
-    final merged = <Property>[];
-    for (final property in [...openDataProperties, ...localProperties]) {
-      if (seen.add(property.id)) {
-        merged.add(property);
-      }
-    }
-    return merged;
   }
 
   String _normaliseId(String value) {

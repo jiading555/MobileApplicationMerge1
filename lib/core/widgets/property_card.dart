@@ -94,11 +94,15 @@ class _FullContent extends StatelessWidget {
             children: [
               Text(
                 property.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 3),
               Text(
                 property.address,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppTheme.muted, fontSize: 12),
               ),
               const SizedBox(height: 12),
@@ -147,6 +151,8 @@ class _CompactContent extends StatelessWidget {
               children: [
                 Text(
                   property.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 3),
@@ -159,6 +165,8 @@ class _CompactContent extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   _priceText(property),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppTheme.green,
                     fontWeight: FontWeight.w800,
@@ -209,10 +217,20 @@ class _Facts extends StatelessWidget {
         if (property.bedrooms == null &&
             property.bathrooms == null &&
             property.sizeSqft == null)
-          _Fact(icon: Icons.account_balance_outlined, label: property.source),
+          _Fact(
+            icon: Icons.account_balance_outlined,
+            label: _sourceFactLabel(property),
+          ),
       ],
     );
   }
+}
+
+String _sourceFactLabel(Property property) {
+  if (property.isGovernmentRecord) {
+    return 'TEDUH / KPKT';
+  }
+  return 'Sample listing';
 }
 
 String _priceText(Property property) {

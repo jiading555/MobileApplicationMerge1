@@ -74,10 +74,10 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
         ..sort(),
     ];
     final sourceLabel = state.isUsingCloudProperties
-        ? 'Supabase TEDUH + local fallback'
+        ? 'Source: TEDUH / KPKT'
         : state.isUsingProcessedTeduhProperties
-        ? 'Processed TEDUH JSON + local fallback'
-        : 'Local sample listings';
+        ? 'Source: TEDUH / KPKT'
+        : 'Source: Sample data';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Property search'),
@@ -173,11 +173,15 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             const SizedBox(height: 18),
             Row(
               children: [
-                Text(
-                  '${results.length} properties found',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Expanded(
+                  child: Text(
+                    '${results.length} properties found',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 const Icon(
                   Icons.info_outline_rounded,
                   size: 16,
@@ -186,6 +190,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 const SizedBox(width: 5),
                 Text(
                   sourceLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
               ],
