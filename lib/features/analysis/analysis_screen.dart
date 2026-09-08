@@ -161,23 +161,28 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     const sources = [
       _DataSource(
         'Population by district',
-        'OpenDOSM - Data as of 2025',
+        'data.gov.my - latest available release',
         'https://open.dosm.gov.my/data-catalogue/population_district',
       ),
       _DataSource(
         'Household income by district',
-        'OpenDOSM - Data as of 2024',
+        'data.gov.my - latest available release',
         'https://open.dosm.gov.my/data-catalogue/hh_income_district',
       ),
       _DataSource(
         'Crimes by district and crime type',
-        'data.gov.my - Data as of 2023',
+        'data.gov.my - latest available release',
         'https://data.gov.my/data-catalogue/crime_district',
       ),
       _DataSource(
         'Public education institutions',
-        'data.gov.my - Data as of 2022',
+        'data.gov.my - latest available release',
         'https://data.gov.my/data-catalogue/schools_district',
+      ),
+      _DataSource(
+        'Public hospital beds',
+        'data.gov.my - latest available release',
+        'https://data.gov.my/data-catalogue/hospital_beds',
       ),
     ];
     showModalBottomSheet<void>(
