@@ -16,6 +16,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   String? error;
+  bool confirmationSent = false;
 
   @override
   void dispose() {
@@ -36,7 +37,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
     if (!mounted) return;
     if (result == null) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      final state = AppScope.of(context);
+      if (state.registrationNeedsConfirmation) {
+        setState(() {
+          confirmationSent = true;
+          error = null;
+        });
+      } else {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } else {
       setState(() => error = result);
     }
@@ -51,7 +60,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Form(
+            child: confirmationSent
+                ? _ConfirmationSent(
+                    email: emailController.text.trim(),
+                    onBack: () => Navigator.of(context).pop(),
+                    onResend: () async {
+                      final result = await AppScope.of(
+                        context,
+                      ).resendSignupConfirmation(emailController.text);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            result ?? 'Confirmation email sent again.',
+                          ),
+                          backgroundColor: result == null
+                              ? AppTheme.green
+                              : const Color(0xFFB42318),
+                        ),
+                      );
+                    },
+                  )
+                : Form(
               key: formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -129,6 +159,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ConfirmationSent extends StatelessWidget {
+  const _ConfirmationSent({
+    required this.email,
+    required this.onBack,
+    required this.onResend,
+  });
+
+  final String email;
+  final VoidCallback onBack;
+  final VoidCallback onResend;
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = AppScope.of(context).isAccountBusy;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Icon(Icons.mark_email_read_rounded, size: 68, color: AppTheme.blue),
+        const SizedBox(height: 18),
+        Text(
+          'Check your email',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'We sent a confirmation link to $email. Open the link before signing in.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppTheme.muted),
+        ),
+        const SizedBox(height: 24),
+        FilledButton(onPressed: onBack, child: const Text('Back to sign in')),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: busy ? null : onResend,
+          child: const Text('Resend confirmation email'),
+        ),
+      ],
     );
   }
 }
