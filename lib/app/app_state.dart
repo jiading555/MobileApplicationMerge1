@@ -57,6 +57,7 @@ class AppState extends ChangeNotifier {
   String? openDataLoadMessage;
   String? governmentDataSyncMessage;
   bool isAccountBusy = false;
+  bool registrationNeedsConfirmation = false;
   String? accountError;
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
@@ -187,6 +188,7 @@ class AppState extends ChangeNotifier {
       return 'Supabase is not configured.';
     }
     isAccountBusy = true;
+    registrationNeedsConfirmation = false;
     accountError = null;
     notifyListeners();
     try {
@@ -203,14 +205,13 @@ class AppState extends ChangeNotifier {
         email: authUser.email ?? email.trim(),
       );
       preferences = const UserPreferences();
+      registrationNeedsConfirmation = response.session == null;
       isAuthenticated = response.session != null;
       if (response.session != null) {
         await _userAccountRepository.saveProfile(user);
         await _userAccountRepository.savePreferences(authUser.id, preferences);
       }
-      return response.session == null
-          ? 'Account created. Confirm your email before signing in.'
-          : null;
+      return null;
     } on AuthException catch (error) {
       return error.message;
     } catch (_) {
@@ -228,6 +229,26 @@ class AppState extends ChangeNotifier {
     isAuthenticated = false;
     selectedIndex = 0;
     notifyListeners();
+  }
+
+  Future<String?> resendSignupConfirmation(String email) async {
+    if (!SupabaseConfig.isConfigured) return 'Supabase is not configured.';
+    isAccountBusy = true;
+    notifyListeners();
+    try {
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: email.trim(),
+      );
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to resend confirmation email. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
   }
 
   void selectDestination(int index) {
