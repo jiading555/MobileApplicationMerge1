@@ -222,7 +222,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                                 crossAxisCount: columns,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
-                                childAspectRatio: columns == 3 ? 0.84 : 1.02,
+                                mainAxisExtent: 370,
                               ),
                           itemBuilder: (context, index) => PropertyCard(
                             property: results[index],
