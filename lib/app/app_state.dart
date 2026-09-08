@@ -322,18 +322,43 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> updatePassword(String password) async {
-    if (user.isDemo) return 'Password changes are unavailable in sample mode.';
-    if (password.length < 8) return 'Use at least 8 characters.';
+  Future<String?> updatePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (user.isDemo) {
+      return 'Password changes are unavailable in sample mode.';
+    }
+    if (currentPassword.isEmpty) return 'Enter your current password.';
+    if (newPassword.length < 8) return 'Use at least 8 characters.';
+    if (currentPassword == newPassword) {
+      return 'New password must be different from the current password.';
+    }
+
+    final email = Supabase.instance.client.auth.currentUser?.email;
+    if (email == null) return 'Your sign-in session has expired.';
+
+    isAccountBusy = true;
+    notifyListeners();
     try {
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: currentPassword,
+      );
       await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: password),
+        UserAttributes(password: newPassword),
       );
       return null;
     } on AuthException catch (error) {
+      if (error.message.toLowerCase().contains('invalid login')) {
+        return 'Current password is incorrect.';
+      }
       return error.message;
     } catch (_) {
       return 'Unable to update password. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
     }
   }
 
