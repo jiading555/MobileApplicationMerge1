@@ -155,9 +155,7 @@ class HomeScreen extends StatelessWidget {
                                     : 2,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
-                                childAspectRatio: constraints.maxWidth >= 1050
-                                    ? 0.82
-                                    : 1.02,
+                                mainAxisExtent: 370,
                               ),
                           itemBuilder: (context, index) => PropertyCard(
                             property: featured[index],
