@@ -143,11 +143,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                     : const Text('Sign in'),
                               ),
-                              const SizedBox(height: 12),
-                              OutlinedButton(
-                                onPressed: AppScope.of(context).continueAsDemo,
-                                child: const Text('Continue with sample data'),
-                              ),
                               const SizedBox(height: 22),
                               Wrap(
                                 alignment: WrapAlignment.center,
@@ -163,15 +158,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: const Text('Create account'),
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 18),
-                              const Text(
-                                'Use sample mode to explore without saving account data',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: AppTheme.muted,
-                                  fontSize: 11,
-                                ),
                               ),
                             ],
                           ),
