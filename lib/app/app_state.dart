@@ -223,19 +223,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void continueAsDemo() {
-    user = const AppUser(
-      id: 'demo',
-      name: 'Alex Tan',
-      email: 'alex@smartadvisor.demo',
-      phone: '+60 12-345 6789',
-      isDemo: true,
-    );
-    preferences = const UserPreferences();
-    isAuthenticated = true;
-    notifyListeners();
-  }
-
   Future<void> logout() async {
     if (!user.isDemo && SupabaseConfig.isConfigured) {
       await Supabase.instance.client.auth.signOut();
