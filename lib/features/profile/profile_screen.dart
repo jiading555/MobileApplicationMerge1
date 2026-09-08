@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
-import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
-import '../search/property_detail_screen.dart';
+import '../../models/user_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,274 +16,315 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool notifications = true;
-  bool dataSaver = false;
+  Future<void> _pickAvatar() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      imageQuality: 82,
+    );
+    if (file == null || !mounted) return;
+    final extension = file.name.split('.').last;
+    final error = await AppScope.of(context).uploadAvatar(
+      await file.readAsBytes(),
+      extension,
+    );
+    if (mounted) _message(error ?? 'Profile photo updated.', error != null);
+  }
+
+  void _message(String text, bool error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: error ? const Color(0xFFB42318) : AppTheme.green,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile & settings'),
-        actions: [
-          IconButton(
-            onPressed: () => _editProfile(context),
-            tooltip: 'Edit profile',
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: PageContainer(
-          maxWidth: 1000,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ProfileHeader(
-                user: state.user,
-                favouriteCount: state.favouriteProperties.length,
-              ),
-              const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final preferences = _PreferencesSummary();
-                  final account = _AccountActions(
-                    onEdit: () => _editProfile(context),
-                    onPassword: () => _changePassword(context),
-                    onAbout: () => _showAbout(context),
-                  );
-                  return constraints.maxWidth >= 760
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: preferences),
-                            const SizedBox(width: 14),
-                            Expanded(child: account),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            preferences,
-                            const SizedBox(height: 14),
-                            account,
-                          ],
-                        );
-                },
-              ),
-              const SizedBox(height: 22),
-              Card(
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      value: notifications,
-                      onChanged: (value) =>
-                          setState(() => notifications = value),
-                      secondary: const Icon(Icons.notifications_outlined),
-                      title: const Text('Recommendation alerts'),
-                      subtitle: const Text(
-                        'Receive saved-area and data refresh reminders',
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: dataSaver,
-                      onChanged: (value) => setState(() => dataSaver = value),
-                      secondary: const Icon(Icons.data_saver_on_rounded),
-                      title: const Text('Data saver'),
-                      subtitle: const Text(
-                        'Prefer the bundled snapshot over live refreshes',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 26),
-              Row(
+      appBar: AppBar(title: const Text('Profile & settings')),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            child: PageContainer(
+              maxWidth: 900,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Favourite properties',
-                    style: Theme.of(context).textTheme.titleLarge,
+                  _ProfileHeader(user: state.user, onAvatar: _pickAvatar),
+                  const SizedBox(height: 18),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final personal = _PersonalCard(
+                        user: state.user,
+                        onEdit: _editProfile,
+                      );
+                      final preferences = _PreferenceCard(
+                        value: state.preferences,
+                        onEdit: _editPreferences,
+                      );
+                      return constraints.maxWidth >= 700
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: personal),
+                                const SizedBox(width: 14),
+                                Expanded(child: preferences),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                personal,
+                                const SizedBox(height: 14),
+                                preferences,
+                              ],
+                            );
+                    },
                   ),
-                  const Spacer(),
-                  Text(
-                    '${state.favouriteProperties.length} saved',
-                    style: const TextStyle(color: AppTheme.muted),
+                  const SizedBox(height: 14),
+                  Card(
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.lock_outline_rounded),
+                          title: const Text('Change password'),
+                          subtitle: const Text('Use at least 8 characters'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: _changePassword,
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.info_outline_rounded),
+                          title: const Text('About Smart Property Advisor'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => showAboutDialog(
+                            context: context,
+                            applicationName: 'Smart Property Advisor',
+                            applicationVersion: '1.0.0',
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => state.logout(),
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text('Sign out'),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (state.favouriteProperties.isEmpty)
-                const _EmptyFavourites()
-              else
-                ...state.favouriteProperties.map(
-                  (property) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: PropertyCard(
-                      property: property,
-                      compact: true,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              PropertyDetailScreen(propertyId: property.id),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: state.logout,
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Sign out'),
-                ),
+            ),
+          ),
+          if (state.isAccountBusy)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x33000000),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editProfile() async {
+    final state = AppScope.of(context);
+    final formKey = GlobalKey<FormState>();
+    final name = TextEditingController(text: state.user.name);
+    final phone = TextEditingController(text: state.user.phone);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          22,
+          0,
+          22,
+          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
+        ),
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Personal information', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: name,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Full name'),
+                validator: (value) => value == null || value.trim().length < 2
+                    ? 'Enter at least 2 characters'
+                    : null,
               ),
               const SizedBox(height: 12),
-              const Center(
-                child: Text(
-                  'Smart Property Advisor v1.0.0 - Assignment sample',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
-                ),
+              TextFormField(
+                controller: phone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone number'),
+              ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: () async {
+                  if (!formKey.currentState!.validate()) return;
+                  final updated = state.user.copyWith(
+                    name: name.text.trim(),
+                    phone: phone.text.trim(),
+                  );
+                  final error = await state.saveUser(updated);
+                  if (!mounted) return;
+                  if (error == null) Navigator.of(sheetContext).pop();
+                  _message(error ?? 'Profile updated successfully.', error != null);
+                },
+                child: const Text('Save changes'),
               ),
             ],
           ),
         ),
       ),
     );
+    name.dispose();
+    phone.dispose();
   }
 
-  Future<void> _editProfile(BuildContext context) async {
+  Future<void> _editPreferences() async {
     final state = AppScope.of(context);
-    final nameController = TextEditingController(text: state.user.name);
-    final phoneController = TextEditingController(text: state.user.phone);
+    final current = state.preferences;
+    final formKey = GlobalKey<FormState>();
+    final preferredState = TextEditingController(text: current.preferredState);
+    final district = TextEditingController(text: current.preferredDistrict);
+    final minimum = TextEditingController(text: current.minimumBudget.round().toString());
+    final maximum = TextEditingController(text: current.maximumBudget.round().toString());
+    var type = current.propertyType;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          22,
-          2,
-          22,
-          MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Edit personal information',
-              style: Theme.of(context).textTheme.titleLarge,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(22, 0, 22, MediaQuery.of(context).viewInsets.bottom + 24),
+          child: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Property preferences', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 16),
+                  TextFormField(controller: preferredState, decoration: const InputDecoration(labelText: 'Preferred state')),
+                  const SizedBox(height: 12),
+                  TextFormField(controller: district, decoration: const InputDecoration(labelText: 'Preferred district')),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: ['Any', 'Condominium', 'Apartment', 'Terrace', 'Semi-D'].contains(type) ? type : 'Any',
+                    decoration: const InputDecoration(labelText: 'Property type'),
+                    items: const ['Any', 'Condominium', 'Apartment', 'Terrace', 'Semi-D']
+                        .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                        .toList(),
+                    onChanged: (value) => setSheetState(() => type = value ?? 'Any'),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _BudgetField(controller: minimum, label: 'Minimum budget')),
+                      const SizedBox(width: 12),
+                      Expanded(child: _BudgetField(controller: maximum, label: 'Maximum budget')),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final min = double.parse(minimum.text);
+                      final max = double.parse(maximum.text);
+                      if (min > max) {
+                        _message('Minimum budget cannot exceed maximum budget.', true);
+                        return;
+                      }
+                      final value = current.copyWith(
+                        preferredState: preferredState.text.trim(),
+                        preferredDistrict: district.text.trim(),
+                        propertyType: type,
+                        minimumBudget: min,
+                        maximumBudget: max,
+                        budget: max,
+                      );
+                      final error = await state.saveAccountPreferences(value);
+                      if (!mounted) return;
+                      if (error == null) Navigator.of(sheetContext).pop();
+                      _message(error ?? 'Preferences updated successfully.', error != null);
+                    },
+                    child: const Text('Save preferences'),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Full name'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Phone number'),
-            ),
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: () {
-                if (nameController.text.trim().length >= 2) {
-                  state.updateUser(
-                    state.user.copyWith(
-                      name: nameController.text.trim(),
-                      phone: phoneController.text.trim(),
-                    ),
-                  );
-                  Navigator.of(context).pop();
-                }
-              },
-              child: const Text('Save changes'),
-            ),
-          ],
+          ),
         ),
       ),
     );
-    nameController.dispose();
-    phoneController.dispose();
+    preferredState.dispose();
+    district.dispose();
+    minimum.dispose();
+    maximum.dispose();
   }
 
-  Future<void> _changePassword(BuildContext context) async {
-    final currentController = TextEditingController();
-    final nextController = TextEditingController();
+  Future<void> _changePassword() async {
+    final state = AppScope.of(context);
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Change password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: currentController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Current password'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nextController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'New password'),
-            ),
-          ],
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'New password'),
+            validator: (value) => value == null || value.length < 8 ? 'Use at least 8 characters' : null,
+          ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           FilledButton(
-            onPressed: () {
-              if (nextController.text.length >= 8) {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(content: Text('Sample password updated.')),
-                );
-              }
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final error = await state.updatePassword(controller.text);
+              if (!mounted) return;
+              if (error == null) Navigator.pop(dialogContext);
+              _message(error ?? 'Password updated successfully.', error != null);
             },
             child: const Text('Update'),
           ),
         ],
       ),
     );
-    currentController.dispose();
-    nextController.dispose();
-  }
-
-  void _showAbout(BuildContext context) {
-    showAboutDialog(
-      context: context,
-      applicationName: 'Smart Property Advisor',
-      applicationVersion: '1.0.0',
-      applicationIcon: const CircleAvatar(
-        backgroundColor: Color(0xFFE5F0FF),
-        child: Icon(Icons.home_work_rounded, color: AppTheme.blue),
-      ),
-      children: const [
-        Text(
-          'A smart property-advisor assignment combining Malaysian open data, market analytics and transparent weighted recommendations in support of SDG 9.',
-        ),
-      ],
-    );
+    controller.dispose();
   }
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.user, required this.favouriteCount});
-
+  const _ProfileHeader({required this.user, required this.onAvatar});
   final AppUser user;
-  final int favouriteCount;
+  final VoidCallback onAvatar;
 
   @override
   Widget build(BuildContext context) {
+    final initials = user.name.split(' ').where((v) => v.isNotEmpty).take(2).map((v) => v[0].toUpperCase()).join();
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [AppTheme.navy, AppTheme.blue]),
@@ -290,65 +332,39 @@ class _ProfileHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 36,
-            backgroundColor: Colors.white,
-            child: Text(
-              user.name
-                  .split(' ')
-                  .where((part) => part.isNotEmpty)
-                  .take(2)
-                  .map((part) => part[0].toUpperCase())
-                  .join(),
-              style: const TextStyle(
-                color: AppTheme.blue,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 38,
+                backgroundColor: Colors.white,
+                backgroundImage: user.avatarUrl == null ? null : NetworkImage(user.avatarUrl!),
+                child: user.avatarUrl == null
+                    ? Text(initials, style: const TextStyle(color: AppTheme.blue, fontSize: 22, fontWeight: FontWeight.w900))
+                    : null,
               ),
-            ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: IconButton.filled(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Change profile photo',
+                  onPressed: onAvatar,
+                  icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 17),
+          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                Text(user.name, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
                 Text(user.email, style: const TextStyle(color: Colors.white70)),
-                if (user.phone.isNotEmpty)
-                  Text(
-                    user.phone,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.13),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  '$favouriteCount',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const Text(
-                  'saved',
-                  style: TextStyle(color: Colors.white70, fontSize: 10),
+                if (user.isDemo) const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('SAMPLE MODE', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w800)),
                 ),
               ],
             ),
@@ -359,151 +375,96 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-class _PreferencesSummary extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final state = AppScope.of(context);
-    final preferences = state.preferences;
-    final area = preferences.preferredAreaId == 'any'
-        ? 'Any area'
-        : state.areaFor(preferences.preferredAreaId).name;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.tune_rounded, color: AppTheme.blue),
-                const SizedBox(width: 9),
-                Text(
-                  'Property preferences',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _SummaryRow(
-              label: 'Goal',
-              value: preferences.goal.name == 'ownStay'
-                  ? 'Own stay'
-                  : 'Investment',
-            ),
-            _SummaryRow(label: 'Area', value: area),
-            _SummaryRow(label: 'Type', value: preferences.propertyType),
-            _SummaryRow(
-              label: 'Budget',
-              value: 'RM ${(preferences.budget / 1000).round()}K',
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: () => state.selectDestination(3),
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: const Text('Update in Advisor'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountActions extends StatelessWidget {
-  const _AccountActions({
-    required this.onEdit,
-    required this.onPassword,
-    required this.onAbout,
-  });
-
+class _PersonalCard extends StatelessWidget {
+  const _PersonalCard({required this.user, required this.onEdit});
+  final AppUser user;
   final VoidCallback onEdit;
-  final VoidCallback onPassword;
-  final VoidCallback onAbout;
-
   @override
-  Widget build(BuildContext context) {
-    return Card(
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(18),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ListTile(
-            leading: const Icon(Icons.person_outline_rounded),
-            title: const Text('Personal information'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: onEdit,
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.lock_outline_rounded),
-            title: const Text('Change password'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: onPassword,
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.info_outline_rounded),
-            title: const Text('About Smart Property Advisor'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: onAbout,
-          ),
+          _TitleRow(title: 'Personal information', icon: Icons.person_outline_rounded, onEdit: onEdit),
+          const SizedBox(height: 12),
+          _InfoRow(label: 'Full name', value: user.name),
+          _InfoRow(label: 'Email', value: user.email),
+          _InfoRow(label: 'Phone', value: user.phone.isEmpty ? 'Not provided' : user.phone),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
-class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.label, required this.value});
+class _PreferenceCard extends StatelessWidget {
+  const _PreferenceCard({required this.value, required this.onEdit});
+  final UserPreferences value;
+  final VoidCallback onEdit;
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _TitleRow(title: 'Property preferences', icon: Icons.tune_rounded, onEdit: onEdit),
+          const SizedBox(height: 12),
+          _InfoRow(label: 'State', value: value.preferredState.isEmpty ? 'Any state' : value.preferredState),
+          _InfoRow(label: 'District', value: value.preferredDistrict.isEmpty ? 'Any district' : value.preferredDistrict),
+          _InfoRow(label: 'Type', value: value.propertyType),
+          _InfoRow(label: 'Budget', value: '${formatRinggit(value.minimumBudget)} – ${formatRinggit(value.maximumBudget)}'),
+        ],
+      ),
+    ),
+  );
+}
 
+class _TitleRow extends StatelessWidget {
+  const _TitleRow({required this.title, required this.icon, required this.onEdit});
+  final String title;
+  final IconData icon;
+  final VoidCallback onEdit;
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, color: AppTheme.blue),
+      const SizedBox(width: 9),
+      Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
+      IconButton(onPressed: onEdit, tooltip: 'Edit', icon: const Icon(Icons.edit_outlined)),
+    ],
+  );
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
   final String label;
   final String value;
-
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 72, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12))),
+        Expanded(child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+      ],
+    ),
+  );
 }
 
-class _EmptyFavourites extends StatelessWidget {
-  const _EmptyFavourites();
-
+class _BudgetField extends StatelessWidget {
+  const _BudgetField({required this.controller, required this.label});
+  final TextEditingController controller;
+  final String label;
   @override
-  Widget build(BuildContext context) {
-    return const Card(
-      child: Padding(
-        padding: EdgeInsets.all(26),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(
-                Icons.favorite_border_rounded,
-                size: 42,
-                color: AppTheme.muted,
-              ),
-              SizedBox(height: 8),
-              Text('No favourites saved yet.'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => TextFormField(
+    controller: controller,
+    keyboardType: TextInputType.number,
+    decoration: InputDecoration(labelText: label, prefixText: 'RM '),
+    validator: (value) {
+      final amount = double.tryParse(value ?? '');
+      return amount == null || amount < 0 ? 'Enter a valid amount' : null;
+    },
+  );
 }
