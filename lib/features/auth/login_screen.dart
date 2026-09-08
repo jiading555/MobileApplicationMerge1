@@ -14,8 +14,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController(text: 'alex@smartadvisor.demo');
-  final passwordController = TextEditingController(text: 'smartadvisor');
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
   final formKey = GlobalKey<FormState>();
   bool obscurePassword = true;
   String? error;
@@ -77,6 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 keyboardType: TextInputType.emailAddress,
                                 decoration: const InputDecoration(
                                   labelText: 'Email address',
+                                  hintText: 'name@example.com',
                                   prefixIcon: Icon(Icons.mail_outline_rounded),
                                 ),
                                 validator: (value) =>
@@ -90,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 obscureText: obscurePassword,
                                 decoration: InputDecoration(
                                   labelText: 'Password',
+                                  hintText: 'Enter your password',
                                   prefixIcon: const Icon(
                                     Icons.lock_outline_rounded,
                                   ),
