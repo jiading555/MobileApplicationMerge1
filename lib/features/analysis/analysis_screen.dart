@@ -20,6 +20,18 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
   String selectedView = 'Overview';
+  bool _refreshScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_refreshScheduled) return;
+    _refreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppScope.of(context).refreshGovernmentData();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,13 +109,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           size: 19,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          area.isGovernmentProfile
-                              ? 'Government data via $sourceMode'
-                              : 'Local sample snapshot ${area.snapshotDate}',
-                          style: const TextStyle(
-                            color: AppTheme.green,
-                            fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Text(
+                            state.isSyncingGovernmentData
+                                ? 'Loading latest government data...'
+                                : area.isGovernmentProfile
+                                ? 'Government data via $sourceMode'
+                                : 'Local sample snapshot ${area.snapshotDate}',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.green,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
