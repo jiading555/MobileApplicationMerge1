@@ -27,14 +27,14 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void submit() {
+  Future<void> submit() async {
     if (!formKey.currentState!.validate()) {
       return;
     }
-    final result = AppScope.of(
+    final result = await AppScope.of(
       context,
     ).login(emailController.text, passwordController.text);
-    setState(() => error = result);
+    if (mounted) setState(() => error = result);
   }
 
   @override
@@ -138,8 +138,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 14),
                               ],
                               FilledButton(
-                                onPressed: submit,
-                                child: const Text('Sign in'),
+                                onPressed: AppScope.of(context).isAccountBusy ? null : submit,
+                                child: AppScope.of(context).isAccountBusy
+                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Text('Sign in'),
                               ),
                               const SizedBox(height: 12),
                               OutlinedButton(
@@ -164,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               const SizedBox(height: 18),
                               const Text(
-                                'Sample mode - Supabase can be connected before deployment',
+                                'Use sample mode to explore without saving account data',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: AppTheme.muted,
@@ -236,3 +238,4 @@ class _LoginHero extends StatelessWidget {
     );
   }
 }
+
