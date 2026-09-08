@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -51,6 +53,7 @@ class AppState extends ChangeNotifier {
   List<Property> properties = const [];
   bool isUsingCloudAreaProfiles = false;
   bool isUsingProcessedAreaProfiles = false;
+  bool isUsingLiveAreaProfiles = false;
   bool isUsingCloudProperties = false;
   bool isUsingProcessedTeduhProperties = false;
   bool isSyncingGovernmentData = false;
@@ -122,13 +125,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshGovernmentData() async {
-    if (!SupabaseConfig.isConfigured) {
-      governmentDataSyncMessage =
-          'Supabase is not configured. Add the project URL and client-safe '
-          'publishable key in SupabaseConfig to sync government data.';
-      notifyListeners();
-      return;
-    }
+    if (isSyncingGovernmentData) return;
 
     isSyncingGovernmentData = true;
     governmentDataSyncMessage = null;
@@ -136,20 +133,15 @@ class AppState extends ChangeNotifier {
 
     try {
       final areaProfiles = await _openDataService.fetchAreaProfiles();
-      await _areaProfileRepository.upsertAreaProfiles(areaProfiles);
-
-      final teduhProjects = await _teduhService.fetchProjects(
-        maxRecords: 80,
-        maxPerState: 8,
-      );
-      await _propertyRepository.upsertProperties(teduhProjects);
-
-      await _reloadVisibleData();
+      areas = _areasFromProfiles(areaProfiles, areas);
+      isUsingLiveAreaProfiles = true;
+      isUsingCloudAreaProfiles = false;
+      isUsingProcessedAreaProfiles = false;
       governmentDataSyncMessage =
-          'Synced ${areaProfiles.length} area profiles and '
-          '${teduhProjects.length} TEDUH projects.';
+          'Loaded the latest available government data for '
+          '${areaProfiles.length} districts.';
     } catch (error) {
-      governmentDataSyncMessage = 'Government data sync failed: $error';
+      governmentDataSyncMessage = 'Government data load failed: $error';
     } finally {
       isSyncingGovernmentData = false;
       notifyListeners();
@@ -252,8 +244,12 @@ class AppState extends ChangeNotifier {
   }
 
   void selectDestination(int index) {
+    final isOpeningAnalysis = index == 4 && selectedIndex != index;
     selectedIndex = index;
     notifyListeners();
+    if (isOpeningAnalysis) {
+      unawaited(refreshGovernmentData());
+    }
   }
 
   void updatePreferences(UserPreferences value) {
