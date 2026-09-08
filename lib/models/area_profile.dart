@@ -11,6 +11,8 @@ class AreaProfile {
     this.crimeYear,
     this.educationInstitutionCount,
     this.educationYear,
+    this.hospitalBedCount,
+    this.hospitalYear,
     this.transportStopCount,
     this.transportYear,
     this.dataYear,
@@ -30,6 +32,8 @@ class AreaProfile {
   final int? crimeYear;
   final int? educationInstitutionCount;
   final int? educationYear;
+  final int? hospitalBedCount;
+  final int? hospitalYear;
   final int? transportStopCount;
   final int? transportYear;
   final int? dataYear;
@@ -58,6 +62,12 @@ class AreaProfile {
       ),
       educationYear: _intFromJson(
         json['education_year'] ?? json['educationYear'],
+      ),
+      hospitalBedCount: _intFromJson(
+        json['hospital_bed_count'] ?? json['hospitalBedCount'],
+      ),
+      hospitalYear: _intFromJson(
+        json['hospital_year'] ?? json['hospitalYear'],
       ),
       transportStopCount: _intFromJson(
         json['transport_stop_count'] ?? json['transportStopCount'],
