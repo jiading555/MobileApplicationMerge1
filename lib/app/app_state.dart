@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -132,7 +130,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final areaProfiles = await _openDataService.fetchAreaProfiles();
+      final targets = areas
+          .map((area) => (area.state, area.name))
+          .toSet()
+          .toList();
+      final areaProfiles = await _openDataService.fetchAreaProfiles(
+        targets: targets,
+      );
       areas = _areasFromProfiles(areaProfiles, areas);
       isUsingLiveAreaProfiles = true;
       isUsingCloudAreaProfiles = false;
@@ -244,12 +248,8 @@ class AppState extends ChangeNotifier {
   }
 
   void selectDestination(int index) {
-    final isOpeningAnalysis = index == 4 && selectedIndex != index;
     selectedIndex = index;
     notifyListeners();
-    if (isOpeningAnalysis) {
-      unawaited(refreshGovernmentData());
-    }
   }
 
   void updatePreferences(UserPreferences value) {
