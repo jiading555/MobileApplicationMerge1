@@ -26,8 +26,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final state = AppScope.of(context);
     selectedAreaId ??= state.areas.first.id;
     final area = state.areaFor(selectedAreaId!);
-    final sourceMode = state.isUsingCloudAreaProfiles
-        ? 'Supabase'
+    final sourceMode = state.isUsingLiveAreaProfiles
+        ? 'data.gov.my API'
+        : state.isUsingCloudAreaProfiles
+        ? 'Supabase snapshot'
         : state.isUsingProcessedAreaProfiles
         ? 'processed JSON'
         : 'local sample';
@@ -44,7 +46,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             onPressed: state.isSyncingGovernmentData
                 ? null
                 : () => _refreshGovernmentData(state),
-            tooltip: 'Refresh government data',
+            tooltip: 'Reload latest government data',
             icon: state.isSyncingGovernmentData
                 ? const SizedBox(
                     width: 18,
@@ -281,8 +283,8 @@ class _Overview extends StatelessWidget {
         label: 'Infrastructure',
         value: '${area.infrastructureScore.round()}/100',
         trend: area.educationYear == null
-            ? '${area.schools} schools'
-            : '${area.schools} schools - ${area.educationYear}',
+            ? '${area.schools} schools, ${area.hospitalBeds} hospital beds'
+            : '${area.schools} schools, ${area.hospitalBeds} beds',
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
