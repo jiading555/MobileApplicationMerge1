@@ -158,9 +158,18 @@ class OpenDataService {
     String datasetId,
     Map<String, String> filters,
   ) async {
+    final queryParameters = <String, String>{
+      'id': datasetId,
+      'limit': '5000',
+    };
+    if (filters.isNotEmpty) {
+      queryParameters['ifilter'] = filters.entries
+          .map((entry) => '${entry.value}@${entry.key}')
+          .join(',');
+    }
     final uri = Uri.parse(
       _apiBase,
-    ).replace(queryParameters: {'id': datasetId, 'limit': '5000', ...filters});
+    ).replace(queryParameters: queryParameters);
     final response = await _client.get(uri);
     if (response.statusCode != 200) {
       throw Exception(
