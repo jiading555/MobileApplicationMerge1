@@ -13,6 +13,7 @@ class AreaData {
     required this.transportScore,
     required this.schools,
     required this.hospitals,
+    this.hospitalBeds = 0,
     required this.averagePricePsf,
     required this.rentalYield,
     required this.priceGrowth,
@@ -40,6 +41,7 @@ class AreaData {
   final double transportScore;
   final int schools;
   final int hospitals;
+  final int hospitalBeds;
   final int averagePricePsf;
   final double rentalYield;
   final double priceGrowth;
@@ -56,7 +58,10 @@ class AreaData {
   final bool isGovernmentProfile;
 
   double get infrastructureScore {
-    final facilityScore = ((schools / 130) * 60 + (hospitals / 15) * 40)
+    final healthcareScore = hospitalBeds > 0
+        ? (hospitalBeds / 1500 * 100)
+        : (hospitals / 15 * 100);
+    final facilityScore = ((schools / 130) * 60 + healthcareScore * 0.40)
         .clamp(0, 100)
         .toDouble();
     return (facilityScore * 0.45 +
@@ -119,6 +124,7 @@ class AreaData {
       transportScore: transportScore,
       schools: schoolCount,
       hospitals: fallback?.hospitals ?? 0,
+      hospitalBeds: profile.hospitalBedCount ?? fallback?.hospitalBeds ?? 0,
       averagePricePsf: fallback?.averagePricePsf ?? 0,
       rentalYield: fallback?.rentalYield ?? 0,
       priceGrowth: fallback?.priceGrowth ?? 0,
