@@ -10,11 +10,6 @@ class OpenDataService {
   final http.Client _client;
 
   static const _apiBase = 'https://api.data.gov.my/data-catalogue';
-  static const _populationDistrictCsv =
-      'https://storage.dosm.gov.my/population/population_district.csv';
-  static const _crimeDistrictCsv =
-      'https://storage.data.gov.my/publicsafety/crime_district.csv';
-
   static const defaultTargets = [
     ('Selangor', 'Petaling'),
     ('Selangor', 'Gombak'),
@@ -30,6 +25,7 @@ class OpenDataService {
         'https://open.dosm.gov.my/data-catalogue/hh_income_district',
     'crime_district': 'https://data.gov.my/data-catalogue/crime_district',
     'schools_district': 'https://data.gov.my/data-catalogue/schools_district',
+    'hospital_beds': 'https://data.gov.my/data-catalogue/hospital_beds',
   };
 
   static const _stateAliases = {
@@ -62,18 +58,32 @@ class OpenDataService {
 
   Future<List<AreaProfile>> fetchAreaProfiles({
     List<(String state, String district)> targets = defaultTargets,
-  }) async {
-    final profiles = <AreaProfile>[];
-    for (final target in targets) {
-      profiles.add(await _fetchAreaProfile(target.$1, target.$2));
-    }
-    return profiles;
-  }
+  }) => Future.wait(
+    targets.map((target) => _fetchAreaProfile(target.$1, target.$2)),
+  );
 
   Future<AreaProfile> _fetchAreaProfile(String state, String district) async {
-    final populationRows = await _fetchCsv(_populationDistrictCsv);
+    final results = await Future.wait<List<Map<String, dynamic>>>([
+      _fetchDataset('population_district', {
+        'state': state,
+        'district': district,
+      }),
+      _fetchDataset('hh_income_district', {
+        'state': state,
+        'district': district,
+      }),
+      _fetchDataset('schools_district', {
+        'state': state,
+        'district': district,
+      }),
+      _fetchDataset('crime_district', {'state': state}),
+      _fetchDataset('hospital_beds', {
+        'state': state,
+        'district': district,
+      }),
+    ]);
     final population = _newest(
-      _filterLocation(populationRows, state, district)
+      _filterLocation(results[0], state, district)
           .where(
             (record) =>
                 _normaliseText(record['sex']) == 'both' &&
@@ -84,25 +94,22 @@ class OpenDataService {
     );
     final income = _newest(
       _filterLocation(
-        await _fetchDataset('hh_income_district', {
-          'state': state,
-          'district': district,
-        }),
+        results[1],
         state,
         district,
       ),
     );
     final schools = _newest(
       _filterLocation(
-        await _fetchDataset('schools_district', {
-          'state': state,
-          'district': district,
-        }),
+        results[2],
         state,
         district,
       ),
     );
-    final crime = _newest(await _fetchCsv(_crimeDistrictCsv));
+    final crime = _newest(results[3]);
+    final hospitalBeds = _newest(
+      _filterLocation(results[4], state, district),
+    );
 
     final latestPopulation = _firstField(population, 'population');
     final populationValue = latestPopulation == null
@@ -113,11 +120,13 @@ class OpenDataService {
     final populationYear = _recordYear(population);
     final educationYear = _recordYear(schools);
     final crimeYear = _recordYear(crime);
+    final hospitalYear = _recordYear(hospitalBeds);
     final years = [
       populationYear,
       incomeYear,
       educationYear,
       crimeYear,
+      hospitalYear,
     ].whereType<int>();
 
     return AreaProfile(
@@ -134,6 +143,8 @@ class OpenDataService {
       crimeYear: crimeYear,
       educationInstitutionCount: _sumField(schools, 'schools')?.round(),
       educationYear: educationYear,
+      hospitalBedCount: _sumField(hospitalBeds, 'beds')?.round(),
+      hospitalYear: hospitalYear,
       transportStopCount: null,
       transportYear: null,
       dataYear: years.isEmpty ? null : years.reduce((a, b) => a > b ? a : b),
@@ -172,65 +183,6 @@ class OpenDataService {
       }
     }
     return const [];
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchCsv(String url) async {
-    final response = await _client.get(Uri.parse(url));
-    if (response.statusCode != 200) {
-      throw Exception('CSV dataset request failed (${response.statusCode}).');
-    }
-    return _parseCsv(response.body);
-  }
-
-  List<Map<String, dynamic>> _parseCsv(String source) {
-    final rows = <List<String>>[];
-    final row = <String>[];
-    final field = StringBuffer();
-    var inQuotes = false;
-
-    for (var index = 0; index < source.length; index++) {
-      final char = source[index];
-      final next = index + 1 < source.length ? source[index + 1] : '';
-      if (char == '"') {
-        if (inQuotes && next == '"') {
-          field.write('"');
-          index += 1;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char == ',' && !inQuotes) {
-        row.add(field.toString());
-        field.clear();
-      } else if ((char == '\n' || char == '\r') && !inQuotes) {
-        if (char == '\r' && next == '\n') {
-          index += 1;
-        }
-        row.add(field.toString());
-        field.clear();
-        if (row.any((value) => value.trim().isNotEmpty)) {
-          rows.add(List<String>.from(row));
-        }
-        row.clear();
-      } else {
-        field.write(char);
-      }
-    }
-    if (field.isNotEmpty || row.isNotEmpty) {
-      row.add(field.toString());
-      rows.add(List<String>.from(row));
-    }
-    if (rows.isEmpty) {
-      return const [];
-    }
-
-    final headers = rows.first;
-    return rows.skip(1).map((values) {
-      final record = <String, dynamic>{};
-      for (var index = 0; index < headers.length; index++) {
-        record[headers[index]] = index < values.length ? values[index] : '';
-      }
-      return record;
-    }).toList();
   }
 
   List<Map<String, dynamic>> _newest(List<Map<String, dynamic>> records) {
