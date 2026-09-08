@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
@@ -12,6 +13,8 @@ class ResetPasswordScreen extends StatefulWidget {
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final controller = TextEditingController();
   bool sent = false;
+  bool loading = false;
+  String? error;
 
   @override
   void dispose() {
@@ -47,7 +50,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 const SizedBox(height: 10),
                 Text(
                   sent
-                      ? 'A sample reset request was created for ${controller.text}.'
+                      ? 'A password reset link was sent to ${controller.text}.'
                       : 'Enter your account email to request a reset link.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: AppTheme.muted),
@@ -62,16 +65,40 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       prefixIcon: Icon(Icons.mail_outline_rounded),
                     ),
                   ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(error!, style: const TextStyle(color: Color(0xFFB42318))),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
-                        if (controller.text.contains('@')) {
-                          setState(() => sent = true);
+                      onPressed: loading ? null : () async {
+                        if (!controller.text.contains('@')) {
+                          setState(() => error = 'Enter a valid email address.');
+                          return;
                         }
+                        setState(() {
+                          loading = true;
+                          error = null;
+                        });
+                        final result = await AppScope.of(context).resetPassword(
+                          controller.text,
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          loading = false;
+                          error = result;
+                          sent = result == null;
+                        });
                       },
-                      child: const Text('Send reset link'),
+                      child: loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Send reset link'),
                     ),
                   ),
                 ] else
@@ -87,3 +114,4 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     );
   }
 }
+
