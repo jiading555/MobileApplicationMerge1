@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/auth_validators.dart';
 import '../../core/widgets/advisor_brand.dart';
 import 'register_screen.dart';
 import 'reset_password_screen.dart';
@@ -19,6 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final formKey = GlobalKey<FormState>();
   bool obscurePassword = true;
   String? error;
+
+  bool get canSubmit =>
+      AuthValidators.email(emailController.text) == null &&
+      AuthValidators.loginPassword(passwordController.text) == null;
 
   @override
   void dispose() {
@@ -55,6 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         constraints: const BoxConstraints(maxWidth: 440),
                         child: Form(
                           key: formKey,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -74,20 +80,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 30),
                               TextFormField(
                                 controller: emailController,
+                                onChanged: (_) => setState(() => error = null),
                                 keyboardType: TextInputType.emailAddress,
                                 decoration: const InputDecoration(
                                   labelText: 'Email address',
                                   hintText: 'name@example.com',
                                   prefixIcon: Icon(Icons.mail_outline_rounded),
                                 ),
-                                validator: (value) =>
-                                    value == null || !value.trim().contains('@')
-                                    ? 'Enter a valid email address'
-                                    : null,
+                                validator: AuthValidators.email,
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: passwordController,
+                                onChanged: (_) => setState(() => error = null),
                                 obscureText: obscurePassword,
                                 decoration: InputDecoration(
                                   labelText: 'Password',
@@ -106,10 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-                                validator: (value) =>
-                                    value == null || value.length < 6
-                                    ? 'Enter at least 6 characters'
-                                    : null,
+                                validator: AuthValidators.loginPassword,
                               ),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -140,7 +142,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 14),
                               ],
                               FilledButton(
-                                onPressed: AppScope.of(context).isAccountBusy ? null : submit,
+                                onPressed:
+                                    AppScope.of(context).isAccountBusy ||
+                                        !canSubmit
+                                    ? null
+                                    : submit,
                                 child: AppScope.of(context).isAccountBusy
                                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                     : const Text('Sign in'),
