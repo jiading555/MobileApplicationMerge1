@@ -142,7 +142,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      showDragHandle: false,
+      enableDrag: false,
+      useSafeArea: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.fromLTRB(
           22,
@@ -150,12 +152,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           22,
           MediaQuery.of(sheetContext).viewInsets.bottom + 24,
         ),
-        child: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        child: SingleChildScrollView(
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               Text('Personal information', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               TextFormField(
@@ -187,7 +190,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 },
                 child: const Text('Save changes'),
               ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -208,7 +212,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      showDragHandle: false,
+      enableDrag: false,
+      useSafeArea: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(22, 0, 22, MediaQuery.of(context).viewInsets.bottom + 24),
@@ -234,12 +240,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onChanged: (value) => setSheetState(() => type = value ?? 'Any'),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: _BudgetField(controller: minimum, label: 'Minimum budget')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _BudgetField(controller: maximum, label: 'Maximum budget')),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final minimumField = _BudgetField(
+                        controller: minimum,
+                        label: 'Minimum budget',
+                      );
+                      final maximumField = _BudgetField(
+                        controller: maximum,
+                        label: 'Maximum budget',
+                      );
+                      if (constraints.maxWidth < 520) {
+                        return Column(
+                          children: [
+                            minimumField,
+                            const SizedBox(height: 12),
+                            maximumField,
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: minimumField),
+                          const SizedBox(width: 12),
+                          Expanded(child: maximumField),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 18),
                   FilledButton(
@@ -281,37 +308,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _changePassword() async {
     final state = AppScope.of(context);
-    final controller = TextEditingController();
+    final currentPassword = TextEditingController();
+    final newPassword = TextEditingController();
+    final confirmPassword = TextEditingController();
     final formKey = GlobalKey<FormState>();
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Change password'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'New password'),
-            validator: (value) => value == null || value.length < 8 ? 'Use at least 8 characters' : null,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: currentPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.password],
+                    decoration: const InputDecoration(
+                      labelText: 'Current password',
+                      prefixIcon: Icon(Icons.lock_outline_rounded),
+                    ),
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Enter your current password'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: newPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    decoration: const InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: Icon(Icons.password_rounded),
+                    ),
+                    validator: (value) => value == null || value.length < 8
+                        ? 'Use at least 8 characters'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: confirmPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm new password',
+                      prefixIcon: Icon(Icons.password_rounded),
+                    ),
+                    validator: (value) => value != newPassword.text
+                        ? 'New passwords do not match'
+                        : null,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               if (!formKey.currentState!.validate()) return;
-              final error = await state.updatePassword(controller.text);
+              final error = await state.updatePassword(
+                currentPassword: currentPassword.text,
+                newPassword: newPassword.text,
+              );
               if (!mounted || !dialogContext.mounted) return;
               if (error == null) Navigator.pop(dialogContext);
-              _message(error ?? 'Password updated successfully.', error != null);
+              _message(
+                error ?? 'Password updated successfully.',
+                error != null,
+              );
             },
-            child: const Text('Update'),
+            child: const Text('Update password'),
           ),
         ],
       ),
     );
-    controller.dispose();
+    currentPassword.dispose();
+    newPassword.dispose();
+    confirmPassword.dispose();
   }
 }
 
