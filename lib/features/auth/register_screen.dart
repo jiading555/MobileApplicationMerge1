@@ -68,7 +68,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       final result = await AppScope.of(
                         context,
                       ).resendSignupConfirmation(emailController.text);
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
