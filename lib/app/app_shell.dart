@@ -41,9 +41,9 @@ class AppShell extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= 760;
-        final content = IndexedStack(
-          index: state.selectedIndex,
-          children: screens,
+        final content = KeyedSubtree(
+          key: ValueKey(state.selectedIndex),
+          child: screens[state.selectedIndex],
         );
         if (isTablet) {
           return Scaffold(
@@ -81,6 +81,8 @@ class AppShell extends StatelessWidget {
         return Scaffold(
           body: content,
           bottomNavigationBar: NavigationBar(
+            height: 68,
+            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
             selectedIndex: state.selectedIndex,
             onDestinationSelected: state.selectDestination,
             destinations: destinations
