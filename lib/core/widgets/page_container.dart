@@ -16,10 +16,10 @@ class PageContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: double.infinity,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: SizedBox(
+          width: double.infinity,
           child: Padding(padding: padding, child: child),
         ),
       ),
