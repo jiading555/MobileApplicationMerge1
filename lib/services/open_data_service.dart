@@ -10,6 +10,8 @@ class OpenDataService {
   final http.Client _client;
 
   static const _apiBase = 'https://api.data.gov.my/data-catalogue';
+  static const _populationDistrictCsv =
+      'https://storage.dosm.gov.my/population/population_district.csv';
   static const defaultTargets = [
     ('Selangor', 'Petaling'),
     ('Selangor', 'Gombak'),
@@ -56,34 +58,50 @@ class OpenDataService {
     'penang|timur laut': ['Timur Laut'],
   };
 
+  static const _hospitalDistrictAliases = {
+    'selangor|petaling': ['Petaling (Subang Jaya)'],
+    'selangor|gombak': ['Gombak (Rawang)'],
+    'selangor|ulu langat': ['Hulu Langat (Bangi)'],
+    'johor|johor bahru': ['Johor Bahru'],
+    'penang|timur laut': ['Timur Laut (Georgetown)'],
+  };
+
   Future<List<AreaProfile>> fetchAreaProfiles({
     List<(String state, String district)> targets = defaultTargets,
-  }) => Future.wait(
-    targets.map((target) => _fetchAreaProfile(target.$1, target.$2)),
-  );
-
-  Future<AreaProfile> _fetchAreaProfile(String state, String district) async {
+  }) async {
     final results = await Future.wait<List<Map<String, dynamic>>>([
-      _fetchDataset('population_district', {
-        'state': state,
-        'district': district,
-      }),
-      _fetchDataset('hh_income_district', {
-        'state': state,
-        'district': district,
-      }),
-      _fetchDataset('schools_district', {
-        'state': state,
-        'district': district,
-      }),
-      _fetchDataset('crime_district', {'state': state}),
-      _fetchDataset('hospital_beds', {
-        'state': state,
-        'district': district,
-      }),
+      _fetchPopulationDataset(),
+      _fetchDataset('hh_income_district'),
+      _fetchDataset('schools_district'),
+      _fetchDataset('crime_district'),
+      _fetchDataset('hospital_beds'),
     ]);
+    return targets
+        .map(
+          (target) => _buildAreaProfile(
+            target.$1,
+            target.$2,
+            populationRows: results[0],
+            incomeRows: results[1],
+            schoolRows: results[2],
+            allCrimeRows: results[3],
+            hospitalRows: results[4],
+          ),
+        )
+        .toList();
+  }
+
+  AreaProfile _buildAreaProfile(
+    String state,
+    String district, {
+    required List<Map<String, dynamic>> populationRows,
+    required List<Map<String, dynamic>> incomeRows,
+    required List<Map<String, dynamic>> schoolRows,
+    required List<Map<String, dynamic>> allCrimeRows,
+    required List<Map<String, dynamic>> hospitalRows,
+  }) {
     final population = _newest(
-      _filterLocation(results[0], state, district)
+      _filterLocation(populationRows, state, district)
           .where(
             (record) =>
                 _normaliseText(record['sex']) == 'both' &&
@@ -94,21 +112,23 @@ class OpenDataService {
     );
     final income = _newest(
       _filterLocation(
-        results[1],
+        incomeRows,
         state,
         district,
       ),
     );
     final schools = _newest(
       _filterLocation(
-        results[2],
+        schoolRows,
         state,
         district,
       ),
     );
-    final crime = _newest(results[3]);
+    final crime = _newest(allCrimeRows);
     final hospitalBeds = _newest(
-      _filterLocation(results[4], state, district),
+      _filterHospitalLocation(hospitalRows, state, district)
+          .where((record) => _normaliseText(record['type']) == 'all')
+          .toList(),
     );
 
     final latestPopulation = _firstField(population, 'population');
@@ -143,7 +163,7 @@ class OpenDataService {
       crimeYear: crimeYear,
       educationInstitutionCount: _sumField(schools, 'schools')?.round(),
       educationYear: educationYear,
-      hospitalBedCount: _sumField(hospitalBeds, 'beds')?.round(),
+      hospitalBedCount: _firstField(hospitalBeds, 'beds')?.round(),
       hospitalYear: hospitalYear,
       transportStopCount: null,
       transportYear: null,
@@ -154,22 +174,10 @@ class OpenDataService {
     );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDataset(
-    String datasetId,
-    Map<String, String> filters,
-  ) async {
-    final queryParameters = <String, String>{
-      'id': datasetId,
-      'limit': '5000',
-    };
-    if (filters.isNotEmpty) {
-      queryParameters['ifilter'] = filters.entries
-          .map((entry) => '${entry.value}@${entry.key}')
-          .join(',');
-    }
+  Future<List<Map<String, dynamic>>> _fetchDataset(String datasetId) async {
     final uri = Uri.parse(
       _apiBase,
-    ).replace(queryParameters: queryParameters);
+    ).replace(queryParameters: {'id': datasetId, 'limit': '100000'});
     final response = await _client.get(uri);
     if (response.statusCode != 200) {
       throw Exception(
@@ -192,6 +200,57 @@ class OpenDataService {
       }
     }
     return const [];
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPopulationDataset() async {
+    final apiRows = await _fetchDataset('population_district');
+    if (apiRows.isNotEmpty) return apiRows;
+    return _fetchCsv(_populationDistrictCsv);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCsv(String url) async {
+    final response = await _client.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception('Government CSV request failed (${response.statusCode}).');
+    }
+    return _parseCsv(response.body);
+  }
+
+  List<Map<String, dynamic>> _parseCsv(String source) {
+    final lines = const LineSplitter().convert(source);
+    if (lines.isEmpty) return const [];
+    final headers = _parseCsvLine(lines.first);
+    return lines.skip(1).where((line) => line.trim().isNotEmpty).map((line) {
+      final values = _parseCsvLine(line);
+      return {
+        for (var index = 0; index < headers.length; index++)
+          headers[index]: index < values.length ? values[index] : '',
+      };
+    }).toList();
+  }
+
+  List<String> _parseCsvLine(String line) {
+    final values = <String>[];
+    final field = StringBuffer();
+    var inQuotes = false;
+    for (var index = 0; index < line.length; index++) {
+      final char = line[index];
+      if (char == '"') {
+        if (inQuotes && index + 1 < line.length && line[index + 1] == '"') {
+          field.write('"');
+          index++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char == ',' && !inQuotes) {
+        values.add(field.toString());
+        field.clear();
+      } else {
+        field.write(char);
+      }
+    }
+    values.add(field.toString());
+    return values;
   }
 
   List<Map<String, dynamic>> _newest(List<Map<String, dynamic>> records) {
@@ -244,6 +303,22 @@ class OpenDataService {
       return _normaliseText(record['state']) == stateKey &&
           aliasKeys.contains(_normaliseText(record['district'])) &&
           _normaliseText(record['type']) == 'all';
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _filterHospitalLocation(
+    List<Map<String, dynamic>> records,
+    String state,
+    String district,
+  ) {
+    final stateKey = _normaliseText(state);
+    final aliases =
+        _hospitalDistrictAliases['$stateKey|${_normaliseText(district)}'] ??
+        [district];
+    final aliasKeys = aliases.map(_normaliseText).toSet();
+    return records.where((record) {
+      return _normaliseText(record['state']) == stateKey &&
+          aliasKeys.contains(_normaliseText(record['district']));
     }).toList();
   }
 
