@@ -6,6 +6,7 @@ import '../data/repositories/area_profile_repository.dart';
 import '../data/repositories/property_repository.dart';
 import '../data/repositories/user_account_repository.dart';
 import '../core/config/supabase_config.dart';
+import '../core/utils/auth_validators.dart';
 import '../models/app_user.dart';
 import '../models/area_data.dart';
 import '../models/area_profile.dart';
@@ -153,6 +154,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> login(String email, String password) async {
+    final emailError = AuthValidators.email(email);
+    if (emailError != null) return emailError;
+    final passwordError = AuthValidators.loginPassword(password);
+    if (passwordError != null) return passwordError;
     if (!SupabaseConfig.isConfigured) {
       return 'Supabase is not configured.';
     }
@@ -170,6 +175,13 @@ class AppState extends ChangeNotifier {
       isAuthenticated = true;
       return null;
     } on AuthException catch (error) {
+      final message = error.message.toLowerCase();
+      if (message.contains('invalid login credentials')) {
+        return 'Incorrect email address or password.';
+      }
+      if (message.contains('email not confirmed')) {
+        return 'Confirm your email address before signing in.';
+      }
       return error.message;
     } catch (_) {
       return 'Unable to sign in. Please try again.';
@@ -180,6 +192,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> register(String name, String email, String password) async {
+    if (name.trim().length < 2) return 'Enter your full name.';
+    final emailError = AuthValidators.email(email);
+    if (emailError != null) return emailError;
+    final passwordError = AuthValidators.registrationPassword(password);
+    if (passwordError != null) return passwordError;
     if (!SupabaseConfig.isConfigured) {
       return 'Supabase is not configured.';
     }
@@ -326,7 +343,8 @@ class AppState extends ChangeNotifier {
       return 'Password changes are unavailable in sample mode.';
     }
     if (currentPassword.isEmpty) return 'Enter your current password.';
-    if (newPassword.length < 8) return 'Use at least 8 characters.';
+    final passwordError = AuthValidators.registrationPassword(newPassword);
+    if (passwordError != null) return passwordError;
     if (currentPassword == newPassword) {
       return 'New password must be different from the current password.';
     }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/auth_validators.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -15,14 +16,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
   String? error;
   bool confirmationSent = false;
+
+  bool get canSubmit =>
+      nameController.text.trim().length >= 2 &&
+      AuthValidators.email(emailController.text) == null &&
+      AuthValidators.registrationPassword(passwordController.text) == null &&
+      AuthValidators.confirmPassword(
+            confirmPasswordController.text,
+            passwordController.text,
+          ) ==
+          null;
 
   @override
   void dispose() {
     nameController.dispose();
     emailController.dispose();
     passwordController.dispose();
+    confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -83,6 +96,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   )
                 : Form(
               key: formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -100,6 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 28),
                   TextFormField(
                     controller: nameController,
+                    onChanged: (_) => setState(() => error = null),
                     decoration: const InputDecoration(
                       labelText: 'Full name',
                       prefixIcon: Icon(Icons.person_outline_rounded),
@@ -112,26 +127,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 14),
                   TextFormField(
                     controller: emailController,
+                    onChanged: (_) => setState(() => error = null),
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(
                       labelText: 'Email address',
                       prefixIcon: Icon(Icons.mail_outline_rounded),
                     ),
-                    validator: (value) => value == null || !value.contains('@')
-                        ? 'Enter a valid email address'
-                        : null,
+                    validator: AuthValidators.email,
                   ),
                   const SizedBox(height: 14),
                   TextFormField(
                     controller: passwordController,
+                    onChanged: (_) => setState(() => error = null),
                     obscureText: true,
                     decoration: const InputDecoration(
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock_outline_rounded),
                     ),
-                    validator: (value) => value == null || value.length < 8
-                        ? 'Use at least 8 characters'
-                        : null,
+                    validator: AuthValidators.registrationPassword,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Use 8+ characters with uppercase, lowercase and a special character.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: confirmPasswordController,
+                    onChanged: (_) => setState(() => error = null),
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm password',
+                      prefixIcon: Icon(Icons.lock_reset_rounded),
+                    ),
+                    validator: (value) => AuthValidators.confirmPassword(
+                      value,
+                      passwordController.text,
+                    ),
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 14),
@@ -142,7 +174,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                   const SizedBox(height: 22),
                   FilledButton(
-                    onPressed: AppScope.of(context).isAccountBusy ? null : submit,
+                    onPressed:
+                        AppScope.of(context).isAccountBusy || !canSubmit
+                        ? null
+                        : submit,
                     child: AppScope.of(context).isAccountBusy
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('Create account'),
