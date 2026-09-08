@@ -25,15 +25,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void submit() {
+  Future<void> submit() async {
     if (!formKey.currentState!.validate()) {
       return;
     }
-    final result = AppScope.of(context).register(
+    final result = await AppScope.of(context).register(
       nameController.text,
       emailController.text,
       passwordController.text,
     );
+    if (!mounted) return;
     if (result == null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
@@ -111,12 +112,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                   const SizedBox(height: 22),
                   FilledButton(
-                    onPressed: submit,
-                    child: const Text('Create account'),
+                    onPressed: AppScope.of(context).isAccountBusy ? null : submit,
+                    child: AppScope.of(context).isAccountBusy
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Create account'),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'This MVP stores the account only for the current sample session.',
+                    'A confirmation email may be required before your first sign in.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.muted, fontSize: 12),
                   ),
@@ -129,3 +132,4 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 }
+
