@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/asset_repository.dart';
 import '../data/repositories/area_profile_repository.dart';
 import '../data/repositories/property_repository.dart';
+import '../data/repositories/user_account_repository.dart';
 import '../core/config/supabase_config.dart';
 import '../models/app_user.dart';
 import '../models/area_data.dart';
@@ -20,6 +24,7 @@ class AppState extends ChangeNotifier {
     this._areaProfileRepository = const AreaProfileRepository(),
     this._propertyRepository = const PropertyRepository(),
     this._recommendationService = const RecommendationService(),
+    this._userAccountRepository = const UserAccountRepository(),
     OpenDataService? openDataService,
     TeduhService? teduhService,
   }) : _openDataService = openDataService ?? OpenDataService(),
@@ -29,6 +34,7 @@ class AppState extends ChangeNotifier {
   final AreaProfileRepository _areaProfileRepository;
   final PropertyRepository _propertyRepository;
   final RecommendationService _recommendationService;
+  final UserAccountRepository _userAccountRepository;
   final OpenDataService _openDataService;
   final TeduhService _teduhService;
   final Set<String> _favouriteIds = {'p01', 'p03'};
@@ -38,9 +44,11 @@ class AppState extends ChangeNotifier {
   bool isAuthenticated = false;
   int selectedIndex = 0;
   AppUser user = const AppUser(
+    id: 'demo',
     name: 'Alex Tan',
     email: 'alex@smartadvisor.demo',
     phone: '+60 12-345 6789',
+    isDemo: true,
   );
   UserPreferences preferences = const UserPreferences();
   List<AreaData> areas = const [];
@@ -52,6 +60,8 @@ class AppState extends ChangeNotifier {
   bool isSyncingGovernmentData = false;
   String? openDataLoadMessage;
   String? governmentDataSyncMessage;
+  bool isAccountBusy = false;
+  String? accountError;
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
 
@@ -98,6 +108,14 @@ class AppState extends ChangeNotifier {
           isUsingProcessedTeduhProperties = true;
         }
       }
+
+      if (SupabaseConfig.isConfigured) {
+        final authUser = Supabase.instance.client.auth.currentUser;
+        if (authUser != null) {
+          await _loadAccount(authUser);
+          isAuthenticated = true;
+        }
+      }
     } catch (error) {
       loadError = error.toString();
     } finally {
@@ -141,42 +159,89 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String? login(String email, String password) {
-    final normalizedEmail = email.trim();
-    if (!normalizedEmail.contains('@')) {
-      return 'Enter a valid email address.';
+  Future<String?> login(String email, String password) async {
+    if (!SupabaseConfig.isConfigured) {
+      return 'Supabase is not configured.';
     }
-    if (password.length < 6) {
-      return 'Password must contain at least 6 characters.';
-    }
-    user = user.copyWith(email: normalizedEmail);
-    isAuthenticated = true;
+    isAccountBusy = true;
+    accountError = null;
     notifyListeners();
-    return null;
+    try {
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final authUser = response.user;
+      if (authUser == null) return 'Unable to sign in.';
+      await _loadAccount(authUser);
+      isAuthenticated = true;
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to sign in. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
   }
 
-  String? register(String name, String email, String password) {
-    if (name.trim().length < 2) {
-      return 'Enter your full name.';
+  Future<String?> register(String name, String email, String password) async {
+    if (!SupabaseConfig.isConfigured) {
+      return 'Supabase is not configured.';
     }
-    if (!email.trim().contains('@')) {
-      return 'Enter a valid email address.';
-    }
-    if (password.length < 8) {
-      return 'Use at least 8 characters for your password.';
-    }
-    user = AppUser(name: name.trim(), email: email.trim());
-    isAuthenticated = true;
+    isAccountBusy = true;
+    accountError = null;
     notifyListeners();
-    return null;
+    try {
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email.trim(),
+        password: password,
+        data: {'full_name': name.trim()},
+      );
+      final authUser = response.user;
+      if (authUser == null) return 'Unable to create account.';
+      user = AppUser(
+        id: authUser.id,
+        name: name.trim(),
+        email: authUser.email ?? email.trim(),
+      );
+      preferences = const UserPreferences();
+      isAuthenticated = response.session != null;
+      if (response.session != null) {
+        await _userAccountRepository.saveProfile(user);
+        await _userAccountRepository.savePreferences(authUser.id, preferences);
+      }
+      return response.session == null
+          ? 'Account created. Confirm your email before signing in.'
+          : null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to create account. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
   }
 
   void continueAsDemo() {
+    user = const AppUser(
+      id: 'demo',
+      name: 'Alex Tan',
+      email: 'alex@smartadvisor.demo',
+      phone: '+60 12-345 6789',
+      isDemo: true,
+    );
+    preferences = const UserPreferences();
     isAuthenticated = true;
     notifyListeners();
   }
 
-  void logout() {
+  Future<void> logout() async {
+    if (!user.isDemo && SupabaseConfig.isConfigured) {
+      await Supabase.instance.client.auth.signOut();
+    }
     isAuthenticated = false;
     selectedIndex = 0;
     notifyListeners();
@@ -210,9 +275,103 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  void updateUser(AppUser value) {
-    user = value;
+  Future<String?> saveUser(AppUser value) async {
+    if (value.isDemo) {
+      user = value;
+      notifyListeners();
+      return null;
+    }
+    isAccountBusy = true;
     notifyListeners();
+    try {
+      await _userAccountRepository.saveProfile(value);
+      user = value;
+      return null;
+    } catch (_) {
+      return 'Unable to save profile. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> saveAccountPreferences(UserPreferences value) async {
+    if (user.isDemo) {
+      preferences = value;
+      notifyListeners();
+      return null;
+    }
+    if (value.minimumBudget > value.maximumBudget) {
+      return 'Minimum budget cannot exceed maximum budget.';
+    }
+    isAccountBusy = true;
+    notifyListeners();
+    try {
+      await _userAccountRepository.savePreferences(user.id, value);
+      preferences = value;
+      return null;
+    } catch (_) {
+      return 'Unable to save preferences. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> updatePassword(String password) async {
+    if (user.isDemo) return 'Password changes are unavailable in sample mode.';
+    if (password.length < 8) return 'Use at least 8 characters.';
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: password),
+      );
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to update password. Please try again.';
+    }
+  }
+
+  Future<String?> resetPassword(String email) async {
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to send reset email. Please try again.';
+    }
+  }
+
+  Future<String?> uploadAvatar(
+    Uint8List bytes,
+    String extension,
+  ) async {
+    if (user.isDemo) return 'Avatar upload is unavailable in sample mode.';
+    isAccountBusy = true;
+    notifyListeners();
+    try {
+      final url = await _userAccountRepository.uploadAvatar(
+        userId: user.id,
+        bytes: bytes,
+        extension: extension,
+      );
+      final updated = user.copyWith(avatarUrl: url);
+      await _userAccountRepository.saveProfile(updated);
+      user = updated;
+      return null;
+    } catch (_) {
+      return 'Unable to upload avatar. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadAccount(User authUser) async {
+    user = await _userAccountRepository.loadProfile(authUser);
+    preferences = await _userAccountRepository.loadPreferences(authUser.id);
   }
 
   Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
@@ -299,3 +458,4 @@ class AppState extends ChangeNotifier {
     return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
   }
 }
+
