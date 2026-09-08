@@ -181,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     phone: phone.text.trim(),
                   );
                   final error = await state.saveUser(updated);
-                  if (!mounted) return;
+                  if (!mounted || !sheetContext.mounted) return;
                   if (error == null) Navigator.of(sheetContext).pop();
                   _message(error ?? 'Profile updated successfully.', error != null);
                 },
@@ -260,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         budget: max,
                       );
                       final error = await state.saveAccountPreferences(value);
-                      if (!mounted) return;
+                      if (!mounted || !sheetContext.mounted) return;
                       if (error == null) Navigator.of(sheetContext).pop();
                       _message(error ?? 'Preferences updated successfully.', error != null);
                     },
@@ -302,7 +302,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () async {
               if (!formKey.currentState!.validate()) return;
               final error = await state.updatePassword(controller.text);
-              if (!mounted) return;
+              if (!mounted || !dialogContext.mounted) return;
               if (error == null) Navigator.pop(dialogContext);
               _message(error ?? 'Password updated successfully.', error != null);
             },
