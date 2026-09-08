@@ -5,8 +5,11 @@ import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
+import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
+import '../../models/property.dart';
 import '../../models/user_preferences.dart';
+import '../search/property_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,6 +19,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  bool _showAllFavourites = false;
+
   Future<void> _pickAvatar() async {
     final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -82,6 +87,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             );
                     },
+                  ),
+                  const SizedBox(height: 14),
+                  _FavouriteProperties(
+                    properties: state.favouriteProperties,
+                    showAll: _showAllFavourites,
+                    onToggle: () => setState(
+                      () => _showAllFavourites = !_showAllFavourites,
+                    ),
+                    onOpen: (propertyId) => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PropertyDetailScreen(
+                          propertyId: propertyId,
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 14),
                   Card(
@@ -176,19 +196,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 decoration: const InputDecoration(labelText: 'Phone number'),
               ),
               const SizedBox(height: 18),
-              FilledButton(
-                onPressed: () async {
-                  if (!formKey.currentState!.validate()) return;
-                  final updated = state.user.copyWith(
-                    name: name.text.trim(),
-                    phone: phone.text.trim(),
-                  );
-                  final error = await state.saveUser(updated);
-                  if (!mounted || !sheetContext.mounted) return;
-                  if (error == null) Navigator.of(sheetContext).pop();
-                  _message(error ?? 'Profile updated successfully.', error != null);
-                },
-                child: const Text('Save changes'),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        if (!formKey.currentState!.validate()) return;
+                        final updated = state.user.copyWith(
+                          name: name.text.trim(),
+                          phone: phone.text.trim(),
+                        );
+                        final error = await state.saveUser(updated);
+                        if (!mounted || !sheetContext.mounted) return;
+                        if (error == null) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                        _message(
+                          error ?? 'Profile updated successfully.',
+                          error != null,
+                        );
+                      },
+                      child: const Text('Save changes'),
+                    ),
+                  ),
+                ],
               ),
               ],
             ),
@@ -454,6 +492,88 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+class _FavouriteProperties extends StatelessWidget {
+  const _FavouriteProperties({
+    required this.properties,
+    required this.showAll,
+    required this.onToggle,
+    required this.onOpen,
+  });
+
+  final List<Property> properties;
+  final bool showAll;
+  final VoidCallback onToggle;
+  final ValueChanged<String> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = showAll ? properties : properties.take(5).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Favourite properties',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const Spacer(),
+            Text(
+              '${properties.length} saved',
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (properties.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.favorite_border_rounded,
+                      size: 40,
+                      color: AppTheme.muted,
+                    ),
+                    SizedBox(height: 8),
+                    Text('No favourite properties yet.'),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          ...visible.map(
+            (property) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: PropertyCard(
+                property: property,
+                compact: true,
+                onTap: () => onOpen(property.id),
+              ),
+            ),
+          ),
+        if (properties.length > 5)
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: onToggle,
+              icon: Icon(
+                showAll
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+              ),
+              label: Text(showAll ? 'Show less' : 'Show all'),
+            ),
+          ),
+      ],
     );
   }
 }
