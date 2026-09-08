@@ -42,11 +42,9 @@ class AppState extends ChangeNotifier {
   bool isAuthenticated = false;
   int selectedIndex = 0;
   AppUser user = const AppUser(
-    id: 'demo',
-    name: 'Alex Tan',
-    email: 'alex@smartadvisor.demo',
-    phone: '+60 12-345 6789',
-    isDemo: true,
+    id: '',
+    name: '',
+    email: '',
   );
   UserPreferences preferences = const UserPreferences();
   List<AreaData> areas = const [];
