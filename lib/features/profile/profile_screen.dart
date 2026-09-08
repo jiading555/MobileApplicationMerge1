@@ -167,9 +167,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       useSafeArea: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.fromLTRB(
-          22,
-          0,
-          22,
+          24,
+          16,
+          24,
           MediaQuery.of(sheetContext).viewInsets.bottom + 24,
         ),
         child: SingleChildScrollView(
@@ -242,11 +242,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final state = AppScope.of(context);
     final current = state.preferences;
     final formKey = GlobalKey<FormState>();
-    final preferredState = TextEditingController(text: current.preferredState);
-    final district = TextEditingController(text: current.preferredDistrict);
-    final minimum = TextEditingController(text: current.minimumBudget.round().toString());
-    final maximum = TextEditingController(text: current.maximumBudget.round().toString());
-    var type = current.propertyType;
+    final minimum = TextEditingController(
+      text: current.minimumBudget.round().toString(),
+    );
+    final maximum = TextEditingController(
+      text: current.maximumBudget.round().toString(),
+    );
+
+    final states = state.areas
+        .map((area) => area.state.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    var selectedState = states.contains(current.preferredState)
+        ? current.preferredState
+        : '';
+
+    List<String> districtsFor(String selected) {
+      if (selected.isEmpty) return const [];
+      final values = state.areas
+          .where((area) => area.state == selected)
+          .map((area) => area.name.trim())
+          .where((value) => value.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      return values;
+    }
+
+    var districts = districtsFor(selectedState);
+    var selectedDistrict = districts.contains(current.preferredDistrict)
+        ? current.preferredDistrict
+        : '';
+
+    final propertyTypes = <String>{
+      'Any',
+      ...state.properties
+          .map((property) => property.type.trim())
+          .where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort((left, right) {
+        if (left == 'Any') return -1;
+        if (right == 'Any') return 1;
+        return left.compareTo(right);
+      });
+    var type = propertyTypes.contains(current.propertyType)
+        ? current.propertyType
+        : 'Any';
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -255,7 +299,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       useSafeArea: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(22, 0, 22, MediaQuery.of(context).viewInsets.bottom + 24),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            16,
+            24,
+            MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -263,21 +312,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Property preferences', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 16),
-                  TextFormField(controller: preferredState, decoration: const InputDecoration(labelText: 'Preferred state')),
-                  const SizedBox(height: 12),
-                  TextFormField(controller: district, decoration: const InputDecoration(labelText: 'Preferred district')),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: ['Any', 'Condominium', 'Apartment', 'Terrace', 'Semi-D'].contains(type) ? type : 'Any',
-                    decoration: const InputDecoration(labelText: 'Property type'),
-                    items: const ['Any', 'Condominium', 'Apartment', 'Terrace', 'Semi-D']
-                        .map((value) => DropdownMenuItem(value: value, child: Text(value)))
-                        .toList(),
-                    onChanged: (value) => setSheetState(() => type = value ?? 'Any'),
+                  Text(
+                    'Property preferences',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedState,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Preferred state',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('Any state'),
+                      ),
+                      ...states.map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => setSheetState(() {
+                      selectedState = value ?? '';
+                      districts = districtsFor(selectedState);
+                      selectedDistrict = '';
+                    }),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(selectedState),
+                    initialValue: selectedDistrict,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Preferred district',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('Any district'),
+                      ),
+                      ...districts.map(
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      ),
+                    ],
+                    onChanged: selectedState.isEmpty
+                        ? null
+                        : (value) => setSheetState(
+                            () => selectedDistrict = value ?? '',
+                          ),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: type,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Property type',
+                    ),
+                    items: propertyTypes
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setSheetState(
+                      () => type = value ?? 'Any',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final minimumField = _BudgetField(
@@ -306,30 +415,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     },
                   ),
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: () async {
-                      if (!formKey.currentState!.validate()) return;
-                      final min = double.parse(minimum.text);
-                      final max = double.parse(maximum.text);
-                      if (min > max) {
-                        _message('Minimum budget cannot exceed maximum budget.', true);
-                        return;
-                      }
-                      final value = current.copyWith(
-                        preferredState: preferredState.text.trim(),
-                        preferredDistrict: district.text.trim(),
-                        propertyType: type,
-                        minimumBudget: min,
-                        maximumBudget: max,
-                        budget: max,
-                      );
-                      final error = await state.saveAccountPreferences(value);
-                      if (!mounted || !sheetContext.mounted) return;
-                      if (error == null) Navigator.of(sheetContext).pop();
-                      _message(error ?? 'Preferences updated successfully.', error != null);
-                    },
-                    child: const Text('Save preferences'),
+                  const SizedBox(height: 22),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () async {
+                            if (!formKey.currentState!.validate()) return;
+                            final min = double.parse(minimum.text);
+                            final max = double.parse(maximum.text);
+                            if (min > max) {
+                              _message(
+                                'Minimum budget cannot exceed maximum budget.',
+                                true,
+                              );
+                              return;
+                            }
+                            final value = current.copyWith(
+                              preferredState: selectedState,
+                              preferredDistrict: selectedDistrict,
+                              propertyType: type,
+                              minimumBudget: min,
+                              maximumBudget: max,
+                              budget: max,
+                            );
+                            final error = await state.saveAccountPreferences(
+                              value,
+                            );
+                            if (!mounted || !sheetContext.mounted) return;
+                            if (error == null) {
+                              Navigator.of(sheetContext).pop();
+                            }
+                            _message(
+                              error ?? 'Preferences updated successfully.',
+                              error != null,
+                            );
+                          },
+                          child: const Text('Save preferences'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -338,8 +470,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-    preferredState.dispose();
-    district.dispose();
     minimum.dispose();
     maximum.dispose();
   }
@@ -585,7 +715,7 @@ class _PersonalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -607,7 +737,7 @@ class _PreferenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
