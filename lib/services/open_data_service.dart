@@ -241,15 +241,6 @@ class OpenDataService {
     return const [];
   }
 
-  Future<TransportSnapshot?> _safeFetchTransport(
-    List<(String state, String district)> targets,
-  ) async {
-    try {
-      return await _transportDataService.fetchStopCounts(targets: targets);
-    } catch (_) {
-      return null;
-    }
-  }
 
   Future<List<Map<String, dynamic>>> _fetchPopulationDataset() async {
     Object? apiError;
