@@ -9,12 +9,14 @@ class SimpleLineChart extends StatelessWidget {
     required this.values,
     this.height = 190,
     this.color = AppTheme.blue,
+    this.labels = const [],
     super.key,
   });
 
   final List<double> values;
   final double height;
   final Color color;
+  final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
@@ -22,17 +24,26 @@ class SimpleLineChart extends StatelessWidget {
       height: height,
       width: double.infinity,
       child: CustomPaint(
-        painter: _LineChartPainter(values: values, color: color),
+        painter: _LineChartPainter(
+          values: values,
+          color: color,
+          labels: labels,
+        ),
       ),
     );
   }
 }
 
 class _LineChartPainter extends CustomPainter {
-  const _LineChartPainter({required this.values, required this.color});
+  const _LineChartPainter({
+    required this.values,
+    required this.color,
+    required this.labels,
+  });
 
   final List<double> values;
   final Color color;
+  final List<String> labels;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -102,14 +113,16 @@ class _LineChartPainter extends CustomPainter {
       canvas.drawCircle(point, 3.5, dot);
       canvas.drawCircle(point, 1.7, Paint()..color = Colors.white);
     }
-    final labels = ['2018', '2019', '2020', '2021', '2022', '2023', '2024'];
+    final displayLabels = labels.length == values.length
+        ? labels
+        : List.generate(values.length, (index) => '${index + 1}');
     for (var index = 0; index < values.length; index++) {
       if (index.isOdd && index != values.length - 1) {
         continue;
       }
       final painter = TextPainter(
         text: TextSpan(
-          text: index < labels.length ? labels[index] : '${index + 1}',
+          text: displayLabels[index],
           style: const TextStyle(color: AppTheme.muted, fontSize: 9),
         ),
         textDirection: TextDirection.ltr,
@@ -123,5 +136,7 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
-      oldDelegate.values != values || oldDelegate.color != color;
+      oldDelegate.values != values ||
+      oldDelegate.color != color ||
+      oldDelegate.labels != labels;
 }
