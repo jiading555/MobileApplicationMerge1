@@ -40,6 +40,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final area = state.areaFor(selectedAreaId!);
     final sourceMode = state.isUsingLiveAreaProfiles
         ? 'data.gov.my API'
+        : state.isUsingMarketTrendCache
+        ? 'SQLite cache'
         : state.isUsingCloudAreaProfiles
         ? 'Supabase snapshot'
         : state.isUsingProcessedAreaProfiles
