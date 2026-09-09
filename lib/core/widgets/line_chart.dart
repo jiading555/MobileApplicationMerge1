@@ -55,10 +55,10 @@ class _SimpleLineChartState extends State<SimpleLineChart> {
                               chartWidth)
                           .clamp(0.0, 1.0);
                   final index =
-                      (ratio * (widget.values.length - 1)).round().clamp(
-                        0,
-                        widget.values.length - 1,
-                      );
+                      (ratio * (widget.values.length - 1))
+                          .round()
+                          .clamp(0, widget.values.length - 1)
+                          .toInt();
                   setState(() => selectedIndex = index);
                 },
           child: Stack(
