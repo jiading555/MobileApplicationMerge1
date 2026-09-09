@@ -188,6 +188,16 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         'data.gov.my - latest available release',
         'https://data.gov.my/data-catalogue/hospital_beds',
       ),
+      _DataSource(
+        'Public transport stops and routes',
+        'data.gov.my official GTFS - KTMB and Prasarana',
+        'https://developer.data.gov.my/realtime-api/gtfs-static',
+      ),
+      _DataSource(
+        'Administrative district boundaries',
+        'DOSM official district GeoJSON',
+        'https://github.com/dosm-malaysia/data-open/blob/main/datasets/geodata/administrative_2_district.geojson',
+      ),
     ];
     showModalBottomSheet<void>(
       context: context,
