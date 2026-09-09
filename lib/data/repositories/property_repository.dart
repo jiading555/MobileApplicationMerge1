@@ -67,11 +67,6 @@ class PropertyRepository {
     final state = _normalise(row['state']);
     final district = _normalise(row['district']);
 
-    // Do not guess an area when district/state data is missing.
-    if (state.isEmpty || district.isEmpty) {
-      return 'unknown';
-    }
-
     for (final area in areas) {
       if (_normalise(area.state) == state &&
           _normalise(area.name) == district) {
@@ -79,16 +74,16 @@ class PropertyRepository {
       }
     }
 
-    // No exact district match means this property cannot safely be used by
-    // the area-based advisor yet.
-    return 'unknown';
+    for (final area in areas) {
+      if (_normalise(area.state) == state) {
+        return area.id;
+      }
+    }
+
+    return areas.isEmpty ? 'unknown' : areas.first.id;
   }
 
   String _normalise(Object? value) {
-    if (value == null) {
-      return '';
-    }
-
     return value
         .toString()
         .trim()

@@ -6,12 +6,76 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
+import '../../models/property.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
+import '../../services/recommendation_service.dart';
 import '../search/property_detail_screen.dart';
 import 'ai_advisor_chat_screen.dart';
 import 'comparison_screen.dart';
 import 'saved_recommendations_screen.dart';
+
+
+String _normaliseAdvisorLocation(Object? value) {
+  if (value == null) {
+    return '';
+  }
+
+  return value
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+}
+
+bool _isUsableAdvisorProperty(
+    AppState state,
+    Property property,
+    ) {
+  final district = property.district?.trim();
+  final propertyState = property.state?.trim();
+
+  if (district == null ||
+      district.isEmpty ||
+      propertyState == null ||
+      propertyState.isEmpty) {
+    return false;
+  }
+
+  for (final area in state.areas) {
+    if (area.id != property.areaId) {
+      continue;
+    }
+
+    final districtMatches =
+        _normaliseAdvisorLocation(area.name) ==
+            _normaliseAdvisorLocation(district);
+
+    final stateMatches =
+        _normaliseAdvisorLocation(area.state) ==
+            _normaliseAdvisorLocation(propertyState);
+
+    if (districtMatches && stateMatches) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+List<Property> _advisorProperties(
+    AppState state,
+    ) {
+  return state.properties
+      .where(
+        (property) => _isUsableAdvisorProperty(
+      state,
+      property,
+    ),
+  )
+      .toList();
+}
 
 class AdvisorScreen extends StatefulWidget {
   const AdvisorScreen({super.key});
@@ -103,7 +167,14 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    final recommendations = state.recommendations;
+    final advisorProperties = _advisorProperties(state);
+
+    final recommendations =
+    const RecommendationService().rank(
+      properties: advisorProperties,
+      areas: state.areas,
+      preferences: state.preferences,
+    );
 
     final visibleRecommendations =
     recommendations.take(3).toList();
@@ -544,7 +615,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   }) {
     final validAreaIds = state.areas.map((area) => area.id).toSet();
 
-    return state.properties.any((property) {
+    return _advisorProperties(state).any((property) {
       final price = property.price;
 
       if (price == null) {
@@ -566,7 +637,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   }) {
     final validAreaIds = state.areas.map((area) => area.id).toSet();
 
-    final areaIdsWithProperties = state.properties
+    final areaIdsWithProperties = _advisorProperties(state)
         .where((property) {
       final price = property.price;
 
@@ -597,7 +668,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       return const [];
     }
 
-    final types = state.properties
+    final types = _advisorProperties(state)
         .where((property) {
       final price = property.price;
 
@@ -1096,7 +1167,7 @@ class _PreferencePanel extends StatelessWidget {
 
     // Only properties with a valid Advisor area, valid price and
     // price within the selected budget participate in the location cascade.
-    final areaIdsWithProperties = state.properties
+    final areaIdsWithProperties = _advisorProperties(state)
         .where((property) {
       final price = property.price;
 
@@ -1153,7 +1224,7 @@ class _PreferencePanel extends StatelessWidget {
     // type such as Semi-D is never offered for an area that has none.
     final availablePropertyTypes = effectiveAreaId == 'any'
         ? <String>[]
-        : state.properties
+        : _advisorProperties(state)
         .where((property) {
       final price = property.price;
 
