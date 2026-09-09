@@ -96,7 +96,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   )
                 : Form(
               key: formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -115,9 +114,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   TextFormField(
                     controller: nameController,
                     onChanged: (_) => setState(() => error = null),
+                    autovalidateMode:
+                        AutovalidateMode.onUserInteraction,
                     decoration: const InputDecoration(
                       labelText: 'Full name',
                       prefixIcon: Icon(Icons.person_outline_rounded),
+                      errorMaxLines: 3,
                     ),
                     validator: (value) =>
                         value == null || value.trim().length < 2
@@ -129,9 +131,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     controller: emailController,
                     onChanged: (_) => setState(() => error = null),
                     keyboardType: TextInputType.emailAddress,
+                    autovalidateMode:
+                        AutovalidateMode.onUserInteraction,
                     decoration: const InputDecoration(
                       labelText: 'Email address',
                       prefixIcon: Icon(Icons.mail_outline_rounded),
+                      errorMaxLines: 3,
                     ),
                     validator: AuthValidators.email,
                   ),
@@ -140,9 +145,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     controller: passwordController,
                     onChanged: (_) => setState(() => error = null),
                     obscureText: true,
+                    autovalidateMode:
+                        AutovalidateMode.onUserInteraction,
                     decoration: const InputDecoration(
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock_outline_rounded),
+                      errorMaxLines: 3,
                     ),
                     validator: AuthValidators.registrationPassword,
                   ),
@@ -156,9 +164,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     controller: confirmPasswordController,
                     onChanged: (_) => setState(() => error = null),
                     obscureText: true,
+                    autovalidateMode:
+                        AutovalidateMode.onUserInteraction,
                     decoration: const InputDecoration(
                       labelText: 'Confirm password',
                       prefixIcon: Icon(Icons.lock_reset_rounded),
+                      errorMaxLines: 3,
                     ),
                     validator: (value) => AuthValidators.confirmPassword(
                       value,
