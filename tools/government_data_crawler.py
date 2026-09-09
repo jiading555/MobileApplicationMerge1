@@ -373,7 +373,11 @@ def upsert(
             headers=headers,
             timeout=TIMEOUT,
         )
-        response.raise_for_status()
+        if not response.ok:
+            detail = response.text.strip()
+            raise RuntimeError(
+                f"Supabase upsert failed ({response.status_code}): {detail[:2000]}"
+            )
 
 
 def main() -> None:
