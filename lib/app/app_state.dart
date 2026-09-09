@@ -15,7 +15,6 @@ import '../models/property.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 import '../services/market_trend_cache.dart';
-import '../services/open_data_service.dart';
 import '../services/recommendation_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -25,17 +24,14 @@ class AppState extends ChangeNotifier {
     this._propertyRepository = const PropertyRepository(),
     this._recommendationService = const RecommendationService(),
     this._userAccountRepository = const UserAccountRepository(),
-    OpenDataService? openDataService,
     MarketTrendCache? marketTrendCache,
-  }) : _openDataService = openDataService ?? OpenDataService(),
-       _marketTrendCache = marketTrendCache ?? MarketTrendCache();
+  }) : _marketTrendCache = marketTrendCache ?? MarketTrendCache();
 
   final AssetRepository _repository;
   final AreaProfileRepository _areaProfileRepository;
   final PropertyRepository _propertyRepository;
   final RecommendationService _recommendationService;
   final UserAccountRepository _userAccountRepository;
-  final OpenDataService _openDataService;
   final MarketTrendCache _marketTrendCache;
   final Set<String> _favouriteIds = {'p01', 'p03'};
 
@@ -166,41 +162,24 @@ class AppState extends ChangeNotifier {
       }
       final latestCloudProfiles =
           await _areaProfileRepository.getAreaProfiles();
-      if (latestCloudProfiles.isEmpty ||
-          latestCloudProfiles.every(
-            (profile) =>
-                profile.marketPriceHistory.isEmpty &&
-                profile.marketPeriod == null,
-          )) {
-        throw Exception('No NAPIC market data was returned by Supabase.');
+      if (latestCloudProfiles.isEmpty) {
+        throw Exception('No government snapshot was returned by Supabase.');
       }
 
-      final areasWithLatestMarketData = _areasFromProfiles(
-        latestCloudProfiles,
-        areas,
-      );
-      final targets = areasWithLatestMarketData
-          .map((area) => (area.state, area.name))
-          .toSet()
-          .toList();
-      final governmentProfiles = await _openDataService.fetchAreaProfiles(
-        targets: targets,
-      );
-      final refreshedAreas = _areasFromProfiles(
-        governmentProfiles,
-        areasWithLatestMarketData,
+      final refreshedAreas = _withAllMalaysiaDistricts(
+        _areasFromProfiles(latestCloudProfiles, areas),
       );
       final cachedAt = DateTime.now().toUtc();
       await _saveMarketTrendCache(refreshedAreas, cachedAt);
       areas = refreshedAreas;
       marketTrendCacheUpdatedAt = cachedAt;
-      isUsingLiveAreaProfiles = true;
-      isUsingCloudAreaProfiles = false;
+      isUsingLiveAreaProfiles = false;
+      isUsingCloudAreaProfiles = true;
       isUsingProcessedAreaProfiles = false;
       isUsingMarketTrendCache = false;
       final years = _dataYears(refreshedAreas);
       governmentDataSyncMessage = years.isEmpty
-          ? 'Data refreshed successfully.'
+          ? 'Government snapshot refreshed.'
           : 'Data years: ${years.join(', ')}';
     } catch (error) {
       final detail = error.toString().replaceFirst('Exception: ', '');
