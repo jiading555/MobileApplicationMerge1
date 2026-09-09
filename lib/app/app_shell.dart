@@ -40,7 +40,8 @@ class AppShell extends StatelessWidget {
     final state = AppScope.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTablet = constraints.maxWidth >= 760;
+        final screenSize = MediaQuery.sizeOf(context);
+        final isTablet = screenSize.shortestSide >= 600;
         final content = KeyedSubtree(
           key: ValueKey(state.selectedIndex),
           child: screens[state.selectedIndex],
