@@ -180,7 +180,7 @@ class OpenDataService {
       hospitalBedCount: _firstField(hospitalBeds, 'beds')?.round(),
       hospitalYear: hospitalYear,
       transportStopCount: transport?.countFor(state, district),
-      transportYear: transport == null ? null : transport.retrievedAt.year,
+      transportYear: transport?.retrievedAt.year,
       dataYear: years.isEmpty ? null : years.reduce((a, b) => a > b ? a : b),
       source: 'OpenDOSM; data.gov.my',
       sourceUrl: _sourceReferences.values.join('; '),
