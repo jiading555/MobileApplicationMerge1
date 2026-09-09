@@ -28,12 +28,13 @@ class RecommendationService {
               final areaMatches =
                   preferences.preferredAreaId == 'any' ||
                   property.areaId == preferences.preferredAreaId;
+              final propertyArea = areaIndex[property.areaId];
               final stateMatches = preferences.preferredState.isEmpty ||
-                  _normalise(property.state) ==
+                  _normalise(property.state ?? propertyArea?.state) ==
                       _normalise(preferences.preferredState);
               final districtMatches =
                   preferences.preferredDistrict.isEmpty ||
-                  _normalise(property.district) ==
+                  _normalise(property.district ?? propertyArea?.name) ==
                       _normalise(preferences.preferredDistrict);
               return typeMatches &&
                   areaMatches &&
