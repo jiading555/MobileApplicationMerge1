@@ -60,11 +60,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         constraints: const BoxConstraints(maxWidth: 440),
                         child: Form(
                           key: formKey,
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (!wide) const AdvisorBrand(),
+                              if (!wide)
+                                const Align(
+                                  alignment: Alignment.center,
+                                  child: AdvisorBrand(),
+                                ),
                               if (!wide) const SizedBox(height: 44),
                               Text(
                                 'Welcome back',
@@ -82,10 +85,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 controller: emailController,
                                 onChanged: (_) => setState(() => error = null),
                                 keyboardType: TextInputType.emailAddress,
+                                autovalidateMode:
+                                    AutovalidateMode.onUserInteraction,
                                 decoration: const InputDecoration(
                                   labelText: 'Email address',
                                   hintText: 'name@example.com',
                                   prefixIcon: Icon(Icons.mail_outline_rounded),
+                                  errorMaxLines: 3,
                                 ),
                                 validator: AuthValidators.email,
                               ),
@@ -94,12 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 controller: passwordController,
                                 onChanged: (_) => setState(() => error = null),
                                 obscureText: obscurePassword,
+                                autovalidateMode:
+                                    AutovalidateMode.onUserInteraction,
                                 decoration: InputDecoration(
                                   labelText: 'Password',
                                   hintText: 'Enter your password',
                                   prefixIcon: const Icon(
                                     Icons.lock_outline_rounded,
                                   ),
+                                  errorMaxLines: 3,
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(
                                       () => obscurePassword = !obscurePassword,
