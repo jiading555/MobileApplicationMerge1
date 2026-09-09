@@ -26,8 +26,14 @@ from bs4 import BeautifulSoup
 from openpyxl import load_workbook
 
 PUBLICATIONS_URL = "https://napic.jpph.gov.my/en/latest-publication"
+ARCHIVED_PRICE_URLS = (
+    "https://napic.jpph.gov.my/storage/app/media//3-penerbitan/Shahrul/"
+    "Bahagian%20Pasaran%20Harta%20Tanah/Harga%20Kediaman%20Sukuan/"
+    "Q3%202025/Jadual%20Harga%20Kediaman%20Sukuan%20Tahunan%20Q3_2025.xlsx",
+)
 TARGETS = (
     ("Selangor", "Petaling"),
+    ("Selangor", "Klang"),
     ("Selangor", "Gombak"),
     ("Selangor", "Ulu Langat"),
     ("Johor", "Johor Bahru"),
@@ -274,7 +280,19 @@ def main():
         }
     )
     price_url, transaction_urls = discover_workbooks(session)
-    prices = price_indicators(get_bytes(session, price_url), TARGETS)
+    price_series: dict[tuple[str, str], dict[str, float]] = {}
+    successful_price_urls = []
+    for candidate_url in (*ARCHIVED_PRICE_URLS, price_url):
+        try:
+            snapshot = price_indicators(get_bytes(session, candidate_url), TARGETS)
+            successful_price_urls.append(candidate_url)
+            for location, (period, value) in snapshot.items():
+                price_series.setdefault(location, {})[period] = value
+        except Exception as error:
+            print(
+                f"warning: price workbook skipped ({candidate_url}): {error}",
+                file=sys.stderr,
+            )
     retrieved_at = datetime.now(timezone.utc).isoformat()
     rows = []
 
@@ -293,14 +311,21 @@ def main():
             continue
 
         for district in state_targets:
-            price = prices.get((state, district))
+            price_points = price_series.get((state, district))
             transaction = transactions.get(district)
-            if not price or not transaction:
+            if not price_points or not transaction:
                 print(f"warning: incomplete market data skipped for {district}, {state}", file=sys.stderr)
                 continue
-            price_period, price_value = price
+            price_period = max(price_points)
+            price_value = price_points[price_period]
             periods, history = existing_history(session, state, district)
-            periods, history = merge_history(periods, history, price_period, price_value)
+            for historic_period, historic_value in price_points.items():
+                periods, history = merge_history(
+                    periods,
+                    history,
+                    historic_period,
+                    historic_value,
+                )
             rows.append(
                 {
                     "area_id": area_id(state, district),
@@ -315,7 +340,9 @@ def main():
                     "transaction_value_million": transaction.value_million,
                     "previous_transaction_value_million": transaction.previous_value_million,
                     "market_period": transaction.period,
-                    "market_source_url": f"{price_url}; {transaction_url}",
+                    "market_source_url": "; ".join(
+                        [*successful_price_urls, transaction_url]
+                    ),
                     "market_retrieved_at": retrieved_at,
                 }
             )
