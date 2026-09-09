@@ -152,6 +152,17 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                             label: Text(label),
                             selected: selectedView == label,
                             showCheckmark: false,
+                            backgroundColor: Colors.white,
+                            selectedColor: const Color(0xFFDCEBFF),
+                            side: const BorderSide(
+                              color: Color(0xFFB8C7DA),
+                            ),
+                            labelStyle: TextStyle(
+                              color: selectedView == label
+                                  ? AppTheme.blue
+                                  : AppTheme.ink,
+                              fontWeight: FontWeight.w700,
+                            ),
                             onSelected: (_) =>
                                 setState(() => selectedView = label),
                           ),
