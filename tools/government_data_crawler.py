@@ -180,12 +180,26 @@ def crime_rows(rows: list[dict], state: str, district: str) -> list[dict]:
         (state_key, district_key), (district,)
     )
     alias_keys = {normalise(alias) for alias in aliases}
-    return [
+    state_rows = [
         row for row in rows
         if normalise(row.get("state")) == state_key
-        and normalise(row.get("district")) in alias_keys
-        and normalise(row.get("type")) == "all"
     ]
+    matched = [
+        row for row in state_rows
+        if normalise(row.get("district")) in alias_keys
+    ]
+
+    # "All" is a catalogue/UI aggregate and is not guaranteed to be a
+    # physical row. For a state-level target such as W.P. Kuala Lumpur,
+    # aggregate every police district when that row is absent.
+    if alias_keys == {"all"} and not matched:
+        matched = state_rows
+
+    aggregate_rows = [
+        row for row in matched
+        if normalise(row.get("type")) == "all"
+    ]
+    return aggregate_rows or matched
 
 
 def hospital_rows(rows: list[dict], state: str, district: str) -> list[dict]:
@@ -428,6 +442,28 @@ def main() -> None:
             "retrieved_at": retrieved_at.isoformat(),
         })
 
+    kl_snapshot = next(
+        (
+            row for row in output
+            if normalise(row["state"]) == "kuala lumpur"
+            and normalise(row["district"]) == "kuala lumpur"
+        ),
+        None,
+    )
+    if (
+        kl_snapshot is None
+        or kl_snapshot["crime_count"] is None
+        or kl_snapshot["crime_year"] is None
+    ):
+        raise RuntimeError(
+            "Kuala Lumpur crime snapshot is unavailable; "
+            "expected W.P. Kuala Lumpur state aggregate."
+        )
+
+    print(json.dumps({
+        "kuala_lumpur_crime_count": kl_snapshot["crime_count"],
+        "kuala_lumpur_crime_year": kl_snapshot["crime_year"],
+    }))
     upsert(session, output)
     print(json.dumps({"updated": len(output), "retrieved_at": retrieved_at.isoformat()}))
 
