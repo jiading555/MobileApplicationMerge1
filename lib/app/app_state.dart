@@ -52,6 +52,7 @@ class AppState extends ChangeNotifier {
   bool isUsingCloudProperties = false;
   bool isUsingProcessedTeduhProperties = false;
   bool isSyncingGovernmentData = false;
+  bool hasAttemptedInitialMarketRefresh = false;
   String? openDataLoadMessage;
   String? governmentDataSyncMessage;
   bool isAccountBusy = false;
@@ -117,6 +118,12 @@ class AppState extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> ensureInitialMarketData() async {
+    if (hasAttemptedInitialMarketRefresh) return;
+    hasAttemptedInitialMarketRefresh = true;
+    await refreshGovernmentData();
   }
 
   Future<void> refreshGovernmentData() async {
