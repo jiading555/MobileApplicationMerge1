@@ -47,6 +47,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         : state.isUsingProcessedAreaProfiles
         ? 'processed JSON'
         : 'local sample';
+    final refreshMessage = state.governmentDataSyncMessage;
+    final refreshFailed = refreshMessage?.startsWith('Refresh failed.') ?? false;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Market trend & analytics'),
@@ -115,6 +117,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           child: Text(
                             state.isSyncingGovernmentData
                                 ? 'Loading latest government data...'
+                                : refreshMessage?.startsWith('Data years:') ==
+                                      true
+                                ? refreshMessage!
                                 : area.isGovernmentProfile
                                 ? 'Government data via $sourceMode'
                                 : 'Local sample snapshot ${area.snapshotDate}',
@@ -142,6 +147,37 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         );
                 },
               ),
+              if (refreshFailed) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFECEC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFF2B8B5)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Color(0xFFB3261E),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          refreshMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFFB3261E),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
