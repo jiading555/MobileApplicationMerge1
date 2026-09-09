@@ -626,7 +626,10 @@ class _Overview extends StatelessWidget {
                       Expanded(flex: 2, child: demand),
                     ],
                   )
-                : Column(children: [price, const SizedBox(height: 14), demand]);
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [price, const SizedBox(height: 14), demand],
+                  );
           },
         ),
       ],
