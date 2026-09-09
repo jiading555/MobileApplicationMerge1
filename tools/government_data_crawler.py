@@ -17,8 +17,8 @@ import requests
 API_BASE = "https://api.data.gov.my/data-catalogue"
 POPULATION_CSV = "https://storage.dosm.gov.my/population/population_district.csv"
 BOUNDARIES_URL = (
-    "https://raw.githubusercontent.com/dosm-malaysia/data-open/main/"
-    "datasets/geodata/administrative_2_district.geojson"
+    "https://raw.githubusercontent.com/dosm-malaysia/kawasanku-front/main/"
+    "geojson/district_mobile.json"
 )
 GTFS_FEEDS = (
     "https://api.data.gov.my/gtfs-static/ktmb",
@@ -276,8 +276,12 @@ def transport_counts(
     session: requests.Session,
     targets: list[tuple[str, str]],
 ) -> dict[str, int]:
-    response = session.get(BOUNDARIES_URL, timeout=TIMEOUT)
-    response.raise_for_status()
+    try:
+        response = session.get(BOUNDARIES_URL, timeout=TIMEOUT)
+        response.raise_for_status()
+    except Exception as error:
+        print(f"warning: district boundary feed skipped: {error}")
+        return {}
     target_keys = {location_key(*target) for target in targets}
     boundaries = {}
     for feature in response.json().get("features", []):
@@ -291,7 +295,8 @@ def transport_counts(
             if polygons:
                 boundaries[key] = polygons
     if not boundaries:
-        raise RuntimeError("No district boundaries matched")
+        print("warning: no district boundaries matched; transport is unavailable")
+        return {}
 
     stops: dict[tuple[float, float], tuple[float, float]] = {}
     successful_feeds = 0
@@ -317,7 +322,8 @@ def transport_counts(
         except Exception as error:
             print(f"warning: GTFS feed skipped: {feed}: {error}")
     if successful_feeds == 0:
-        raise RuntimeError("All official GTFS feeds failed")
+        print("warning: all official GTFS feeds failed; transport is unavailable")
+        return {}
 
     counts = {key: 0 for key in boundaries}
     boxes = {}
@@ -348,14 +354,23 @@ def transport_counts(
     return counts
 
 
-def upsert(session: requests.Session, rows: list[dict]) -> None:
+def upsert(
+    session: requests.Session,
+    rows: list[dict],
+    service_role_key: str,
+) -> None:
     endpoint = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/area_profiles"
+    headers = {
+        "apikey": service_role_key,
+        "Authorization": f"Bearer {service_role_key}",
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+    }
     for start in range(0, len(rows), 100):
         response = session.post(
             endpoint,
             params={"on_conflict": "area_id"},
             json=rows[start:start + 100],
-            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            headers=headers,
             timeout=TIMEOUT,
         )
         response.raise_for_status()
@@ -369,8 +384,6 @@ def main() -> None:
     session = requests.Session()
     session.headers.update({
         "User-Agent": "SmartPropertyAdvisor-Government-Crawler/1.0",
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
     })
     population_all = fetch_population(session)
     income_all = fetch_dataset(session, "hh_income_district")
@@ -464,7 +477,7 @@ def main() -> None:
         "kuala_lumpur_crime_count": kl_snapshot["crime_count"],
         "kuala_lumpur_crime_year": kl_snapshot["crime_year"],
     }))
-    upsert(session, output)
+    upsert(session, output, key)
     print(json.dumps({"updated": len(output), "retrieved_at": retrieved_at.isoformat()}))
 
 
