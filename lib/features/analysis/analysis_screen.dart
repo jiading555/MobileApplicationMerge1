@@ -483,8 +483,8 @@ class _Overview extends StatelessWidget {
                 : const _UnavailableCard(
                     title: 'Historical price indicator',
                     message:
-                        'NAPIC market snapshot is not loaded yet. Run the '
-                        'crawler after applying the Supabase migration.',
+                        'No NAPIC district data reference is available for '
+                        'this district.',
                   );
             final demand = _DemandCard(area: area);
             return constraints.maxWidth >= 820
@@ -584,7 +584,8 @@ class _PriceTrend extends StatelessWidget {
     if (!area.hasMarketPrice) {
       return const _UnavailableCard(
         title: 'Historical price indicator',
-        message: 'No NAPIC price snapshot is available for this district.',
+        message:
+            'No NAPIC district data reference is available for this district.',
       );
     }
     final changePercent = area.hasMarketHistory
@@ -827,7 +828,7 @@ class _DemandCard extends StatelessWidget {
       return const _UnavailableCard(
         title: 'Market demand signal',
         message:
-            'NAPIC current and previous-year transaction totals are required.',
+            'No complete NAPIC district transaction reference is available.',
       );
     }
     return Card(
