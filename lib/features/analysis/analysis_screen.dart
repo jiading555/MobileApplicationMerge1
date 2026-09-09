@@ -21,6 +21,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
   String? selectedState;
   String? comparisonState;
+  String selectedMarketArea = 'Overall';
   String selectedPropertyType = 'All residential';
   String comparisonPropertyType = 'All residential';
   String selectedView = 'Overview';
@@ -135,6 +136,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       setState(() {
                         selectedState = value;
                         selectedAreaId = districts.first.id;
+                        selectedMarketArea = 'Overall';
                         selectedPropertyType = 'All residential';
                       });
                     },
@@ -163,6 +165,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         .toList(),
                     onChanged: (value) => setState(() {
                       selectedAreaId = value;
+                      selectedMarketArea = 'Overall';
                       selectedPropertyType = 'All residential';
                     }),
                   );
@@ -290,6 +293,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 _Overview(
                   area: area,
                   sourceMode: sourceMode,
+                  marketArea: selectedMarketArea,
+                  onMarketAreaChanged: (value) => setState(() {
+                    selectedMarketArea = value;
+                    selectedPropertyType = 'All residential';
+                  }),
                   propertyType: selectedPropertyType,
                   onPropertyTypeChanged: (value) =>
                       setState(() => selectedPropertyType = value),
@@ -297,6 +305,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               if (selectedView == 'Price trend')
                 _PriceTrend(
                   area: area,
+                  marketArea: selectedMarketArea,
+                  onMarketAreaChanged: (value) => setState(() {
+                    selectedMarketArea = value;
+                    selectedPropertyType = 'All residential';
+                  }),
                   propertyType: selectedPropertyType,
                   onPropertyTypeChanged: (value) =>
                       setState(() => selectedPropertyType = value),
@@ -448,25 +461,48 @@ class _Overview extends StatelessWidget {
   const _Overview({
     required this.area,
     required this.sourceMode,
+    required this.marketArea,
+    required this.onMarketAreaChanged,
     required this.propertyType,
     required this.onPropertyTypeChanged,
   });
 
   final AreaData area;
   final String sourceMode;
+  final String marketArea;
+  final ValueChanged<String> onMarketAreaChanged;
   final String propertyType;
   final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final priceTypes = ['All residential', ...area.marketPropertyTypes];
+    final marketAreas = ['Overall', ...area.marketAreas];
+    final activeMarketArea = marketAreas.contains(marketArea)
+        ? marketArea
+        : 'Overall';
+    final priceTypes = [
+      'All residential',
+      ...area.propertyTypesForMarketArea(activeMarketArea),
+    ];
     final activeType = priceTypes.contains(propertyType)
         ? propertyType
         : 'All residential';
-    final latestPrice = area.latestPriceFor(activeType);
-    final priceValues = area.priceHistoryFor(activeType);
-    final pricePeriods = area.pricePeriodsFor(activeType);
-    final priceGrowth = area.priceGrowthFor(activeType);
+    final latestPrice = area.latestPriceFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final priceValues = area.priceHistoryFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final pricePeriods = area.pricePeriodsFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final priceGrowth = area.priceGrowthFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
     final cards = [
       MetricCard(
         label: 'Population',
@@ -550,10 +586,13 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 14),
         _SourceSummary(area: area, sourceMode: sourceMode),
         const SizedBox(height: 22),
-        _PropertyTypeFilter(
-          value: activeType,
-          options: priceTypes,
-          onChanged: onPropertyTypeChanged,
+        _PriceFilters(
+          marketArea: activeMarketArea,
+          marketAreas: marketAreas,
+          onMarketAreaChanged: onMarketAreaChanged,
+          propertyType: activeType,
+          propertyTypes: priceTypes,
+          onPropertyTypeChanged: onPropertyTypeChanged,
         ),
         const SizedBox(height: 14),
         LayoutBuilder(
@@ -561,7 +600,8 @@ class _Overview extends StatelessWidget {
             final price = latestPrice != null
                 ? _ChartCard(
                     title: 'Historical price indicator',
-                    subtitle: 'NAPIC $activeType district median (RM/unit)',
+                    subtitle:
+                        'NAPIC $activeMarketArea · $activeType median (RM/unit)',
                     value: formatRinggit(latestPrice.round()),
                     trend: priceGrowth == null
                         ? 'More quarters required'
@@ -598,6 +638,75 @@ class _Overview extends StatelessWidget {
   }
 }
 
+class _PriceFilters extends StatelessWidget {
+  const _PriceFilters({
+    required this.marketArea,
+    required this.marketAreas,
+    required this.onMarketAreaChanged,
+    required this.propertyType,
+    required this.propertyTypes,
+    required this.onPropertyTypeChanged,
+  });
+
+  final String marketArea;
+  final List<String> marketAreas;
+  final ValueChanged<String> onMarketAreaChanged;
+  final String propertyType;
+  final List<String> propertyTypes;
+  final ValueChanged<String> onPropertyTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final marketFilter = DropdownButtonFormField<String>(
+      key: ValueKey('market-area-$marketArea'),
+      initialValue: marketArea,
+      isExpanded: true,
+      menuMaxHeight: 420,
+      decoration: const InputDecoration(
+        labelText: 'NAPIC market area',
+        prefixIcon: Icon(Icons.location_city_outlined),
+      ),
+      items: marketAreas
+          .map(
+            (option) => DropdownMenuItem(
+              value: option,
+              child: Text(
+                option,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: (selected) {
+        if (selected != null) onMarketAreaChanged(selected);
+      },
+    );
+    final typeFilter = _PropertyTypeFilter(
+      value: propertyType,
+      options: propertyTypes,
+      onChanged: onPropertyTypeChanged,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth >= 680
+          ? Row(
+              children: [
+                Expanded(child: marketFilter),
+                const SizedBox(width: 12),
+                Expanded(child: typeFilter),
+              ],
+            )
+          : Column(
+              children: [
+                marketFilter,
+                const SizedBox(height: 12),
+                typeFilter,
+              ],
+            ),
+    );
+  }
+}
+
 class _PropertyTypeFilter extends StatelessWidget {
   const _PropertyTypeFilter({
     required this.value,
@@ -612,6 +721,7 @@ class _PropertyTypeFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
+      key: ValueKey('property-type-$value'),
       initialValue: value,
       isExpanded: true,
       menuMaxHeight: 420,
@@ -707,27 +817,50 @@ class _SourceItem extends StatelessWidget {
 class _PriceTrend extends StatelessWidget {
   const _PriceTrend({
     required this.area,
+    required this.marketArea,
+    required this.onMarketAreaChanged,
     required this.propertyType,
     required this.onPropertyTypeChanged,
   });
 
   final AreaData area;
+  final String marketArea;
+  final ValueChanged<String> onMarketAreaChanged;
   final String propertyType;
   final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final options = ['All residential', ...area.marketPropertyTypes];
+    final marketAreas = ['Overall', ...area.marketAreas];
+    final activeMarketArea = marketAreas.contains(marketArea)
+        ? marketArea
+        : 'Overall';
+    final options = [
+      'All residential',
+      ...area.propertyTypesForMarketArea(activeMarketArea),
+    ];
     final activeType = options.contains(propertyType)
         ? propertyType
         : 'All residential';
-    final values = area.priceHistoryFor(activeType);
-    final periods = area.pricePeriodsFor(activeType);
-    final latestPrice = area.latestPriceFor(activeType);
+    final values = area.priceHistoryFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final periods = area.pricePeriodsFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final latestPrice = area.latestPriceFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
     final changePercent = values.length >= 2 && values.first != 0
         ? (values.last - values.first) / values.first * 100
         : null;
-    final latestGrowth = area.priceGrowthFor(activeType);
+    final latestGrowth = area.priceGrowthFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -741,10 +874,13 @@ class _PriceTrend extends StatelessWidget {
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 16),
-        _PropertyTypeFilter(
-          value: activeType,
-          options: options,
-          onChanged: onPropertyTypeChanged,
+        _PriceFilters(
+          marketArea: activeMarketArea,
+          marketAreas: marketAreas,
+          onMarketAreaChanged: onMarketAreaChanged,
+          propertyType: activeType,
+          propertyTypes: options,
+          onPropertyTypeChanged: onPropertyTypeChanged,
         ),
         const SizedBox(height: 14),
         if (latestPrice == null)
@@ -757,7 +893,8 @@ class _PriceTrend extends StatelessWidget {
         else ...[
           _ChartCard(
             title: 'Historical price indicator',
-            subtitle: 'NAPIC $activeType district median (RM/unit)',
+            subtitle:
+                'NAPIC $activeMarketArea · $activeType median (RM/unit)',
             value: formatRinggit(latestPrice.round()),
             trend: changePercent == null
                 ? 'More quarters required'
