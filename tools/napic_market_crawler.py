@@ -196,6 +196,8 @@ def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
         weighted_sum = 0.0
         sample_sum = 0
         property_type = None
+        type_weighted_sums: dict[str, float] = {}
+        type_sample_sums: dict[str, int] = {}
         for row in ws.iter_rows(min_row=6, values_only=True):
             if row[0]:
                 property_type = str(row[0]).strip()
@@ -205,12 +207,26 @@ def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
             median = row[5] if len(row) > 5 else None
             sample = row[8] if len(row) > 8 else None
             if isinstance(median, (int, float)) and isinstance(sample, (int, float)) and sample > 0:
-                weighted_sum += float(median) * int(sample)
-                sample_sum += int(sample)
+                sample_count = int(sample)
+                weighted_sum += float(median) * sample_count
+                sample_sum += sample_count
+                type_weighted_sums[property_type] = (
+                    type_weighted_sums.get(property_type, 0.0)
+                    + float(median) * sample_count
+                )
+                type_sample_sums[property_type] = (
+                    type_sample_sums.get(property_type, 0) + sample_count
+                )
         if sample_sum:
+            prices_by_type = {
+                property_type: round(weighted / type_sample_sums[property_type], 2)
+                for property_type, weighted in type_weighted_sums.items()
+                if type_sample_sums[property_type] > 0
+            }
             results[(state, display_district)] = (
                 period,
                 round(weighted_sum / sample_sum, 2),
+                prices_by_type,
             )
     return results
 
@@ -302,7 +318,10 @@ def existing_history(session: requests.Session, state: str, district: str):
         url,
         params={
             "area_id": f"eq.{area_id(state, district)}",
-            "select": "market_price_periods,market_price_history",
+            "select": (
+                "market_price_periods,market_price_history,"
+                "market_price_periods_by_type,market_price_history_by_type"
+            ),
             "limit": "1",
         },
         timeout=TIMEOUT,
@@ -310,10 +329,23 @@ def existing_history(session: requests.Session, state: str, district: str):
     response.raise_for_status()
     rows = response.json()
     if not rows:
-        return [], []
+        return [], [], {}, {}
+    row = rows[0]
+    periods_by_type = {
+        str(key): [str(period) for period in value]
+        for key, value in (row.get("market_price_periods_by_type") or {}).items()
+        if isinstance(value, list)
+    }
+    history_by_type = {
+        str(key): [float(number) for number in value]
+        for key, value in (row.get("market_price_history_by_type") or {}).items()
+        if isinstance(value, list)
+    }
     return (
-        list(rows[0].get("market_price_periods") or []),
-        [float(value) for value in rows[0].get("market_price_history") or []],
+        list(row.get("market_price_periods") or []),
+        [float(value) for value in row.get("market_price_history") or []],
+        periods_by_type,
+        history_by_type,
     )
 
 
@@ -322,6 +354,26 @@ def merge_history(periods: list[str], values: list[float], period: str, value: f
     merged[period] = value
     ordered = sorted(merged)
     return ordered, [merged[key] for key in ordered]
+
+
+def merge_type_history(
+    periods_by_type: dict[str, list[str]],
+    history_by_type: dict[str, list[float]],
+    period: str,
+    prices_by_type: dict[str, float],
+):
+    merged_periods = {key: list(value) for key, value in periods_by_type.items()}
+    merged_history = {key: list(value) for key, value in history_by_type.items()}
+    for property_type, price in prices_by_type.items():
+        periods, history = merge_history(
+            merged_periods.get(property_type, []),
+            merged_history.get(property_type, []),
+            period,
+            price,
+        )
+        merged_periods[property_type] = periods
+        merged_history[property_type] = history
+    return merged_periods, merged_history
 
 
 def upsert(session: requests.Session, rows: list[dict]):
@@ -353,13 +405,19 @@ def main():
     )
     price_url, transaction_urls = discover_workbooks(session)
     price_series: dict[tuple[str, str], dict[str, float]] = {}
+    price_series_by_type: dict[
+        tuple[str, str], dict[str, dict[str, float]]
+    ] = {}
     successful_price_urls = []
     for candidate_url in (*ARCHIVED_PRICE_URLS, price_url):
         try:
             snapshot = price_indicators(get_bytes(session, candidate_url), TARGETS)
             successful_price_urls.append(candidate_url)
-            for location, (period, value) in snapshot.items():
+            for location, (period, value, prices_by_type) in snapshot.items():
                 price_series.setdefault(location, {})[period] = value
+                location_types = price_series_by_type.setdefault(location, {})
+                for property_type, type_price in prices_by_type.items():
+                    location_types.setdefault(property_type, {})[period] = type_price
         except Exception as error:
             print(
                 f"warning: price workbook skipped ({candidate_url}): {error}",
@@ -390,7 +448,12 @@ def main():
                 continue
             price_period = max(price_points)
             price_value = price_points[price_period]
-            periods, history = existing_history(session, state, district)
+            (
+                periods,
+                history,
+                periods_by_type,
+                history_by_type,
+            ) = existing_history(session, state, district)
             for historic_period, historic_value in price_points.items():
                 periods, history = merge_history(
                     periods,
@@ -398,6 +461,16 @@ def main():
                     historic_period,
                     historic_value,
                 )
+            for property_type, type_points in price_series_by_type.get(
+                (state, district), {}
+            ).items():
+                for historic_period, historic_value in type_points.items():
+                    periods_by_type, history_by_type = merge_type_history(
+                        periods_by_type,
+                        history_by_type,
+                        historic_period,
+                        {property_type: historic_value},
+                    )
             rows.append(
                 {
                     "area_id": area_id(state, district),
@@ -405,6 +478,8 @@ def main():
                     "district": district,
                     "market_price_periods": periods,
                     "market_price_history": history,
+                    "market_price_periods_by_type": periods_by_type,
+                    "market_price_history_by_type": history_by_type,
                     "median_residential_price": price_value,
                     "market_price_year": int(price_period[:4]),
                     "transaction_count": transaction.count,
