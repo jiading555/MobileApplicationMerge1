@@ -295,7 +295,9 @@ class _Overview extends StatelessWidget {
             ? '${area.schools} schools, ${area.hospitalBeds} hospital beds'
             : '${area.schools} schools (${area.educationYear}), '
                   '${area.hospitalBeds} beds'
-                  '${area.hospitalYear == null ? '' : ' (${area.hospitalYear})'}',
+                  '${area.hospitalYear == null ? '' : ' (${area.hospitalYear})'}, '
+                  '${area.transportStopCount} transport stops'
+                  '${area.transportYear == null ? '' : ' (${area.transportYear})'}',
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
@@ -636,7 +638,7 @@ class _DemandCard extends StatelessWidget {
     final demand =
         ((area.populationGrowth * 9) +
                 (area.rentalYield * 8) +
-                (area.connectivityScore * 0.28))
+                (area.transportScore * 0.28))
             .clamp(0, 100)
             .toDouble();
     return Card(
@@ -695,8 +697,8 @@ class _DemandCard extends StatelessWidget {
             ),
             _SignalRow(label: 'Rental yield', value: area.rentalYield / 6),
             _SignalRow(
-              label: 'Connectivity',
-              value: area.connectivityScore / 100,
+              label: 'Public transport',
+              value: area.transportScore / 100,
             ),
           ],
         ),
@@ -878,7 +880,7 @@ class _DataCaveat extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Police districts and administrative districts are not always identical. Smart Property Advisor normalizes selected indicators for comparison and clearly separates sample listings from official source metadata.',
+              'Police districts and administrative districts are not always identical. Infrastructure combines schools (35%), hospital beds (35%), and official GTFS public-transport stops (30%), adjusted per 10,000 residents. Missing sources are excluded and the available weights are rescaled.',
               style: TextStyle(color: AppTheme.navy, fontSize: 12),
             ),
           ),
