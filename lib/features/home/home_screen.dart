@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/formatters.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/metric_card.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
@@ -16,7 +18,16 @@ class HomeScreen extends StatelessWidget {
     final state = AppScope.of(context);
     final featured = state.properties.take(4).toList();
     final topAreas = [...state.areas]
-      ..sort((left, right) => right.priceGrowth.compareTo(left.priceGrowth));
+      ..sort(
+        (left, right) =>
+            (right.population ?? -1).compareTo(left.population ?? -1),
+      );
+    final populatedAreas = state.areas
+        .where((area) => area.population != null)
+        .length;
+    final incomeAreas = state.areas
+        .where((area) => area.medianIncome != null)
+        .length;
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
@@ -34,14 +45,17 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 30),
                     SectionHeader(
                       title: 'Market snapshot',
-                      subtitle: 'Curated Malaysian open-data snapshot - 2024',
+                      subtitle:
+                          'Supabase-backed official data currently loaded',
                       actionLabel: 'View analysis',
                       onAction: () => state.selectDestination(4),
                     ),
                     const SizedBox(height: 14),
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final columns = constraints.maxWidth >= 900 ? 4 : 2;
+                        final columns = ResponsiveLayout.isTablet(context)
+                            ? 4
+                            : 2;
                         final width =
                             (constraints.maxWidth - (columns - 1) * 12) /
                             columns;
@@ -51,39 +65,43 @@ class HomeScreen extends StatelessWidget {
                           children: [
                             SizedBox(
                               width: width,
-                              child: const MetricCard(
-                                label: 'Average price',
-                                value: 'RM 596 psf',
-                                trend: '+5.9% annual',
+                              child: MetricCard(
+                                label: 'Properties',
+                                value: formatCount(state.properties.length),
+                                trend: state.isUsingCloudProperties
+                                    ? 'Supabase / TEDUH'
+                                    : 'Unavailable',
                                 icon: Icons.home_work_outlined,
                               ),
                             ),
                             SizedBox(
                               width: width,
-                              child: const MetricCard(
-                                label: 'Population growth',
-                                value: '3.5%',
-                                trend: '+0.4 pt',
+                              child: MetricCard(
+                                label: 'Area profiles',
+                                value: formatCount(state.areas.length),
+                                trend: state.isUsingCloudAreaProfiles
+                                    ? 'Supabase'
+                                    : 'Unavailable',
                                 icon: Icons.groups_2_outlined,
                                 color: AppTheme.teal,
                               ),
                             ),
                             SizedBox(
                               width: width,
-                              child: const MetricCard(
-                                label: 'Rental yield',
-                                value: '4.25%',
-                                trend: '+0.3 pt',
+                              child: MetricCard(
+                                label: 'Population coverage',
+                                value: formatCount(populatedAreas),
+                                trend: 'Official districts',
                                 icon: Icons.percent_rounded,
                                 color: AppTheme.green,
                               ),
                             ),
                             SizedBox(
                               width: width,
-                              child: const MetricCard(
-                                label: 'Areas compared',
-                                value: '6',
-                                trend: '4 data sources',
+                              child: MetricCard(
+                                label: 'Income coverage',
+                                value: formatCount(incomeAreas),
+                                trend: 'Matched profiles',
                                 icon: Icons.compare_arrows_rounded,
                                 color: Color(0xFF7758C8),
                               ),
@@ -96,7 +114,7 @@ class HomeScreen extends StatelessWidget {
                     const SectionHeader(
                       title: 'Trending areas',
                       subtitle:
-                          'Ranked by the price-growth signal in this snapshot',
+                          'Ranked by latest available official population',
                     ),
                     const SizedBox(height: 14),
                     SizedBox(
@@ -110,7 +128,7 @@ class HomeScreen extends StatelessWidget {
                           return _AreaCard(
                             name: area.name,
                             state: area.state,
-                            growth: area.priceGrowth,
+                            population: area.population,
                             position: index + 1,
                             onTap: () => state.selectDestination(4),
                           );
@@ -127,7 +145,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 14),
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        if (constraints.maxWidth < 700) {
+                        if (!ResponsiveLayout.isTablet(context)) {
                           return Column(
                             children: featured
                                 .map(
@@ -150,12 +168,12 @@ class HomeScreen extends StatelessWidget {
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: constraints.maxWidth >= 1050
-                                    ? 4
-                                    : 2,
+                                crossAxisCount:
+                                    ResponsiveLayout.isDesktop(context) ? 4 : 2,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
-                                childAspectRatio: constraints.maxWidth >= 1050
+                                childAspectRatio:
+                                    ResponsiveLayout.isDesktop(context)
                                     ? 0.82
                                     : 1.02,
                               ),
@@ -307,16 +325,14 @@ class _ModuleHub extends StatelessWidget {
         Text('App hub', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 5),
         const Text(
-          'Jump into each module from one place. Property and location tools use local sample data for this build.',
+          'Jump into each module from one place. Property and location tools use the official app data loaded from Supabase when configured.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 980
-                ? 3
-                : constraints.maxWidth >= 640
-                ? 2
+            final columns = ResponsiveLayout.isTablet(context)
+                ? (constraints.maxWidth >= 980 ? 3 : 2)
                 : 1;
             final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
             return Wrap(
@@ -450,14 +466,14 @@ class _AreaCard extends StatelessWidget {
   const _AreaCard({
     required this.name,
     required this.state,
-    required this.growth,
+    required this.population,
     required this.position,
     required this.onTap,
   });
 
   final String name;
   final String state;
-  final double growth;
+  final int? population;
   final int position;
   final VoidCallback onTap;
 
@@ -503,7 +519,9 @@ class _AreaCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '+${growth.toStringAsFixed(1)}% price signal',
+                  population == null
+                      ? 'Population unavailable'
+                      : '${formatCount(population!)} population',
                   style: const TextStyle(
                     color: AppTheme.green,
                     fontSize: 11,

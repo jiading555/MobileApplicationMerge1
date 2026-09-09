@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
@@ -57,7 +58,7 @@ class PropertyDetailScreen extends StatelessWidget {
           maxWidth: 1000,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 760;
+              final wide = ResponsiveLayout.isTablet(context);
               final visual = PropertyArt(
                 palette: property.palette,
                 height: wide ? 430 : 250,
@@ -201,25 +202,25 @@ class PropertyDetailScreen extends StatelessWidget {
                     crossAxisCount: wide ? 4 : 2,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    childAspectRatio: wide ? 1.35 : 1.25,
+                    childAspectRatio: wide ? 1.35 : 0.95,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     children: [
                       _Signal(
                         label: 'Safety',
-                        value: '${area.safetyScore.round()}/100',
+                        value: _scoreText(area.safetyScore),
                       ),
                       _Signal(
                         label: 'Infrastructure',
-                        value: '${area.infrastructureScore.round()}/100',
+                        value: _scoreText(area.infrastructureScore),
                       ),
                       _Signal(
                         label: 'Price growth',
-                        value: '+${area.priceGrowth.toStringAsFixed(1)}%',
+                        value: _percentText(area.priceGrowth),
                       ),
                       _Signal(
                         label: 'Rental yield',
-                        value: '${area.rentalYield.toStringAsFixed(1)}%',
+                        value: _percentText(area.rentalYield),
                       ),
                     ],
                   ),
@@ -231,14 +232,14 @@ class PropertyDetailScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   _AreaProfileCard(
                     areaName: '${area.name}, ${area.state}',
-                    population: formatCount(area.population),
-                    medianIncome: formatRinggit(area.medianIncome),
-                    schools: area.schools,
-                    hospitals: area.hospitals,
+                    population: _countText(area.population),
+                    medianIncome: _ringgitText(area.medianIncome),
+                    schools: _countText(area.schools),
+                    hospitals: _countText(area.hospitals),
                     coordinates: property.hasCoordinates
                         ? '${property.latitude!.toStringAsFixed(4)}, ${property.longitude!.toStringAsFixed(4)}'
                         : 'Coordinates unavailable',
-                    snapshotDate: area.snapshotDate,
+                    snapshotDate: area.snapshotDate ?? 'Not available',
                     source: area.source,
                   ),
                   const SizedBox(height: 16),
@@ -345,8 +346,8 @@ class _AreaProfileCard extends StatelessWidget {
   final String areaName;
   final String population;
   final String medianIncome;
-  final int schools;
-  final int hospitals;
+  final String schools;
+  final String hospitals;
   final String coordinates;
   final String snapshotDate;
   final String source;
@@ -376,12 +377,12 @@ class _AreaProfileCard extends StatelessWidget {
             _InfoRow(
               icon: Icons.school_outlined,
               label: 'Education institutions',
-              value: '$schools',
+              value: schools,
             ),
             _InfoRow(
               icon: Icons.local_hospital_outlined,
               label: 'Hospitals',
-              value: '$hospitals',
+              value: hospitals,
             ),
             _InfoRow(
               icon: Icons.explore_outlined,
@@ -568,4 +569,20 @@ class _Signal extends StatelessWidget {
       ),
     );
   }
+}
+
+String _countText(int? value) {
+  return value == null ? 'Not available' : formatCount(value);
+}
+
+String _ringgitText(int? value) {
+  return value == null ? 'Not available' : formatRinggit(value);
+}
+
+String _scoreText(double? value) {
+  return value == null ? 'N/A' : '${value.round()}/100';
+}
+
+String _percentText(double? value) {
+  return value == null ? 'Not available' : '${value.toStringAsFixed(1)}%';
 }

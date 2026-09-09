@@ -93,18 +93,18 @@ class _ComparisonColumn extends StatelessWidget {
                       ? 'Unavailable'
                       : formatRinggit(property.pricePerSqft!.round()),
                 ),
-                _Row(label: 'Safety', value: '${area.safetyScore.round()}/100'),
+                _Row(label: 'Safety', value: _scoreText(area.safetyScore)),
                 _Row(
                   label: 'Infrastructure',
-                  value: '${area.infrastructureScore.round()}/100',
+                  value: _scoreText(area.infrastructureScore),
                 ),
                 _Row(
                   label: 'Price growth',
-                  value: '+${area.priceGrowth.toStringAsFixed(1)}%',
+                  value: _percentText(area.priceGrowth),
                 ),
                 _Row(
                   label: 'Rental yield',
-                  value: '${area.rentalYield.toStringAsFixed(1)}%',
+                  value: _percentText(area.rentalYield),
                 ),
                 const SizedBox(height: 14),
                 const Text(
@@ -170,6 +170,14 @@ class _ComparisonColumn extends StatelessWidget {
       ),
     );
   }
+}
+
+String _scoreText(double? value) {
+  return value == null ? 'N/A' : '${value.round()}/100';
+}
+
+String _percentText(double? value) {
+  return value == null ? 'Not available' : '${value.toStringAsFixed(1)}%';
 }
 
 class _Row extends StatelessWidget {

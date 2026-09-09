@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../core/utils/location_normalizer.dart';
 import '../models/area_profile.dart';
 
 class OpenDataService {
@@ -15,14 +16,6 @@ class OpenDataService {
   static const _crimeDistrictCsv =
       'https://storage.data.gov.my/publicsafety/crime_district.csv';
 
-  static const defaultTargets = [
-    ('Selangor', 'Petaling'),
-    ('Selangor', 'Gombak'),
-    ('Selangor', 'Ulu Langat'),
-    ('Johor', 'Johor Bahru'),
-    ('Pulau Pinang', 'Timur Laut'),
-  ];
-
   static const _sourceReferences = {
     'population_district':
         'https://open.dosm.gov.my/data-catalogue/population_district',
@@ -32,20 +25,6 @@ class OpenDataService {
     'schools_district': 'https://data.gov.my/data-catalogue/schools_district',
   };
 
-  static const _stateAliases = {
-    'pulau pinang': 'penang',
-    'p pinang': 'penang',
-    'w.p. kuala lumpur': 'kuala lumpur',
-    'wp kuala lumpur': 'kuala lumpur',
-    'wilayah persekutuan kuala lumpur': 'kuala lumpur',
-    'w.p. putrajaya': 'putrajaya',
-    'wp putrajaya': 'putrajaya',
-    'w.p. labuan': 'labuan',
-    'wp labuan': 'labuan',
-  };
-
-  static const _displayNames = {'penang': 'Pulau Pinang'};
-
   static const _crimeDistrictAliases = {
     'selangor|petaling': [
       'Petaling Jaya',
@@ -54,102 +33,104 @@ class OpenDataService {
       'Sungai Buloh',
       'Serdang',
     ],
-    'selangor|gombak': ['Gombak'],
-    'selangor|ulu langat': ['Kajang', 'Ampang Jaya'],
-    'johor|johor bahru': ['Johor Bahru Selatan', 'Johor Bahru Utara'],
-    'penang|timur laut': ['Timur Laut'],
+    'selangor|ulu_langat': ['Kajang', 'Ampang Jaya'],
+    'johor|johor_bahru': ['Johor Bahru Selatan', 'Johor Bahru Utara'],
   };
 
-  Future<List<AreaProfile>> fetchAreaProfiles({
-    List<(String state, String district)> targets = defaultTargets,
-  }) async {
+  Future<List<AreaProfile>> fetchAreaProfiles() async {
+    final retrievedAt = DateTime.now().toUtc();
+    final populationRows = await _fetchCsv(_populationDistrictCsv);
+    final incomeRows = await _fetchDataset('hh_income_district');
+    final schoolRows = await _fetchDataset('schools_district');
+    final crimeRows = await _fetchCsv(_crimeDistrictCsv);
+
+    final populationByKey = _latestRecordsByLocation(
+      populationRows,
+      predicate: (record) =>
+          _normaliseText(record['sex']) == 'both' &&
+          _normaliseText(record['age']) == 'overall' &&
+          _normaliseText(record['ethnicity']) == 'overall',
+    );
+    final incomeByKey = _latestRecordsByLocation(incomeRows);
+    final schoolsByKey = _latestRecordsByLocation(schoolRows);
+    final crimeByKey = _latestRecordsByLocation(
+      crimeRows,
+      predicate: (record) => _normaliseText(record['type']) == 'all',
+    );
+
     final profiles = <AreaProfile>[];
-    for (final target in targets) {
-      profiles.add(await _fetchAreaProfile(target.$1, target.$2));
+    for (final entry in populationByKey.entries) {
+      final master = _masterDistrict(entry.value);
+      if (master == null) {
+        continue;
+      }
+
+      final key = entry.key;
+      final population = _firstField(entry.value, const ['population', 'pop']);
+      final populationValue = population == null
+          ? null
+          : (population * 1000).round();
+      final incomeRecords = incomeByKey[key] ?? const [];
+      final schoolRecords = schoolsByKey[key] ?? const [];
+      final crimeRecords = _crimeRecordsFor(key, crimeByKey);
+      final years = [
+        _recordYear(entry.value),
+        _recordYear(incomeRecords),
+        _recordYear(schoolRecords),
+        _recordYear(crimeRecords),
+      ].whereType<int>();
+
+      profiles.add(
+        AreaProfile(
+          areaId: LocationNormalizer.canonicalAreaId(
+            master.state,
+            master.district,
+          ),
+          state: master.state,
+          district: master.district,
+          population: populationValue,
+          populationYear: _recordYear(entry.value),
+          medianHouseholdIncome: _firstField(incomeRecords, const [
+            'income_median',
+            'median_income',
+            'median_household_income',
+          ]),
+          incomeYear: _recordYear(incomeRecords),
+          crimeCount: _sumField(crimeRecords, const [
+            'crimes',
+            'crime',
+            'total',
+          ])?.round(),
+          crimeYear: _recordYear(crimeRecords),
+          educationInstitutionCount: _sumField(schoolRecords, const [
+            'schools',
+            'school',
+            'total',
+          ])?.round(),
+          educationYear: _recordYear(schoolRecords),
+          transportStopCount: null,
+          transportYear: null,
+          dataYear: years.isEmpty
+              ? null
+              : years.reduce((a, b) => a > b ? a : b),
+          source: 'OpenDOSM; data.gov.my',
+          sourceUrl: _sourceReferences.values.join('; '),
+          retrievedAt: retrievedAt,
+        ),
+      );
     }
+
+    profiles.sort((left, right) {
+      final byState = left.state.compareTo(right.state);
+      return byState == 0 ? left.district.compareTo(right.district) : byState;
+    });
     return profiles;
   }
 
-  Future<AreaProfile> _fetchAreaProfile(String state, String district) async {
-    final populationRows = await _fetchCsv(_populationDistrictCsv);
-    final population = _newest(
-      _filterLocation(populationRows, state, district)
-          .where(
-            (record) =>
-                _normaliseText(record['sex']) == 'both' &&
-                _normaliseText(record['age']) == 'overall' &&
-                _normaliseText(record['ethnicity']) == 'overall',
-          )
-          .toList(),
-    );
-    final income = _newest(
-      _filterLocation(
-        await _fetchDataset('hh_income_district', {
-          'state': state,
-          'district': district,
-        }),
-        state,
-        district,
-      ),
-    );
-    final schools = _newest(
-      _filterLocation(
-        await _fetchDataset('schools_district', {
-          'state': state,
-          'district': district,
-        }),
-        state,
-        district,
-      ),
-    );
-    final crime = _newest(await _fetchCsv(_crimeDistrictCsv));
-
-    final latestPopulation = _firstField(population, 'population');
-    final populationValue = latestPopulation == null
-        ? null
-        : (latestPopulation * 1000).round();
-    final crimeRows = _filterCrimeLocation(crime, state, district);
-    final incomeYear = _recordYear(income);
-    final populationYear = _recordYear(population);
-    final educationYear = _recordYear(schools);
-    final crimeYear = _recordYear(crime);
-    final years = [
-      populationYear,
-      incomeYear,
-      educationYear,
-      crimeYear,
-    ].whereType<int>();
-
-    return AreaProfile(
-      areaId:
-          '${_normaliseText(state).replaceAll(' ', '_')}_'
-          '${_normaliseText(district).replaceAll(' ', '_')}',
-      state: _titleText(state),
-      district: _titleText(district),
-      population: populationValue,
-      populationYear: populationYear,
-      medianHouseholdIncome: _firstField(income, 'income_median'),
-      incomeYear: incomeYear,
-      crimeCount: _sumField(crimeRows, 'crimes')?.round(),
-      crimeYear: crimeYear,
-      educationInstitutionCount: _sumField(schools, 'schools')?.round(),
-      educationYear: educationYear,
-      transportStopCount: null,
-      transportYear: null,
-      dataYear: years.isEmpty ? null : years.reduce((a, b) => a > b ? a : b),
-      source: 'OpenDOSM; data.gov.my',
-      sourceUrl: _sourceReferences.values.join('; '),
-      retrievedAt: DateTime.now().toUtc(),
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchDataset(
-    String datasetId,
-    Map<String, String> filters,
-  ) async {
+  Future<List<Map<String, dynamic>>> _fetchDataset(String datasetId) async {
     final uri = Uri.parse(
       _apiBase,
-    ).replace(queryParameters: {'id': datasetId, 'limit': '5000', ...filters});
+    ).replace(queryParameters: {'id': datasetId, 'limit': '5000'});
     final response = await _client.get(uri);
     if (response.statusCode != 200) {
       throw Exception(
@@ -233,77 +214,139 @@ class OpenDataService {
     }).toList();
   }
 
-  List<Map<String, dynamic>> _newest(List<Map<String, dynamic>> records) {
-    final dated = records.where((record) => record['date'] != null).toList();
-    if (dated.isEmpty) {
-      return records;
+  Map<String, List<Map<String, dynamic>>> _latestRecordsByLocation(
+    List<Map<String, dynamic>> records, {
+    bool Function(Map<String, dynamic> record)? predicate,
+  }) {
+    final byKey = <String, List<Map<String, dynamic>>>{};
+    for (final record in records) {
+      if (predicate != null && !predicate(record)) {
+        continue;
+      }
+      final key = _recordLocationKey(record);
+      if (key == null) {
+        continue;
+      }
+      byKey.putIfAbsent(key, () => []).add(record);
     }
-    dated.sort(
-      (left, right) =>
-          right['date'].toString().compareTo(left['date'].toString()),
-    );
-    final latest = dated.first['date'];
-    return dated.where((record) => record['date'] == latest).toList();
+
+    return byKey.map((key, records) {
+      final latestYear = records
+          .map(_recordYearFromMap)
+          .whereType<int>()
+          .fold<int?>(null, (latest, year) {
+            if (latest == null || year > latest) {
+              return year;
+            }
+            return latest;
+          });
+      if (latestYear == null) {
+        return MapEntry(key, records);
+      }
+      return MapEntry(
+        key,
+        records
+            .where((record) => _recordYearFromMap(record) == latestYear)
+            .toList(),
+      );
+    });
   }
 
-  int? _recordYear(List<Map<String, dynamic>> records) {
+  List<Map<String, dynamic>> _crimeRecordsFor(
+    String masterKey,
+    Map<String, List<Map<String, dynamic>>> crimeByKey,
+  ) {
+    final exact = crimeByKey[masterKey];
+    if (exact != null && exact.isNotEmpty) {
+      return exact;
+    }
+
+    final aliases = _crimeDistrictAliases[masterKey];
+    if (aliases == null) {
+      return const [];
+    }
+
+    final stateKey = masterKey.split('|').first;
+    final records = <Map<String, dynamic>>[];
+    for (final alias in aliases) {
+      records.addAll(
+        crimeByKey['$stateKey|${LocationNormalizer.canonicalDistrictId(alias)}'] ??
+            const [],
+      );
+    }
+    return records;
+  }
+
+  _MasterDistrict? _masterDistrict(List<Map<String, dynamic>> records) {
     for (final record in records) {
-      final date = record['date']?.toString().trim() ?? '';
-      if (date.length >= 4) {
-        return int.tryParse(date.substring(0, 4));
+      final state = LocationNormalizer.displayStateName(record['state']);
+      final district = LocationNormalizer.displayDistrictName(
+        record['district'],
+      );
+      if (state.isNotEmpty && district.isNotEmpty) {
+        return _MasterDistrict(state, district);
       }
     }
     return null;
   }
 
-  List<Map<String, dynamic>> _filterLocation(
-    List<Map<String, dynamic>> records,
-    String state,
-    String district,
-  ) {
-    final stateKey = _normaliseText(state);
-    final districtKey = _normaliseText(district);
-    return records.where((record) {
-      return _normaliseText(record['state']) == stateKey &&
-          _normaliseText(record['district']) == districtKey;
-    }).toList();
+  String? _recordLocationKey(Map<String, dynamic> record) {
+    final state = LocationNormalizer.canonicalStateId(record['state']);
+    final district = LocationNormalizer.canonicalDistrictId(record['district']);
+    if (state.isEmpty || district.isEmpty) {
+      return null;
+    }
+    return '$state|$district';
   }
 
-  List<Map<String, dynamic>> _filterCrimeLocation(
-    List<Map<String, dynamic>> records,
-    String state,
-    String district,
-  ) {
-    final stateKey = _normaliseText(state);
-    final districtKey = _normaliseText(district);
-    final aliases =
-        _crimeDistrictAliases['$stateKey|$districtKey'] ?? [district];
-    final aliasKeys = aliases.map(_normaliseText).toSet();
-    return records.where((record) {
-      return _normaliseText(record['state']) == stateKey &&
-          aliasKeys.contains(_normaliseText(record['district'])) &&
-          _normaliseText(record['type']) == 'all';
-    }).toList();
+  int? _recordYear(List<Map<String, dynamic>> records) {
+    final years = records.map(_recordYearFromMap).whereType<int>();
+    if (years.isEmpty) {
+      return null;
+    }
+    return years.reduce((a, b) => a > b ? a : b);
   }
 
-  num? _sumField(List<Map<String, dynamic>> records, String field) {
+  int? _recordYearFromMap(Map<String, dynamic> record) {
+    for (final field in ['date', 'year', 'tahun']) {
+      final value = record[field];
+      if (value == null) {
+        continue;
+      }
+      final text = value.toString().trim();
+      if (text.length >= 4) {
+        final year = int.tryParse(text.substring(0, 4));
+        if (year != null) {
+          return year;
+        }
+      }
+    }
+    return null;
+  }
+
+  num? _sumField(List<Map<String, dynamic>> records, List<String> fields) {
     var total = 0.0;
     var found = false;
     for (final record in records) {
-      final value = _parseNumber(record[field]);
-      if (value != null) {
-        total += value;
-        found = true;
+      for (final field in fields) {
+        final value = _parseNumber(record[field]);
+        if (value != null) {
+          total += value;
+          found = true;
+          break;
+        }
       }
     }
     return found ? total : null;
   }
 
-  double? _firstField(List<Map<String, dynamic>> records, String field) {
+  double? _firstField(List<Map<String, dynamic>> records, List<String> fields) {
     for (final record in records) {
-      final value = _parseNumber(record[field]);
-      if (value != null) {
-        return value.toDouble();
+      for (final field in fields) {
+        final value = _parseNumber(record[field]);
+        if (value != null) {
+          return value.toDouble();
+        }
       }
     }
     return null;
@@ -319,30 +362,20 @@ class OpenDataService {
     return num.tryParse(value.toString().replaceAll(',', '').trim());
   }
 
-  String _titleText(Object? value) {
-    final normalised = _normaliseText(value);
-    final display = _displayNames[normalised];
-    if (display != null) {
-      return display;
-    }
-    return normalised
-        .split(' ')
-        .map(
-          (part) => part.isEmpty
-              ? part
-              : '${part[0].toUpperCase()}${part.substring(1)}',
-        )
-        .join(' ');
-  }
-
   String _normaliseText(Object? value) {
-    final text = value
+    return value
         .toString()
         .trim()
         .toLowerCase()
         .replaceAll('-', ' ')
         .replaceAll('_', ' ')
         .replaceAll(RegExp(r'\s+'), ' ');
-    return _stateAliases[text] ?? text;
   }
+}
+
+class _MasterDistrict {
+  const _MasterDistrict(this.state, this.district);
+
+  final String state;
+  final String district;
 }

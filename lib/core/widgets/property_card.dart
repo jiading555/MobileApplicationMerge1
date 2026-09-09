@@ -173,7 +173,7 @@ class _CompactContent extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 7),
-                _Facts(property: property),
+                _Facts(property: property, compact: true),
               ],
             ),
           ),
@@ -195,9 +195,10 @@ class _CompactContent extends StatelessWidget {
 }
 
 class _Facts extends StatelessWidget {
-  const _Facts({required this.property});
+  const _Facts({required this.property, this.compact = false});
 
   final Property property;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +221,7 @@ class _Facts extends StatelessWidget {
           _Fact(
             icon: Icons.account_balance_outlined,
             label: _sourceFactLabel(property),
+            maxWidth: compact ? 130 : null,
           ),
       ],
     );
@@ -244,23 +246,35 @@ String _priceText(Property property) {
 }
 
 class _Fact extends StatelessWidget {
-  const _Fact({required this.icon, required this.label});
+  const _Fact({required this.icon, required this.label, this.maxWidth});
 
   final IconData icon;
   final String label;
+  final double? maxWidth;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final fact = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 15, color: AppTheme.muted),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: AppTheme.muted),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: AppTheme.muted),
+          ),
         ),
       ],
+    );
+    if (maxWidth == null) {
+      return fact;
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth!),
+      child: fact,
     );
   }
 }

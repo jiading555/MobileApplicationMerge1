@@ -1,3 +1,4 @@
+import '../core/utils/property_filtering.dart';
 import '../models/area_data.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
@@ -16,20 +17,41 @@ class RecommendationService {
         properties
             .where((property) {
               if (property.price == null ||
-                  !areaIndex.containsKey(property.areaId)) {
+                  !areaIndex.keys.any(
+                    (areaId) => PropertyFilterNormalizer.areaMatches(
+                      property.areaId,
+                      areaId,
+                    ),
+                  )) {
                 return false;
               }
               final typeMatches =
                   preferences.propertyType == 'Any' ||
-                  property.type == preferences.propertyType;
+                  PropertyFilterNormalizer.propertyTypeMatches(
+                    property,
+                    preferences.propertyType,
+                  );
               final areaMatches =
                   preferences.preferredAreaId == 'any' ||
-                  property.areaId == preferences.preferredAreaId;
+                  PropertyFilterNormalizer.areaMatches(
+                    property.areaId,
+                    preferences.preferredAreaId,
+                  );
               return typeMatches && areaMatches;
             })
             .map(
-              (property) =>
-                  _score(property, areaIndex[property.areaId]!, preferences),
+              (property) => _score(
+                property,
+                areaIndex.entries
+                    .firstWhere(
+                      (entry) => PropertyFilterNormalizer.areaMatches(
+                        property.areaId,
+                        entry.key,
+                      ),
+                    )
+                    .value,
+                preferences,
+              ),
             )
             .toList()
           ..sort((left, right) => right.score.compareTo(left.score));
@@ -60,21 +82,26 @@ class RecommendationService {
     } else if (affordability < 55) {
       cautions.add('Above the selected budget');
     }
-    if (area.safetyScore >= 76) {
+    final safetyScore = area.safetyScore;
+    final infrastructureScore = area.infrastructureScore;
+    final priceGrowth = area.priceGrowth;
+    final rentalYield = area.rentalYield;
+    if (safetyScore != null && safetyScore >= 76) {
       reasons.add('Strong normalized safety indicator');
-    } else if (area.safetyScore < 70) {
+    } else if (safetyScore != null && safetyScore < 70) {
       cautions.add('Safety indicator is below the compared-area average');
     }
-    if (area.infrastructureScore >= 78) {
+    if (infrastructureScore != null && infrastructureScore >= 78) {
       reasons.add('Good access to transport and public facilities');
     }
-    if (area.priceGrowth >= 7) {
+    if (priceGrowth != null && priceGrowth >= 7) {
       reasons.add('Strong historical price-growth signal');
     }
-    if (area.rentalYield >= 4.3) {
+    if (rentalYield != null && rentalYield >= 4.3) {
       reasons.add('Competitive estimated rental yield');
     } else if (preferences.goal == PropertyGoal.investment &&
-        area.rentalYield < 4.0) {
+        rentalYield != null &&
+        rentalYield < 4.0) {
       cautions.add('Rental yield is modest compared with other areas');
     }
     if (reasons.length < 3) {
@@ -102,42 +129,62 @@ class RecommendationService {
   ) {
     return [
       ScoreFactor(label: 'Affordability', score: affordability, weight: 0.25),
-      ScoreFactor(
-        label: 'Safety',
-        score: area.safetyScore,
-        weight: 0.15 + preferences.safetyPriority * 0.12,
-      ),
-      ScoreFactor(
-        label: 'Accessibility',
-        score: area.transportScore,
-        weight: 0.12 + preferences.transportPriority * 0.10,
-      ),
-      ScoreFactor(
-        label: 'Infrastructure',
-        score: area.infrastructureScore,
-        weight: 0.12 + preferences.facilitiesPriority * 0.10,
-      ),
-      ScoreFactor(
-        label: 'Connectivity',
-        score: area.connectivityScore,
-        weight: 0.10,
-      ),
+      if (area.safetyScore != null)
+        ScoreFactor(
+          label: 'Safety',
+          score: area.safetyScore!,
+          weight: 0.15 + preferences.safetyPriority * 0.12,
+        ),
+      if (area.transportScore != null)
+        ScoreFactor(
+          label: 'Accessibility',
+          score: area.transportScore!,
+          weight: 0.12 + preferences.transportPriority * 0.10,
+        ),
+      if (area.infrastructureScore != null)
+        ScoreFactor(
+          label: 'Infrastructure',
+          score: area.infrastructureScore!,
+          weight: 0.12 + preferences.facilitiesPriority * 0.10,
+        ),
+      if (area.connectivityScore != null)
+        ScoreFactor(
+          label: 'Connectivity',
+          score: area.connectivityScore!,
+          weight: 0.10,
+        ),
     ];
   }
 
   List<ScoreFactor> _investmentFactors(AreaData area, double affordability) {
-    final growth = (area.priceGrowth * 10).clamp(0, 100).toDouble();
-    final population = (area.populationGrowth * 18).clamp(0, 100).toDouble();
-    final yield = (area.rentalYield * 18).clamp(0, 100).toDouble();
-    final demand = (area.medianIncome / 120 + area.connectivityScore * 0.25)
-        .clamp(0, 100)
-        .toDouble();
     return [
       ScoreFactor(label: 'Affordability', score: affordability, weight: 0.15),
-      ScoreFactor(label: 'Price growth', score: growth, weight: 0.25),
-      ScoreFactor(label: 'Population growth', score: population, weight: 0.20),
-      ScoreFactor(label: 'Rental yield', score: yield, weight: 0.20),
-      ScoreFactor(label: 'Demand signal', score: demand, weight: 0.20),
+      if (area.priceGrowth != null)
+        ScoreFactor(
+          label: 'Price growth',
+          score: (area.priceGrowth! * 10).clamp(0, 100).toDouble(),
+          weight: 0.25,
+        ),
+      if (area.populationGrowth != null)
+        ScoreFactor(
+          label: 'Population growth',
+          score: (area.populationGrowth! * 18).clamp(0, 100).toDouble(),
+          weight: 0.20,
+        ),
+      if (area.rentalYield != null)
+        ScoreFactor(
+          label: 'Rental yield',
+          score: (area.rentalYield! * 18).clamp(0, 100).toDouble(),
+          weight: 0.20,
+        ),
+      if (area.medianIncome != null && area.connectivityScore != null)
+        ScoreFactor(
+          label: 'Demand signal',
+          score: (area.medianIncome! / 120 + area.connectivityScore! * 0.25)
+              .clamp(0, 100)
+              .toDouble(),
+          weight: 0.20,
+        ),
     ];
   }
 

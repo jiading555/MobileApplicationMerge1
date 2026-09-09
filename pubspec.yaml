@@ -21,8 +21,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/data/areas.json
-    - assets/data/properties.json
-    - data/processed/area_profiles.json
-    - data/processed/teduh_projects.json

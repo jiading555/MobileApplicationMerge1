@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/utils/location_normalizer.dart';
 import '../../models/area_data.dart';
 import '../../models/property.dart';
 
@@ -23,7 +24,7 @@ class PropertyRepository {
           .map(
             (entry) => Property.fromTeduhJson(
               entry.$2,
-              areaId: _areaIdForRow(entry.$2, areas),
+              areaId: resolveAreaIdForRow(entry.$2, areas),
               palette: (entry.$1 + 10) % 12,
             ),
           )
@@ -39,18 +40,24 @@ class PropertyRepository {
     }
   }
 
-  Future<void> upsertProperties(List<Property> properties) async {
+  Future<int> upsertProperties(List<Property> properties) async {
     if (properties.isEmpty) {
-      return;
+      return 0;
     }
 
     try {
+      final updatedAt = DateTime.now().toUtc();
       await _supabase
           .from('properties')
           .upsert(
-            properties.map((property) => property.toSupabaseJson()).toList(),
+            properties
+                .map(
+                  (property) => property.toSupabaseJson(updatedAt: updatedAt),
+                )
+                .toList(),
             onConflict: 'source_id',
           );
+      return properties.length;
     } catch (error, stackTrace) {
       throw PropertyRepositoryException(
         'Failed to sync TEDUH properties to Supabase.',
@@ -60,28 +67,25 @@ class PropertyRepository {
     }
   }
 
-  String _areaIdForRow(Map<String, dynamic> row, List<AreaData> areas) {
-    final state = _normalise(row['state']);
-    final district = _normalise(row['district']);
-    for (final area in areas) {
-      if (_normalise(area.state) == state &&
-          _normalise(area.name) == district) {
-        return area.id;
+  static String resolveAreaIdForRow(
+    Map<String, dynamic> row,
+    List<AreaData> areas,
+  ) {
+    final state = LocationNormalizer.canonicalStateId(row['state']);
+    final district = LocationNormalizer.canonicalDistrictId(row['district']);
+    if (state.isNotEmpty && district.isNotEmpty) {
+      final canonicalAreaId = LocationNormalizer.canonicalAreaId(
+        row['state'],
+        row['district'],
+      );
+      for (final area in areas) {
+        if (LocationNormalizer.areaIdMatches(area.id, canonicalAreaId)) {
+          return area.id;
+        }
       }
+      return canonicalAreaId;
     }
-    for (final area in areas) {
-      if (_normalise(area.state) == state) {
-        return area.id;
-      }
-    }
-    return areas.isEmpty ? 'unknown' : areas.first.id;
-  }
-
-  String _normalise(Object? value) {
-    return value.toString().trim().toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]+'),
-      ' ',
-    );
+    return 'unknown';
   }
 }
 

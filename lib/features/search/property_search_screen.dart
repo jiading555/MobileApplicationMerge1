@@ -4,6 +4,11 @@ import '../../app/app_scope.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/property_filtering.dart';
+import '../../core/utils/property_type_normalizer.dart';
+import '../../core/utils/scheme_normalizer.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/area_data.dart';
@@ -19,10 +24,11 @@ class PropertySearchScreen extends StatefulWidget {
 
 class _PropertySearchScreenState extends State<PropertySearchScreen> {
   final searchController = TextEditingController();
-  double maximumPrice = 1500000;
+  int? maximumPrice;
+  String selectedState = 'Any';
   String selectedAreaId = 'Any';
-  String selectedType = 'Any';
-  String selectedTenure = 'Any';
+  String selectedType = PropertyTypeNormalizer.anyType;
+  String selectedScheme = SchemeNormalizer.anyScheme;
 
   @override
   void dispose() {
@@ -32,52 +38,102 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
   List<Property> filtered(List<Property> properties, List<AreaData> areas) {
     final query = searchController.text.trim().toLowerCase();
-    return properties.where((property) {
-      final area = _areaFor(areas, property.areaId);
+    final results = properties.where((property) {
+      final area = _safeAreaFor(areas, property.areaId);
       final searchable = [
         property.name,
         property.address,
         property.type,
+        ...property.unitTypes,
         property.tenure,
+        property.state,
+        property.district,
         property.scheme,
         property.developerName,
         property.source,
-        area.name,
-        area.state,
+        area?.name,
+        area?.state,
       ].whereType<String>().join(' ').toLowerCase();
       final matchesQuery = query.isEmpty || searchable.contains(query);
-      final matchesArea =
-          selectedAreaId == 'Any' || property.areaId == selectedAreaId;
-      final matchesType =
-          selectedType == 'Any' || property.type == selectedType;
-      final matchesTenure =
-          selectedTenure == 'Any' || property.tenure == selectedTenure;
-      final comparablePrice =
-          property.priceMin ?? property.price ?? property.priceMax;
-      final matchesPrice =
-          comparablePrice == null || comparablePrice <= maximumPrice;
+
+      final matchesState = PropertyFilterNormalizer.stateMatches(
+        property.state,
+        selectedState,
+      );
+
+      final matchesArea = PropertyFilterNormalizer.areaMatches(
+        property.areaId,
+        selectedAreaId,
+      );
+      final matchesType = PropertyFilterNormalizer.propertyTypeMatches(
+        property,
+        selectedType,
+      );
+      final matchesScheme = PropertyFilterNormalizer.schemeMatches(
+        property.scheme,
+        selectedScheme,
+      );
+      final matchesPrice = PropertyFilterNormalizer.matchPrice(
+        property,
+        maximumPrice,
+      );
       return matchesQuery &&
+          matchesState &&
           matchesArea &&
           matchesType &&
-          matchesTenure &&
+          matchesScheme &&
           matchesPrice;
     }).toList();
+
+    return results;
   }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final results = filtered(state.properties, state.areas);
-    final typeValues = [
+    final typeValues = PropertyFilterNormalizer.availablePropertyTypes(
+      state.properties,
+    );
+    final schemeValues = PropertyFilterNormalizer.availableSchemes(
+      state.properties.map((p) => p.scheme),
+    );
+    final stateValues = [
       'Any',
-      ...state.properties.map((property) => property.type).toSet().toList()
+      ...state.properties
+          .map((p) => p.state)
+          .whereType<String>()
+          .map(LocationNormalizer.displayStateName)
+          .where((state) => state.isNotEmpty)
+          .toSet()
+          .toList()
         ..sort(),
     ];
+    final areaValues = _areaFilterOptions(state.areas, state.properties);
+    final areaIds = areaValues.map((option) => option.value).toSet();
+    if (!stateValues.contains(selectedState)) {
+      selectedState = 'Any';
+    }
+    if (!areaIds.contains(selectedAreaId)) {
+      selectedAreaId = 'Any';
+    }
+    if (!typeValues.contains(selectedType)) {
+      selectedType = PropertyTypeNormalizer.anyType;
+    }
+    if (!schemeValues.contains(selectedScheme)) {
+      selectedScheme = SchemeNormalizer.anyScheme;
+    }
+    final results = filtered(state.properties, state.areas);
+    final selectedAreaLabel = selectedAreaId == 'Any'
+        ? 'Any Area'
+        : areaValues
+              .firstWhere(
+                (option) => option.value == selectedAreaId,
+                orElse: () => _FilterOption(selectedAreaId, selectedAreaId),
+              )
+              .label;
     final sourceLabel = state.isUsingCloudProperties
-        ? 'Source: TEDUH / KPKT'
-        : state.isUsingProcessedTeduhProperties
-        ? 'Source: TEDUH / KPKT'
-        : 'Source: Sample data';
+        ? 'Source: Supabase / TEDUH'
+        : 'Source: official data unavailable';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Property search'),
@@ -88,11 +144,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             icon: const Icon(Icons.restart_alt_rounded),
           ),
           IconButton(
-            onPressed: state.isSyncingGovernmentData
+            onPressed: state.isRefreshingGovernmentData
                 ? null
                 : () => _refreshGovernmentData(state),
-            tooltip: 'Refresh government data',
-            icon: state.isSyncingGovernmentData
+            tooltip: 'Reload latest data',
+            icon: state.isRefreshingGovernmentData
                 ? const SizedBox(
                     width: 18,
                     height: 18,
@@ -125,47 +181,65 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: state.isRefreshingGovernmentData
+                    ? null
+                    : () => _refreshGovernmentData(state),
+                icon: state.isRefreshingGovernmentData
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cloud_sync_outlined),
+                label: const Text('Reload Latest Data'),
+              ),
+            ),
+            const SizedBox(height: 14),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
                   _DropdownFilter(
-                    label: selectedAreaId == 'Any'
-                        ? 'All areas'
-                        : _areaFor(state.areas, selectedAreaId).name,
-                    values: ['Any', ...state.areas.map((area) => area.id)],
+                    label: selectedState == 'Any' ? 'Any State' : selectedState,
+                    values: stateValues,
+                    value: selectedState,
+                    onChanged: (value) => setState(() => selectedState = value),
+                  ),
+                  const SizedBox(width: 9),
+                  _AreaDropdownFilter(
+                    label: selectedAreaLabel,
+                    values: areaValues,
                     value: selectedAreaId,
-                    labelFor: (value) => value == 'Any'
-                        ? 'Any'
-                        : '${_areaFor(state.areas, value).name}, ${_areaFor(state.areas, value).state}',
                     onChanged: (value) =>
                         setState(() => selectedAreaId = value),
                   ),
                   const SizedBox(width: 9),
                   _DropdownFilter(
-                    label: selectedType == 'Any' ? 'All types' : selectedType,
-                    values: const ['Any'],
-                    extraValues: typeValues.skip(1).toList(),
+                    title: 'Property Type',
+                    label: selectedType,
+                    values: typeValues,
                     value: selectedType,
                     onChanged: (value) => setState(() => selectedType = value),
                   ),
                   const SizedBox(width: 9),
                   _DropdownFilter(
-                    label: selectedTenure == 'Any'
-                        ? 'All tenure'
-                        : selectedTenure,
-                    values: const ['Any', 'Freehold', 'Leasehold'],
-                    value: selectedTenure,
+                    title: 'Housing Scheme',
+                    label: selectedScheme,
+                    values: schemeValues,
+                    value: selectedScheme,
                     onChanged: (value) =>
-                        setState(() => selectedTenure = value),
+                        setState(() => selectedScheme = value),
                   ),
                   const SizedBox(width: 9),
-                  ActionChip(
-                    avatar: const Icon(Icons.payments_outlined, size: 18),
-                    label: Text(
-                      'Up to ${formatRinggit(maximumPrice, compact: true)}',
-                    ),
-                    onPressed: _showPriceSheet,
+                  _FilterButton(
+                    icon: Icons.payments_outlined,
+                    label: maximumPrice == null
+                        ? 'Any Budget'
+                        : 'Up to ${formatRinggit(maximumPrice!, compact: true)}',
+                    onTap: _showPriceSheet,
                   ),
                 ],
               ),
@@ -202,7 +276,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   ? const _NoResults()
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        if (constraints.maxWidth < 700) {
+                        if (!ResponsiveLayout.isTablet(context)) {
                           return ListView.separated(
                             itemCount: results.length,
                             separatorBuilder: (_, _) =>
@@ -214,7 +288,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                             ),
                           );
                         }
-                        final columns = constraints.maxWidth >= 1050 ? 3 : 2;
+                        final columns = ResponsiveLayout.isDesktop(context)
+                            ? 3
+                            : 2;
                         return GridView.builder(
                           itemCount: results.length,
                           gridDelegate:
@@ -249,10 +325,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
   void _reset() {
     searchController.clear();
     setState(() {
-      maximumPrice = 1500000;
+      maximumPrice = null;
+      selectedState = 'Any';
       selectedAreaId = 'Any';
-      selectedType = 'Any';
-      selectedTenure = 'Any';
+      selectedType = PropertyTypeNormalizer.anyType;
+      selectedScheme = SchemeNormalizer.anyScheme;
     });
   }
 
@@ -264,14 +341,14 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          state.governmentDataSyncMessage ?? 'Government data refresh done.',
+          state.governmentDataRefreshMessage ?? 'Latest data reload done.',
         ),
       ),
     );
   }
 
   Future<void> _showPriceSheet() async {
-    var draft = maximumPrice;
+    var draft = (maximumPrice ?? 1500000).toDouble();
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -287,13 +364,26 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              Text(
-                formatRinggit(draft),
-                style: const TextStyle(
-                  color: AppTheme.blue,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      formatRinggit(draft),
+                      style: const TextStyle(
+                        color: AppTheme.blue,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() => maximumPrice = null);
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Clear Filter'),
+                  ),
+                ],
               ),
               Slider(
                 min: 350000,
@@ -304,7 +394,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
               ),
               FilledButton(
                 onPressed: () {
-                  setState(() => maximumPrice = draft);
+                  setState(() => maximumPrice = draft.round());
                   Navigator.of(context).pop();
                 },
                 child: const Text('Apply price'),
@@ -316,8 +406,77 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     );
   }
 
-  AreaData _areaFor(List<AreaData> areas, String areaId) {
-    return areas.firstWhere((area) => area.id == areaId);
+  AreaData? _safeAreaFor(List<AreaData> areas, String areaId) {
+    try {
+      return areas.firstWhere(
+        (area) => LocationNormalizer.areaIdMatches(area.id, areaId),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<_FilterOption> _areaFilterOptions(
+    List<AreaData> areas,
+    List<Property> properties,
+  ) {
+    final labelsById = <String, String>{};
+    for (final area in areas) {
+      labelsById[area.id] = '${area.name}, ${area.state}';
+    }
+    for (final property in properties) {
+      final state = LocationNormalizer.nullableDisplayStateName(property.state);
+      final district = LocationNormalizer.nullableDisplayDistrictName(
+        property.district,
+      );
+      if (state == null || district == null) {
+        continue;
+      }
+      final areaId = LocationNormalizer.canonicalAreaId(state, district);
+      labelsById.putIfAbsent(areaId, () => '$district, $state');
+    }
+
+    final options =
+        labelsById.entries
+            .map((entry) => _FilterOption(entry.key, entry.value))
+            .toList()
+          ..sort((left, right) => left.label.compareTo(right.label));
+    return [const _FilterOption('Any', 'Any Area'), ...options];
+  }
+}
+
+class _FilterOption {
+  const _FilterOption(this.value, this.label);
+
+  final String value;
+  final String label;
+}
+
+class _AreaDropdownFilter extends StatelessWidget {
+  const _AreaDropdownFilter({
+    required this.label,
+    required this.values,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final List<_FilterOption> values;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      initialValue: value,
+      onSelected: onChanged,
+      itemBuilder: (_) => values
+          .map(
+            (item) => PopupMenuItem(value: item.value, child: Text(item.label)),
+          )
+          .toList(),
+      child: _FilterButton(label: label),
+    );
   }
 }
 
@@ -326,16 +485,14 @@ class _DropdownFilter extends StatelessWidget {
     required this.label,
     required this.values,
     required this.value,
-    this.labelFor,
-    this.extraValues = const [],
     required this.onChanged,
+    this.title,
   });
 
+  final String? title;
   final String label;
   final List<String> values;
   final String value;
-  final String Function(String value)? labelFor;
-  final List<String> extraValues;
   final ValueChanged<String> onChanged;
 
   @override
@@ -343,17 +500,90 @@ class _DropdownFilter extends StatelessWidget {
     return PopupMenuButton<String>(
       initialValue: value,
       onSelected: onChanged,
-      itemBuilder: (_) => [...values, ...extraValues]
-          .map(
-            (item) => PopupMenuItem(
-              value: item,
-              child: Text(labelFor?.call(item) ?? item),
-            ),
-          )
+      itemBuilder: (_) => values
+          .map((item) => PopupMenuItem(value: item, child: Text(item)))
           .toList(),
-      child: Chip(
-        label: Text(label),
-        avatar: const Icon(Icons.expand_more_rounded, size: 18),
+      child: _FilterButton(title: title, label: label),
+    );
+  }
+}
+
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.label, this.title, this.icon, this.onTap});
+
+  final String? title;
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Container(
+      constraints: const BoxConstraints(
+        minWidth: 128,
+        maxWidth: 220,
+        minHeight: 48,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFDCE3ED)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: AppTheme.blue),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: title == null
+                ? Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.arrow_drop_down_rounded, size: 20),
+        ],
+      ),
+    );
+
+    if (onTap == null) {
+      return child;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: child,
       ),
     );
   }

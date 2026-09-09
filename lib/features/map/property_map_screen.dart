@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/property_filtering.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
 import '../search/property_detail_screen.dart';
@@ -26,17 +28,25 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
     final properties = state.properties
         .where(
           (property) =>
-              selectedAreaId == 'all' || property.areaId == selectedAreaId,
+              selectedAreaId == 'all' ||
+              PropertyFilterNormalizer.areaMatches(
+                property.areaId,
+                selectedAreaId,
+              ),
         )
         .toList();
     final mappableProperties = properties
         .where((property) => property.hasCoordinates)
         .toList();
-    final selected = selectedPropertyId == null
-        ? (properties.isEmpty ? null : properties.first)
-        : state.properties.firstWhere(
-            (property) => property.id == selectedPropertyId,
-          );
+    Property? selected = properties.isEmpty ? null : properties.first;
+    if (selectedPropertyId != null) {
+      for (final property in properties) {
+        if (property.id == selectedPropertyId) {
+          selected = property;
+          break;
+        }
+      }
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Map & nearby facilities'),
@@ -50,7 +60,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 850;
+          final wide = ResponsiveLayout.isTablet(context);
           final map = _MapCanvas(
             properties: mappableProperties,
             selectedPropertyId: selected?.id,
@@ -71,7 +81,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                   items: [
                     const DropdownMenuItem(
                       value: 'all',
-                      child: Text('All sample areas'),
+                      child: Text('All areas'),
                     ),
                     ...state.areas.map(
                       (area) => DropdownMenuItem(
@@ -344,14 +354,14 @@ class _LocationPanel extends StatelessWidget {
                 Expanded(
                   child: _MiniInsight(
                     label: 'Safety',
-                    value: '${area.safetyScore.round()}/100',
+                    value: _scoreText(area.safetyScore),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _MiniInsight(
                     label: 'Transit',
-                    value: '${area.transportScore.round()}/100',
+                    value: _scoreText(area.transportScore),
                   ),
                 ),
               ],
@@ -362,14 +372,14 @@ class _LocationPanel extends StatelessWidget {
                 Expanded(
                   child: _MiniInsight(
                     label: 'Schools',
-                    value: '${area.schools}',
+                    value: area.schools?.toString() ?? 'N/A',
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _MiniInsight(
                     label: 'Hospitals',
-                    value: '${area.hospitals}',
+                    value: area.hospitals?.toString() ?? 'N/A',
                   ),
                 ),
               ],
@@ -404,6 +414,10 @@ class _LocationPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+String _scoreText(double? score) {
+  return score == null ? 'N/A' : '${score.round()}/100';
 }
 
 class _MapEmptyState extends StatelessWidget {

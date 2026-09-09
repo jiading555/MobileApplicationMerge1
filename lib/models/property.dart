@@ -6,6 +6,7 @@ class Property {
     required this.address,
     required this.type,
     required this.tenure,
+    this.verifiedPropertyType,
     this.state,
     this.district,
     this.price,
@@ -40,6 +41,7 @@ class Property {
   final String address;
   final String type;
   final String tenure;
+  final String? verifiedPropertyType;
   final String? state;
   final String? district;
   final int? price;
@@ -88,6 +90,10 @@ class Property {
       address: json['address'] as String,
       type: json['type'] as String,
       tenure: json['tenure'] as String,
+      verifiedPropertyType:
+          json['verifiedPropertyType'] as String? ??
+          json['property_type'] as String? ??
+          json['propertyType'] as String?,
       state: json['state'] as String?,
       district: json['district'] as String?,
       price: _intFromJson(json['price']),
@@ -131,6 +137,7 @@ class Property {
     final state = _nullableStringFromJson(json['state']);
     final district = _nullableStringFromJson(json['district']);
     final scheme = _nullableStringFromJson(json['scheme']);
+    final tenure = _nullableStringFromJson(json['tenure']);
     final projectStatus = _nullableStringFromJson(
       json['project_status'] ?? json['projectStatus'],
     );
@@ -154,7 +161,8 @@ class Property {
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
       type: type ?? 'Public housing',
-      tenure: scheme ?? 'Government housing',
+      tenure: tenure ?? 'Tenure not available',
+      verifiedPropertyType: type,
       state: state,
       district: district,
       price: priceMin ?? priceMax,
@@ -202,7 +210,7 @@ class Property {
     );
   }
 
-  Map<String, dynamic> toSupabaseJson() {
+  Map<String, dynamic> toSupabaseJson({DateTime? updatedAt}) {
     return {
       'source_id': sourceId,
       'project_name': name,
@@ -211,7 +219,7 @@ class Property {
       'scheme': scheme,
       'price_min': priceMin,
       'price_max': priceMax,
-      'property_type': type,
+      'property_type': verifiedPropertyType,
       'project_status': projectStatus,
       'developer_name': developerName,
       'address': address,
@@ -226,6 +234,7 @@ class Property {
       'developer_address': developerAddress,
       'raw_location': rawLocation,
       'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt.toUtc().toIso8601String(),
     };
   }
 
@@ -263,7 +272,11 @@ class Property {
       return value.round();
     }
     final text = value.toString().replaceAll(',', '').trim();
-    return int.tryParse(text);
+    if (text.isEmpty) {
+      return null;
+    }
+    final parsedDouble = double.tryParse(text);
+    return parsedDouble?.round();
   }
 
   static double? _doubleFromJson(Object? value) {
