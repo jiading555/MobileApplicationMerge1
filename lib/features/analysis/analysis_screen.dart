@@ -787,7 +787,7 @@ class _DemandCard extends StatelessWidget {
 
   double _growthSignal(double? value) {
     if (value == null) return 0;
-    return (value.clamp(-20, 20) + 20) / 40;
+    return ((value.clamp(-20, 20) + 20) / 40).toDouble();
   }
 }
 
