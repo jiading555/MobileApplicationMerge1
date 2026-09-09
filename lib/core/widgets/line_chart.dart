@@ -225,7 +225,9 @@ class _LineChartPainter extends CustomPainter {
         ? labels
         : List.generate(values.length, (index) => '${index + 1}');
     for (var index = 0; index < values.length; index++) {
-      if (index.isOdd && index != values.length - 1) continue;
+      if (values.length > 5 && index.isOdd && index != values.length - 1) {
+        continue;
+      }
       final painter = TextPainter(
         text: TextSpan(
           text: displayLabels[index],
