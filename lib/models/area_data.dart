@@ -201,10 +201,7 @@ class AreaData {
       hospitalBeds: profile.hospitalBedCount ?? fallback?.hospitalBeds ?? 0,
       transportStopCount:
           profile.transportStopCount ?? fallback?.transportStopCount ?? 0,
-      averagePricePsf:
-          profile.medianResidentialPrice?.round() ??
-          fallback?.averagePricePsf ??
-          0,
+      averagePricePsf: fallback?.averagePricePsf ?? 0,
       rentalYield: fallback?.rentalYield ?? 0,
       priceGrowth: profile.marketPriceHistory.isNotEmpty
           ? _marketGrowth(profile) ?? 0
