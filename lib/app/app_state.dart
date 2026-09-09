@@ -15,7 +15,6 @@ import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 import '../services/open_data_service.dart';
 import '../services/recommendation_service.dart';
-import '../services/teduh_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState({
@@ -25,9 +24,7 @@ class AppState extends ChangeNotifier {
     this._recommendationService = const RecommendationService(),
     this._userAccountRepository = const UserAccountRepository(),
     OpenDataService? openDataService,
-    TeduhService? teduhService,
-  }) : _openDataService = openDataService ?? OpenDataService(),
-       _teduhService = teduhService ?? TeduhService();
+  }) : _openDataService = openDataService ?? OpenDataService();
 
   final AssetRepository _repository;
   final AreaProfileRepository _areaProfileRepository;
@@ -35,7 +32,6 @@ class AppState extends ChangeNotifier {
   final RecommendationService _recommendationService;
   final UserAccountRepository _userAccountRepository;
   final OpenDataService _openDataService;
-  final TeduhService _teduhService;
   final Set<String> _favouriteIds = {'p01', 'p03'};
 
   bool isLoading = true;
@@ -438,46 +434,6 @@ class AppState extends ChangeNotifier {
     } on PropertyRepositoryException catch (error) {
       openDataLoadMessage = error.toString();
       return const [];
-    }
-  }
-
-  Future<void> _reloadVisibleData() async {
-    final results = await Future.wait([
-      _repository.loadAreas(),
-      _repository.loadProperties(),
-    ]);
-    final localAreas = results[0] as List<AreaData>;
-    final localProperties = results[1] as List<Property>;
-
-    isUsingCloudAreaProfiles = false;
-    isUsingProcessedAreaProfiles = false;
-    isUsingCloudProperties = false;
-    isUsingProcessedTeduhProperties = false;
-    areas = localAreas;
-    properties = localProperties;
-
-    final cloudProfiles = await _loadCloudAreaProfiles();
-    if (cloudProfiles.isNotEmpty) {
-      areas = _areasFromProfiles(cloudProfiles, localAreas);
-      isUsingCloudAreaProfiles = true;
-    } else {
-      final processedProfiles = await _repository.loadProcessedAreaProfiles();
-      if (processedProfiles.isNotEmpty) {
-        areas = _areasFromProfiles(processedProfiles, localAreas);
-        isUsingProcessedAreaProfiles = true;
-      }
-    }
-
-    final cloudProperties = await _loadCloudProperties(areas);
-    if (cloudProperties.isNotEmpty) {
-      properties = cloudProperties;
-      isUsingCloudProperties = true;
-    } else {
-      final teduhFallback = await _repository.loadProcessedTeduhProjects(areas);
-      if (teduhFallback.isNotEmpty) {
-        properties = teduhFallback;
-        isUsingProcessedTeduhProperties = true;
-      }
     }
   }
 
