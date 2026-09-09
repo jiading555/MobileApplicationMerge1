@@ -28,6 +28,16 @@ class AreaData {
     this.educationYear,
     this.hospitalYear,
     this.transportYear,
+    this.marketPricePeriods = const [],
+    this.medianResidentialPrice,
+    this.marketPriceYear,
+    this.transactionCount,
+    this.previousTransactionCount,
+    this.transactionValueMillion,
+    this.previousTransactionValueMillion,
+    this.marketPeriod,
+    this.marketSourceUrl,
+    this.marketRetrievedAt,
     this.retrievedAt,
     this.isGovernmentProfile = false,
   });
@@ -58,7 +68,47 @@ class AreaData {
   final int? educationYear;
   final int? hospitalYear;
   final int? transportYear;
+  final List<String> marketPricePeriods;
+  final double? medianResidentialPrice;
+  final int? marketPriceYear;
+  final int? transactionCount;
+  final int? previousTransactionCount;
+  final double? transactionValueMillion;
+  final double? previousTransactionValueMillion;
+  final String? marketPeriod;
+  final String? marketSourceUrl;
+  final DateTime? marketRetrievedAt;
   final DateTime? retrievedAt;
+
+  bool get hasMarketPrice => medianResidentialPrice != null;
+
+  bool get hasMarketHistory =>
+      marketPricePeriods.length == priceHistory.length && priceHistory.length >= 2;
+
+  double? get transactionVolumeGrowth {
+    final current = transactionCount;
+    final previous = previousTransactionCount;
+    if (current == null || previous == null || previous <= 0) return null;
+    return (current - previous) / previous * 100;
+  }
+
+  double? get transactionValueGrowth {
+    final current = transactionValueMillion;
+    final previous = previousTransactionValueMillion;
+    if (current == null || previous == null || previous <= 0) return null;
+    return (current - previous) / previous * 100;
+  }
+
+  double? get marketDemandScore {
+    final volume = transactionVolumeGrowth;
+    final value = transactionValueGrowth;
+    if (volume == null || value == null) return null;
+    double normalise(double growth) =>
+        ((growth.clamp(-20, 20) + 20) / 40 * 100).toDouble();
+    return (normalise(volume) * 0.60 + normalise(value) * 0.40)
+        .clamp(0, 100)
+        .toDouble();
+  }
   final bool isGovernmentProfile;
 
   double get infrastructureScore {
@@ -151,10 +201,15 @@ class AreaData {
       hospitalBeds: profile.hospitalBedCount ?? fallback?.hospitalBeds ?? 0,
       transportStopCount:
           profile.transportStopCount ?? fallback?.transportStopCount ?? 0,
-      averagePricePsf: fallback?.averagePricePsf ?? 0,
+      averagePricePsf:
+          profile.medianResidentialPrice?.round() ??
+          fallback?.averagePricePsf ??
+          0,
       rentalYield: fallback?.rentalYield ?? 0,
-      priceGrowth: fallback?.priceGrowth ?? 0,
-      priceHistory: fallback?.priceHistory ?? const [0, 0, 0, 0, 0, 0, 0],
+      priceGrowth: _marketGrowth(profile) ?? fallback?.priceGrowth ?? 0,
+      priceHistory: profile.marketPriceHistory.isNotEmpty
+          ? profile.marketPriceHistory
+          : fallback?.priceHistory ?? const [0, 0, 0, 0, 0, 0, 0],
       snapshotDate: (profile.dataYear ?? fallback?.snapshotDate ?? '')
           .toString(),
       source: profile.source ?? 'OpenDOSM; data.gov.my',
@@ -165,9 +220,27 @@ class AreaData {
       educationYear: profile.educationYear ?? fallback?.educationYear,
       hospitalYear: profile.hospitalYear ?? fallback?.hospitalYear,
       transportYear: profile.transportYear ?? fallback?.transportYear,
+      marketPricePeriods: profile.marketPricePeriods,
+      medianResidentialPrice: profile.medianResidentialPrice,
+      marketPriceYear: profile.marketPriceYear,
+      transactionCount: profile.transactionCount,
+      previousTransactionCount: profile.previousTransactionCount,
+      transactionValueMillion: profile.transactionValueMillion,
+      previousTransactionValueMillion: profile.previousTransactionValueMillion,
+      marketPeriod: profile.marketPeriod,
+      marketSourceUrl: profile.marketSourceUrl,
+      marketRetrievedAt: profile.marketRetrievedAt,
       retrievedAt: profile.retrievedAt,
       isGovernmentProfile: true,
     );
+  }
+
+  static double? _marketGrowth(AreaProfile profile) {
+    final values = profile.marketPriceHistory;
+    if (values.length < 2 || values[values.length - 2] == 0) return null;
+    return (values.last - values[values.length - 2]) /
+        values[values.length - 2] *
+        100;
   }
 
   static String _normaliseId(String value) {
