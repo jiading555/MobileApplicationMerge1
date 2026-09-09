@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app_scope.dart';
+import '../../core/constants/property_preference_options.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
@@ -249,44 +251,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       text: current.maximumBudget.round().toString(),
     );
 
-    final states = state.areas
-        .map((area) => area.state.trim())
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final states = PropertyPreferenceOptions.states;
     var selectedState = states.contains(current.preferredState)
         ? current.preferredState
         : '';
 
-    List<String> districtsFor(String selected) {
-      if (selected.isEmpty) return const [];
-      final values = state.areas
-          .where((area) => area.state == selected)
-          .map((area) => area.name.trim())
-          .where((value) => value.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
-      return values;
-    }
+    List<String> districtsFor(String selected) =>
+        PropertyPreferenceOptions.districtsFor(selected);
 
     var districts = districtsFor(selectedState);
     var selectedDistrict = districts.contains(current.preferredDistrict)
         ? current.preferredDistrict
         : '';
 
-    final propertyTypes = <String>{
-      'Any',
-      ...state.properties
-          .map((property) => property.type.trim())
-          .where((value) => value.isNotEmpty),
-    }.toList()
-      ..sort((left, right) {
-        if (left == 'Any') return -1;
-        if (right == 'Any') return 1;
-        return left.compareTo(right);
-      });
+    const propertyTypes = PropertyPreferenceOptions.propertyTypes;
     var type = propertyTypes.contains(current.propertyType)
         ? current.propertyType
         : 'Any';
@@ -392,6 +370,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       final minimumField = _BudgetField(
                         controller: minimum,
                         label: 'Minimum budget',
+                        allowZero: true,
                       );
                       final maximumField = _BudgetField(
                         controller: maximum,
@@ -420,6 +399,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
                           onPressed: () => Navigator.of(sheetContext).pop(),
                           child: const Text('Cancel'),
                         ),
@@ -427,10 +409,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
                           onPressed: () async {
                             if (!formKey.currentState!.validate()) return;
-                            final min = double.parse(minimum.text);
-                            final max = double.parse(maximum.text);
+                            final min = int.parse(minimum.text).toDouble();
+                            final max = int.parse(maximum.text).toDouble();
                             if (min > max) {
                               _message(
                                 'Minimum budget cannot exceed maximum budget.',
@@ -787,17 +772,39 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _BudgetField extends StatelessWidget {
-  const _BudgetField({required this.controller, required this.label});
+  const _BudgetField({
+    required this.controller,
+    required this.label,
+    this.allowZero = false,
+  });
+
+  static const maximumSupportedBudget = 1000000000;
   final TextEditingController controller;
   final String label;
+  final bool allowZero;
+
   @override
   Widget build(BuildContext context) => TextFormField(
     controller: controller,
     keyboardType: TextInputType.number,
-    decoration: InputDecoration(labelText: label, prefixText: 'RM '),
+    inputFormatters: [
+      FilteringTextInputFormatter.digitsOnly,
+      LengthLimitingTextInputFormatter(10),
+    ],
+    decoration: InputDecoration(
+      labelText: label,
+      prefixText: 'RM ',
+      counterText: '',
+    ),
+    maxLength: 10,
     validator: (value) {
-      final amount = double.tryParse(value ?? '');
-      return amount == null || amount < 0 ? 'Enter a valid amount' : null;
+      final amount = int.tryParse(value ?? '');
+      if (amount == null) return 'Enter a valid amount';
+      if (!allowZero && amount == 0) return 'Amount must be above RM 0';
+      if (amount > maximumSupportedBudget) {
+        return 'Maximum supported amount is RM 1,000,000,000';
+      }
+      return null;
     },
   );
 }
