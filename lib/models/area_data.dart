@@ -206,7 +206,9 @@ class AreaData {
           fallback?.averagePricePsf ??
           0,
       rentalYield: fallback?.rentalYield ?? 0,
-      priceGrowth: _marketGrowth(profile) ?? fallback?.priceGrowth ?? 0,
+      priceGrowth: profile.marketPriceHistory.isNotEmpty
+          ? _marketGrowth(profile) ?? 0
+          : fallback?.priceGrowth ?? 0,
       priceHistory: profile.marketPriceHistory.isNotEmpty
           ? profile.marketPriceHistory
           : fallback?.priceHistory ?? const [0, 0, 0, 0, 0, 0, 0],
