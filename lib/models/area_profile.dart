@@ -17,6 +17,8 @@ class AreaProfile {
     this.transportYear,
     this.marketPriceHistory = const [],
     this.marketPricePeriods = const [],
+    this.marketPriceHistoryByType = const {},
+    this.marketPricePeriodsByType = const {},
     this.medianResidentialPrice,
     this.marketPriceYear,
     this.transactionCount,
@@ -49,6 +51,8 @@ class AreaProfile {
   final int? transportYear;
   final List<double> marketPriceHistory;
   final List<String> marketPricePeriods;
+  final Map<String, List<double>> marketPriceHistoryByType;
+  final Map<String, List<String>> marketPricePeriodsByType;
   final double? medianResidentialPrice;
   final int? marketPriceYear;
   final int? transactionCount;
@@ -102,6 +106,14 @@ class AreaProfile {
       ),
       marketPricePeriods: _stringListFromJson(
         json['market_price_periods'] ?? json['marketPricePeriods'],
+      ),
+      marketPriceHistoryByType: _doubleListMapFromJson(
+        json['market_price_history_by_type'] ??
+            json['marketPriceHistoryByType'],
+      ),
+      marketPricePeriodsByType: _stringListMapFromJson(
+        json['market_price_periods_by_type'] ??
+            json['marketPricePeriodsByType'],
       ),
       medianResidentialPrice: _doubleFromJson(
         json['median_residential_price'] ?? json['medianResidentialPrice'],
@@ -159,6 +171,8 @@ class AreaProfile {
       'transport_year': transportYear,
       'market_price_history': marketPriceHistory,
       'market_price_periods': marketPricePeriods,
+      'market_price_history_by_type': marketPriceHistoryByType,
+      'market_price_periods_by_type': marketPricePeriodsByType,
       'median_residential_price': medianResidentialPrice,
       'market_price_year': marketPriceYear,
       'transaction_count': transactionCount,
@@ -215,6 +229,22 @@ class AreaProfile {
   static List<String> _stringListFromJson(Object? value) {
     if (value is! List) return const [];
     return value.map((item) => item.toString()).toList();
+  }
+
+  static Map<String, List<double>> _doubleListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _doubleListFromJson(entry.value),
+    };
+  }
+
+  static Map<String, List<String>> _stringListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _stringListFromJson(entry.value),
+    };
   }
 
   static DateTime? _dateTimeFromJson(Object? value) {
