@@ -805,6 +805,8 @@ class _DemandCard extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+            _DemandInterpretation(score: demand),
             const SizedBox(height: 20),
             _SignalRow(
               label:
@@ -837,6 +839,99 @@ class _DemandCard extends StatelessWidget {
   double _growthSignal(double? value) {
     if (value == null) return 0;
     return ((value.clamp(-20, 20) + 20) / 40).toDouble();
+  }
+}
+
+class _DemandInterpretation extends StatelessWidget {
+  const _DemandInterpretation({required this.score});
+
+  final double score;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _meaningFor(score);
+    const ranges = [
+      ('0–24', 'Significant demand decline'),
+      ('25–44', 'Weak demand'),
+      ('45–55', 'Broadly stable'),
+      ('56–74', 'Growing demand'),
+      ('75–100', 'Strong demand growth'),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE3E9F2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'How to read this score',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Current signal: $current',
+            style: const TextStyle(
+              color: AppTheme.teal,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'It measures year-over-year residential transaction activity. '
+            'A score near 50 means activity is broadly unchanged.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          ...ranges.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 58,
+                    child: Text(
+                      item.$1,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'This is a market activity indicator, not an investment guarantee.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _meaningFor(double value) {
+    if (value <= 24) return 'Significant demand decline';
+    if (value <= 44) return 'Weak demand';
+    if (value <= 55) return 'Broadly stable';
+    if (value <= 74) return 'Growing demand';
+    return 'Strong demand growth';
   }
 }
 
