@@ -20,6 +20,19 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
   String selectedView = 'Overview';
+  bool _initialRefreshScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialRefreshScheduled) return;
+    _initialRefreshScheduled = true;
+    final state = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      state.ensureInitialMarketData();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
