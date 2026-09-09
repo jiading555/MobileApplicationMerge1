@@ -63,6 +63,10 @@ class OpenDataService {
     'selangor|gombak': ['Gombak'],
     'selangor|ulu langat': ['Kajang', 'Ampang Jaya'],
     'johor|johor bahru': ['Johor Bahru Selatan', 'Johor Bahru Utara'],
+    'johor|kulai': ['Kulaijaya'],
+    'johor|tangkak': ['Ledang'],
+    'selangor|ulu selangor': ['Hulu Selangor'],
+    'selangor|klang': ['Klang Selatan', 'Klang Utara'],
     'penang|timur laut': ['Timur Laut'],
   };
 
@@ -178,7 +182,7 @@ class OpenDataService {
     final incomeYear = _recordYear(income);
     final populationYear = _recordYear(population);
     final educationYear = _recordYear(schools);
-    final crimeYear = _recordYear(crime);
+    final crimeYear = _recordYear(crimeRows);
     final hospitalYear = _recordYear(hospitalBeds);
     final years = [
       populationYear,
