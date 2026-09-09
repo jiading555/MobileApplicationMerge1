@@ -25,6 +25,7 @@ class AreaData {
     this.incomeYear,
     this.crimeYear,
     this.educationYear,
+    this.hospitalYear,
     this.transportYear,
     this.retrievedAt,
     this.isGovernmentProfile = false,
@@ -53,6 +54,7 @@ class AreaData {
   final int? incomeYear;
   final int? crimeYear;
   final int? educationYear;
+  final int? hospitalYear;
   final int? transportYear;
   final DateTime? retrievedAt;
   final bool isGovernmentProfile;
@@ -133,11 +135,12 @@ class AreaData {
           .toString(),
       source: profile.source ?? 'OpenDOSM; data.gov.my',
       sourceUrl: profile.sourceUrl,
-      populationYear: profile.populationYear,
-      incomeYear: profile.incomeYear,
-      crimeYear: profile.crimeYear,
-      educationYear: profile.educationYear,
-      transportYear: profile.transportYear,
+      populationYear: profile.populationYear ?? fallback?.populationYear,
+      incomeYear: profile.incomeYear ?? fallback?.incomeYear,
+      crimeYear: profile.crimeYear ?? fallback?.crimeYear,
+      educationYear: profile.educationYear ?? fallback?.educationYear,
+      hospitalYear: profile.hospitalYear ?? fallback?.hospitalYear,
+      transportYear: profile.transportYear ?? fallback?.transportYear,
       retrievedAt: profile.retrievedAt,
       isGovernmentProfile: true,
     );
