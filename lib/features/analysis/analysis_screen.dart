@@ -20,7 +20,6 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
   String? selectedState;
-  String? comparisonState;
   String selectedMarketArea = 'Overall';
   String selectedPropertyType = 'All residential';
   String comparisonPropertyType = 'All residential';
@@ -317,11 +316,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               if (selectedView == 'District comparison')
                 _DistrictComparison(
                   areas: state.areas,
-                  selectedState: comparisonState ?? area.state,
-                  onStateChanged: (value) => setState(() {
-                    comparisonState = value;
-                    comparisonPropertyType = 'All residential';
-                  }),
+                  selectedState: area.state,
                   propertyType: comparisonPropertyType,
                   onPropertyTypeChanged: (value) =>
                       setState(() => comparisonPropertyType = value),
@@ -959,24 +954,20 @@ class _DistrictComparison extends StatelessWidget {
   const _DistrictComparison({
     required this.areas,
     required this.selectedState,
-    required this.onStateChanged,
     required this.propertyType,
     required this.onPropertyTypeChanged,
   });
 
   final List<AreaData> areas;
   final String selectedState;
-  final ValueChanged<String> onStateChanged;
   final String propertyType;
   final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final states = areas.map((area) => area.state).toSet().toList()..sort();
-    final activeState = states.contains(selectedState)
-        ? selectedState
-        : states.first;
-    final stateAreas = areas.where((area) => area.state == activeState).toList();
+    final stateAreas = areas
+        .where((area) => area.state == selectedState)
+        .toList();
     final typeOptions = <String>{
       'All residential',
       for (final area in stateAreas) ...area.marketPropertyTypes,
@@ -1003,57 +994,14 @@ class _DistrictComparison extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Compare districts within one state and one residential property type.',
+          'Compare districts in the selected state by residential property type.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final stateFilter = DropdownButtonFormField<String>(
-              initialValue: activeState,
-              isExpanded: true,
-              menuMaxHeight: 420,
-              decoration: const InputDecoration(
-                labelText: 'Filter by state',
-                prefixIcon: Icon(Icons.filter_alt_outlined),
-              ),
-              items: states
-                  .map(
-                    (state) => DropdownMenuItem(
-                      value: state,
-                      child: Text(
-                        state,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) onStateChanged(value);
-              },
-            );
-            final typeFilter = _PropertyTypeFilter(
-              value: activeType,
-              options: typeOptions,
-              onChanged: onPropertyTypeChanged,
-            );
-            return constraints.maxWidth >= 700
-                ? Row(
-                    children: [
-                      Expanded(child: stateFilter),
-                      const SizedBox(width: 12),
-                      Expanded(child: typeFilter),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      stateFilter,
-                      const SizedBox(height: 12),
-                      typeFilter,
-                    ],
-                  );
-          },
+        _PropertyTypeFilter(
+          value: activeType,
+          options: typeOptions,
+          onChanged: onPropertyTypeChanged,
         ),
         const SizedBox(height: 16),
         Card(
