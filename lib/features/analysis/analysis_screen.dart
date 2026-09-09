@@ -221,12 +221,22 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 2, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      useSafeArea: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.78,
+        minChildSize: 0.42,
+        maxChildSize: 0.96,
+        builder: (context, scrollController) => SafeArea(
+          top: false,
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              2,
+              20,
+              24 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
             children: [
               Text(
                 'Official data sources',
@@ -234,6 +244,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
+                'Drag the sheet or scroll to view every source. '
                 'Tap a source to copy its official URL.',
                 style: TextStyle(color: AppTheme.muted),
               ),
@@ -249,7 +260,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   trailing: const Icon(Icons.copy_rounded),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: source.url));
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
                       SnackBar(content: Text('${source.name} URL copied')),
                     );
                   },
