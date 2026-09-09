@@ -15,6 +15,17 @@ class AreaProfile {
     this.hospitalYear,
     this.transportStopCount,
     this.transportYear,
+    this.marketPriceHistory = const [],
+    this.marketPricePeriods = const [],
+    this.medianResidentialPrice,
+    this.marketPriceYear,
+    this.transactionCount,
+    this.previousTransactionCount,
+    this.transactionValueMillion,
+    this.previousTransactionValueMillion,
+    this.marketPeriod,
+    this.marketSourceUrl,
+    this.marketRetrievedAt,
     this.dataYear,
     this.source,
     this.sourceUrl,
@@ -36,6 +47,17 @@ class AreaProfile {
   final int? hospitalYear;
   final int? transportStopCount;
   final int? transportYear;
+  final List<double> marketPriceHistory;
+  final List<String> marketPricePeriods;
+  final double? medianResidentialPrice;
+  final int? marketPriceYear;
+  final int? transactionCount;
+  final int? previousTransactionCount;
+  final double? transactionValueMillion;
+  final double? previousTransactionValueMillion;
+  final String? marketPeriod;
+  final String? marketSourceUrl;
+  final DateTime? marketRetrievedAt;
   final int? dataYear;
   final String? source;
   final String? sourceUrl;
@@ -75,6 +97,40 @@ class AreaProfile {
       transportYear: _intFromJson(
         json['transport_year'] ?? json['transportYear'],
       ),
+      marketPriceHistory: _doubleListFromJson(
+        json['market_price_history'] ?? json['marketPriceHistory'],
+      ),
+      marketPricePeriods: _stringListFromJson(
+        json['market_price_periods'] ?? json['marketPricePeriods'],
+      ),
+      medianResidentialPrice: _doubleFromJson(
+        json['median_residential_price'] ?? json['medianResidentialPrice'],
+      ),
+      marketPriceYear: _intFromJson(
+        json['market_price_year'] ?? json['marketPriceYear'],
+      ),
+      transactionCount: _intFromJson(
+        json['transaction_count'] ?? json['transactionCount'],
+      ),
+      previousTransactionCount: _intFromJson(
+        json['previous_transaction_count'] ?? json['previousTransactionCount'],
+      ),
+      transactionValueMillion: _doubleFromJson(
+        json['transaction_value_million'] ?? json['transactionValueMillion'],
+      ),
+      previousTransactionValueMillion: _doubleFromJson(
+        json['previous_transaction_value_million'] ??
+            json['previousTransactionValueMillion'],
+      ),
+      marketPeriod: _nullableStringFromJson(
+        json['market_period'] ?? json['marketPeriod'],
+      ),
+      marketSourceUrl: _nullableStringFromJson(
+        json['market_source_url'] ?? json['marketSourceUrl'],
+      ),
+      marketRetrievedAt: _dateTimeFromJson(
+        json['market_retrieved_at'] ?? json['marketRetrievedAt'],
+      ),
       dataYear: _intFromJson(json['data_year'] ?? json['dataYear']),
       source: _nullableStringFromJson(json['source']),
       sourceUrl: _nullableStringFromJson(
@@ -101,6 +157,17 @@ class AreaProfile {
       'education_year': educationYear,
       'transport_stop_count': transportStopCount,
       'transport_year': transportYear,
+      'market_price_history': marketPriceHistory,
+      'market_price_periods': marketPricePeriods,
+      'median_residential_price': medianResidentialPrice,
+      'market_price_year': marketPriceYear,
+      'transaction_count': transactionCount,
+      'previous_transaction_count': previousTransactionCount,
+      'transaction_value_million': transactionValueMillion,
+      'previous_transaction_value_million': previousTransactionValueMillion,
+      'market_period': marketPeriod,
+      'market_source_url': marketSourceUrl,
+      'market_retrieved_at': marketRetrievedAt?.toUtc().toIso8601String(),
       'data_year': dataYear,
       'source': source,
       'source_url': sourceUrl,
@@ -138,6 +205,16 @@ class AreaProfile {
       return value.toDouble();
     }
     return double.tryParse(value.toString());
+  }
+
+  static List<double> _doubleListFromJson(Object? value) {
+    if (value is! List) return const [];
+    return value.map(_doubleFromJson).whereType<double>().toList();
+  }
+
+  static List<String> _stringListFromJson(Object? value) {
+    if (value is! List) return const [];
+    return value.map((item) => item.toString()).toList();
   }
 
   static DateTime? _dateTimeFromJson(Object? value) {
