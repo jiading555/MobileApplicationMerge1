@@ -34,17 +34,86 @@ ARCHIVED_PRICE_URLS = (
     "Bahagian%20Pasaran%20Harta%20Tanah/Harga%20Kediaman%20Sukuan/"
     "Q4%202025/Jadual%20Harga%20Kediaman%20Sukuan%20Tahunan%20Q4%202025.xlsx",
 )
-TARGETS = (
-    ("Selangor", "Petaling"),
-    ("Selangor", "Klang"),
-    ("Selangor", "Gombak"),
-    ("Selangor", "Ulu Langat"),
-    ("Johor", "Johor Bahru"),
-    ("Pulau Pinang", "Timur Laut"),
+SUPPORTED_DISTRICTS = {
+    "Selangor": (
+        "Petaling", "Klang", "Gombak", "Ulu Langat", "Ulu Selangor",
+        "Kuala Langat", "Kuala Selangor", "Sabak Bernam", "Sepang",
+    ),
+    "Johor": (
+        "Batu Pahat", "Johor Bahru", "Kluang", "Kota Tinggi", "Kulai",
+        "Mersing", "Muar", "Pontian", "Segamat", "Tangkak",
+    ),
+    "Pulau Pinang": (
+        "Barat Daya", "Seberang Perai Selatan", "Seberang Perai Tengah",
+        "Seberang Perai Utara", "Timur Laut",
+    ),
+    "Perak": (
+        "Bagan Datuk", "Batang Padang", "Hilir Perak", "Hulu Perak",
+        "Kampar", "Kerian", "Kinta", "Kuala Kangsar",
+        "Larut Dan Matang", "Manjung", "Muallim", "Perak Tengah", "Selama",
+    ),
+    "Negeri Sembilan": (
+        "Jelebu", "Jempol", "Kuala Pilah", "Port Dickson", "Rembau",
+        "Seremban", "Tampin",
+    ),
+    "Melaka": ("Alor Gajah", "Jasin", "Melaka Tengah"),
+    "Kedah": (
+        "Baling", "Bandar Baharu", "Kota Setar", "Kuala Muda",
+        "Kubang Pasu", "Kulim", "Langkawi", "Padang Terap", "Pendang",
+        "Pokok Sena", "Sik", "Yan",
+    ),
+    "Pahang": (
+        "Bentong", "Bera", "Cameron Highlands", "Jerantut", "Kuantan",
+        "Lipis", "Maran", "Pekan", "Raub", "Rompin", "Temerloh",
+    ),
+    "Terengganu": (
+        "Besut", "Dungun", "Hulu Terengganu", "Kemaman", "Kuala Nerus",
+        "Kuala Terengganu", "Marang", "Setiu",
+    ),
+    "Kelantan": (
+        "Bachok", "Gua Musang", "Jeli", "Kota Bharu", "Kuala Krai",
+        "Machang", "Pasir Mas", "Pasir Puteh", "Tanah Merah", "Tumpat",
+    ),
+    "Perlis": ("Perlis",),
+    "Sabah": (
+        "Beaufort", "Keningau", "Kinabatangan", "Kota Belud",
+        "Kota Kinabalu", "Kota Marudu", "Kudat", "Kunak", "Lahad Datu",
+        "Papar", "Penampang", "Pitas", "Putatan", "Ranau", "Sandakan",
+        "Semporna", "Sipitang", "Tambunan", "Tawau", "Tenom", "Tuaran",
+    ),
+    "Sarawak": (
+        "Betong", "Bintulu", "Kapit", "Kuching", "Limbang", "Miri",
+        "Mukah", "Samarahan", "Sarikei", "Serian", "Sibu", "Sri Aman",
+    ),
+    "W.P. Kuala Lumpur": ("W.P. Kuala Lumpur",),
+    "W.P. Putrajaya": ("W.P. Putrajaya",),
+    "W.P. Labuan": ("W.P. Labuan",),
+}
+TARGETS = tuple(
+    (state, district)
+    for state, districts in SUPPORTED_DISTRICTS.items()
+    for district in districts
 )
-PUBLICATION_STATE_NAMES = {"Pulau Pinang": "Penang"}
-WORKBOOK_SHEETS = {"Pulau Pinang": "PPinang"}
-DISTRICT_ALIASES = {"Ulu Langat": "Hulu Langat"}
+PUBLICATION_STATE_NAMES = {
+    "Pulau Pinang": "Penang",
+    "W.P. Kuala Lumpur": "WP Kuala Lumpur",
+    "W.P. Putrajaya": "WP Putrajaya",
+    "W.P. Labuan": "WP Labuan",
+}
+WORKBOOK_SHEETS = {
+    "Pulau Pinang": "PPinang",
+    "W.P. Kuala Lumpur": "WP Kuala Lumpur",
+    "W.P. Putrajaya": "WP Putrajaya",
+    "W.P. Labuan": "WP Labuan",
+}
+DISTRICT_ALIASES = {
+    "Ulu Langat": "Hulu Langat",
+    "Ulu Selangor": "Hulu Selangor",
+    "Larut Dan Matang": "Larut Matang",
+    "W.P. Kuala Lumpur": "WP Kuala Lumpur",
+    "W.P. Putrajaya": "WP Putrajaya",
+    "W.P. Labuan": "WP Labuan",
+}
 TIMEOUT = 90
 
 
