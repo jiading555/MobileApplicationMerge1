@@ -50,7 +50,12 @@ class OpenDataService {
     'wp labuan': 'labuan',
   };
 
-  static const _displayNames = {'penang': 'Pulau Pinang'};
+  static const _displayNames = {
+    'penang': 'Pulau Pinang',
+    'kuala lumpur': 'W.P. Kuala Lumpur',
+    'putrajaya': 'W.P. Putrajaya',
+    'labuan': 'W.P. Labuan',
+  };
 
   static const _crimeDistrictAliases = {
     'selangor|petaling': [
