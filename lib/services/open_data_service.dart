@@ -77,27 +77,52 @@ class OpenDataService {
   Future<List<AreaProfile>> fetchAreaProfiles({
     List<(String state, String district)> targets = defaultTargets,
   }) async {
-    final results = await Future.wait<List<Map<String, dynamic>>>([
-      _safeFetch(_fetchPopulationDataset),
-      _safeFetch(() => _fetchDataset('hh_income_district')),
-      _safeFetch(() => _fetchDataset('schools_district')),
-      _safeFetch(() => _fetchDataset('crime_district')),
-      _safeFetch(() => _fetchDataset('hospital_beds')),
-    ]);
-    if (results.every((rows) => rows.isEmpty)) {
-      throw Exception('All government data sources failed.');
+    final requests = <String, Future<List<Map<String, dynamic>>>>{
+      'Population': _fetchPopulationDataset(),
+      'Household income': _fetchDataset('hh_income_district'),
+      'Schools': _fetchDataset('schools_district'),
+      'Crime': _fetchDataset('crime_district'),
+      'Hospital beds': _fetchDataset('hospital_beds'),
+    };
+    final results = <String, List<Map<String, dynamic>>>{};
+    final failures = <String>[];
+
+    await Future.wait(
+      requests.entries.map((entry) async {
+        try {
+          final rows = await entry.value;
+          if (rows.isEmpty) {
+            failures.add('${entry.key}: no records returned');
+          } else {
+            results[entry.key] = rows;
+          }
+        } catch (error) {
+          failures.add('${entry.key}: $error');
+        }
+      }),
+    );
+
+    TransportSnapshot? transport;
+    try {
+      transport = await _transportDataService.fetchStopCounts(targets: targets);
+    } catch (error) {
+      failures.add('Transport: $error');
     }
-    final transport = await _safeFetchTransport(targets);
+
+    if (failures.isNotEmpty) {
+      throw GovernmentDataRefreshException(failures);
+    }
+
     return targets
         .map(
           (target) => _buildAreaProfile(
             target.$1,
             target.$2,
-            populationRows: results[0],
-            incomeRows: results[1],
-            schoolRows: results[2],
-            allCrimeRows: results[3],
-            hospitalRows: results[4],
+            populationRows: results['Population']!,
+            incomeRows: results['Household income']!,
+            schoolRows: results['Schools']!,
+            allCrimeRows: results['Crime']!,
+            hospitalRows: results['Hospital beds']!,
             transport: transport,
           ),
         )
@@ -227,18 +252,23 @@ class OpenDataService {
   }
 
   Future<List<Map<String, dynamic>>> _fetchPopulationDataset() async {
-    final apiRows = await _fetchDataset('population_district');
-    if (apiRows.isNotEmpty) return apiRows;
-    return _fetchCsv(_populationDistrictCsv);
-  }
-
-  Future<List<Map<String, dynamic>>> _safeFetch(
-    Future<List<Map<String, dynamic>>> Function() request,
-  ) async {
+    Object? apiError;
     try {
-      return await request();
-    } catch (_) {
-      return const [];
+      final apiRows = await _fetchDataset('population_district');
+      if (apiRows.isNotEmpty) return apiRows;
+      apiError = 'the API returned no records';
+    } catch (error) {
+      apiError = error;
+    }
+
+    try {
+      final csvRows = await _fetchCsv(_populationDistrictCsv);
+      if (csvRows.isNotEmpty) return csvRows;
+      throw Exception('the CSV returned no records');
+    } catch (csvError) {
+      throw Exception(
+        'Population API failed ($apiError); CSV fallback failed ($csvError).',
+      );
     }
   }
 
@@ -415,4 +445,15 @@ class OpenDataService {
         .replaceAll(RegExp(r'\s+'), ' ');
     return _stateAliases[text] ?? text;
   }
+}
+
+
+class GovernmentDataRefreshException implements Exception {
+  const GovernmentDataRefreshException(this.failures);
+
+  final List<String> failures;
+
+  @override
+  String toString() =>
+      'Some government datasets could not be refreshed: ${failures.join('; ')}';
 }
