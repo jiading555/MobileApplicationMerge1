@@ -19,6 +19,8 @@ class AreaProfile {
     this.marketPricePeriods = const [],
     this.marketPriceHistoryByType = const {},
     this.marketPricePeriodsByType = const {},
+    this.marketAreaPriceHistoryByType = const {},
+    this.marketAreaPricePeriodsByType = const {},
     this.medianResidentialPrice,
     this.marketPriceYear,
     this.transactionCount,
@@ -53,6 +55,8 @@ class AreaProfile {
   final List<String> marketPricePeriods;
   final Map<String, List<double>> marketPriceHistoryByType;
   final Map<String, List<String>> marketPricePeriodsByType;
+  final Map<String, Map<String, List<double>>> marketAreaPriceHistoryByType;
+  final Map<String, Map<String, List<String>>> marketAreaPricePeriodsByType;
   final double? medianResidentialPrice;
   final int? marketPriceYear;
   final int? transactionCount;
@@ -115,6 +119,14 @@ class AreaProfile {
         json['market_price_periods_by_type'] ??
             json['marketPricePeriodsByType'],
       ),
+      marketAreaPriceHistoryByType: _nestedDoubleListMapFromJson(
+        json['market_area_price_history_by_type'] ??
+            json['marketAreaPriceHistoryByType'],
+      ),
+      marketAreaPricePeriodsByType: _nestedStringListMapFromJson(
+        json['market_area_price_periods_by_type'] ??
+            json['marketAreaPricePeriodsByType'],
+      ),
       medianResidentialPrice: _doubleFromJson(
         json['median_residential_price'] ?? json['medianResidentialPrice'],
       ),
@@ -173,6 +185,8 @@ class AreaProfile {
       'market_price_periods': marketPricePeriods,
       'market_price_history_by_type': marketPriceHistoryByType,
       'market_price_periods_by_type': marketPricePeriodsByType,
+      'market_area_price_history_by_type': marketAreaPriceHistoryByType,
+      'market_area_price_periods_by_type': marketAreaPricePeriodsByType,
       'median_residential_price': medianResidentialPrice,
       'market_price_year': marketPriceYear,
       'transaction_count': transactionCount,
@@ -244,6 +258,24 @@ class AreaProfile {
     return {
       for (final entry in value.entries)
         entry.key.toString(): _stringListFromJson(entry.value),
+    };
+  }
+
+  static Map<String, Map<String, List<double>>>
+      _nestedDoubleListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _doubleListMapFromJson(entry.value),
+    };
+  }
+
+  static Map<String, Map<String, List<String>>>
+      _nestedStringListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _stringListMapFromJson(entry.value),
     };
   }
 
