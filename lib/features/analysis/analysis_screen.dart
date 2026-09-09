@@ -51,7 +51,15 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final refreshFailed = refreshMessage?.startsWith('Refresh failed.') ?? false;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Market trend & analytics'),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Market trend & analytics',
+            maxLines: 1,
+            style: TextStyle(fontSize: 18),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: () => _showSources(context),
@@ -357,29 +365,39 @@ class _Overview extends StatelessWidget {
     final cards = [
       MetricCard(
         label: 'Population',
-        value: formatCount(area.population),
+        value: area.populationYear == null
+            ? 'Unavailable'
+            : formatCount(area.population),
         trend: _yearLabel('Year', area.populationYear),
         icon: Icons.groups_2_outlined,
       ),
       MetricCard(
         label: 'Median household income',
-        value: formatRinggit(area.medianIncome),
+        value: area.incomeYear == null
+            ? 'Unavailable'
+            : formatRinggit(area.medianIncome),
         trend: _yearLabel('Year', area.incomeYear),
         icon: Icons.account_balance_wallet_outlined,
         color: AppTheme.teal,
       ),
       MetricCard(
         label: 'Normalized safety',
-        value: '${area.safetyScore.round()}/100',
+        value: area.crimeYear == null
+            ? 'Unavailable'
+            : '${area.safetyScore.round()}/100',
         trend: area.crimeYear == null
-            ? 'Compared signal'
+            ? 'Crime data unavailable'
             : 'Crime data ${area.crimeYear}',
         icon: Icons.shield_outlined,
         color: const Color(0xFF7758C8),
       ),
       MetricCard(
         label: 'Infrastructure',
-        value: '${area.infrastructureScore.round()}/100',
+        value: area.educationYear == null &&
+                area.hospitalYear == null &&
+                area.transportYear == null
+            ? 'Unavailable'
+            : '${area.infrastructureScore.round()}/100',
         trend: area.educationYear == null
             ? '${area.schools} schools, ${area.hospitalBeds} hospital beds'
             : '${area.schools} schools (${area.educationYear}), '
