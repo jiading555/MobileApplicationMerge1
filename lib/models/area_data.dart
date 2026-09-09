@@ -14,6 +14,7 @@ class AreaData {
     required this.schools,
     required this.hospitals,
     this.hospitalBeds = 0,
+    this.transportStopCount = 0,
     required this.averagePricePsf,
     required this.rentalYield,
     required this.priceGrowth,
@@ -43,6 +44,7 @@ class AreaData {
   final int schools;
   final int hospitals;
   final int hospitalBeds;
+  final int transportStopCount;
   final int averagePricePsf;
   final double rentalYield;
   final double priceGrowth;
@@ -60,17 +62,28 @@ class AreaData {
   final bool isGovernmentProfile;
 
   double get infrastructureScore {
-    final healthcareScore = hospitalBeds > 0
-        ? (hospitalBeds / 1500 * 100)
-        : (hospitals / 15 * 100);
-    final facilityScore = ((schools / 130) * 60 + healthcareScore * 0.40)
-        .clamp(0, 100)
-        .toDouble();
-    return (facilityScore * 0.45 +
-            transportScore * 0.35 +
-            connectivityScore * 0.20)
-        .clamp(0, 100)
-        .toDouble();
+    if (population <= 0) return 0;
+
+    var weightedScore = 0.0;
+    var availableWeight = 0.0;
+    if (educationYear != null) {
+      final schoolsPer10k = schools / population * 10000;
+      final schoolScore = (schoolsPer10k / 1.5 * 100).clamp(0, 100);
+      weightedScore += schoolScore * 0.35;
+      availableWeight += 0.35;
+    }
+    if (hospitalYear != null) {
+      final bedsPer10k = hospitalBeds / population * 10000;
+      final bedScore = (bedsPer10k / 20 * 100).clamp(0, 100);
+      weightedScore += bedScore * 0.35;
+      availableWeight += 0.35;
+    }
+    if (transportYear != null) {
+      weightedScore += transportScore.clamp(0, 100) * 0.30;
+      availableWeight += 0.30;
+    }
+    if (availableWeight == 0) return 0;
+    return (weightedScore / availableWeight).clamp(0, 100).toDouble();
   }
 
   factory AreaData.fromJson(Map<String, dynamic> json) {
@@ -86,6 +99,7 @@ class AreaData {
       transportScore: (json['transportScore'] as num).toDouble(),
       schools: json['schools'] as int,
       hospitals: json['hospitals'] as int,
+      transportStopCount: (json['transportStopCount'] as num?)?.round() ?? 0,
       averagePricePsf: json['averagePricePsf'] as int,
       rentalYield: (json['rentalYield'] as num).toDouble(),
       priceGrowth: (json['priceGrowth'] as num).toDouble(),
@@ -110,8 +124,12 @@ class AreaData {
     final transportCount =
         profile.transportStopCount ?? fallback?.transportScore.round() ?? 0;
     final transportScore = profile.transportStopCount == null
-        ? fallback?.transportScore ?? 70.0
-        : (transportCount / 2).clamp(35, 100).toDouble();
+        ? fallback?.transportScore ?? 0.0
+        : population <= 0
+        ? 0.0
+        : ((transportCount / population * 10000) * 100)
+              .clamp(0, 100)
+              .toDouble();
 
     return AreaData(
       id: _normaliseId(profile.district),
@@ -127,6 +145,8 @@ class AreaData {
       schools: schoolCount,
       hospitals: fallback?.hospitals ?? 0,
       hospitalBeds: profile.hospitalBedCount ?? fallback?.hospitalBeds ?? 0,
+      transportStopCount:
+          profile.transportStopCount ?? fallback?.transportStopCount ?? 0,
       averagePricePsf: fallback?.averagePricePsf ?? 0,
       rentalYield: fallback?.rentalYield ?? 0,
       priceGrowth: fallback?.priceGrowth ?? 0,
