@@ -68,18 +68,22 @@ class AreaData {
     var availableWeight = 0.0;
     if (educationYear != null) {
       final schoolsPer10k = schools / population * 10000;
-      final schoolScore = (schoolsPer10k / 1.5 * 100).clamp(0, 100);
+      final schoolScore = (schoolsPer10k / 1.5 * 100)
+          .clamp(0, 100)
+          .toDouble();
       weightedScore += schoolScore * 0.35;
       availableWeight += 0.35;
     }
     if (hospitalYear != null) {
       final bedsPer10k = hospitalBeds / population * 10000;
-      final bedScore = (bedsPer10k / 20 * 100).clamp(0, 100);
+      final bedScore = (bedsPer10k / 20 * 100)
+          .clamp(0, 100)
+          .toDouble();
       weightedScore += bedScore * 0.35;
       availableWeight += 0.35;
     }
     if (transportYear != null) {
-      weightedScore += transportScore.clamp(0, 100) * 0.30;
+      weightedScore += transportScore.clamp(0, 100).toDouble() * 0.30;
       availableWeight += 0.30;
     }
     if (availableWeight == 0) return 0;
