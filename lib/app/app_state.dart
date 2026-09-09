@@ -6,6 +6,7 @@ import '../data/repositories/area_profile_repository.dart';
 import '../data/repositories/property_repository.dart';
 import '../data/repositories/user_account_repository.dart';
 import '../core/config/supabase_config.dart';
+import '../core/constants/property_preference_options.dart';
 import '../core/utils/auth_validators.dart';
 import '../models/app_user.dart';
 import '../models/area_data.dart';
@@ -102,6 +103,13 @@ class AppState extends ChangeNotifier {
             isUsingProcessedAreaProfiles = true;
           }
         }
+      }
+
+      final districtCountBeforeExpansion = areas.length;
+      areas = _withAllMalaysiaDistricts(areas);
+      if (cachedMarketTrend != null &&
+          areas.length > districtCountBeforeExpansion) {
+        marketTrendCacheUpdatedAt = null;
       }
 
       final cloudProperties = await _loadCloudProperties(areas);
@@ -534,6 +542,52 @@ class AppState extends ChangeNotifier {
       openDataLoadMessage = error.toString();
       return const [];
     }
+  }
+
+  List<AreaData> _withAllMalaysiaDistricts(
+    List<AreaData> currentAreas,
+  ) {
+    final areasByLocation = {
+      for (final area in currentAreas)
+        '${_normaliseId(area.state)}|${_normaliseId(area.name)}': area,
+    };
+    for (final stateEntry
+        in PropertyPreferenceOptions.districtsByState.entries) {
+      for (final district in stateEntry.value) {
+        final key =
+            '${_normaliseId(stateEntry.key)}|${_normaliseId(district)}';
+        areasByLocation.putIfAbsent(
+          key,
+          () => AreaData(
+            id: _normaliseId(district),
+            name: district,
+            state: stateEntry.key,
+            population: 0,
+            populationGrowth: 0,
+            medianIncome: 0,
+            safetyScore: 0,
+            connectivityScore: 0,
+            transportScore: 0,
+            schools: 0,
+            hospitals: 0,
+            averagePricePsf: 0,
+            rentalYield: 0,
+            priceGrowth: 0,
+            priceHistory: const [],
+            snapshotDate: '',
+            source: 'Government data pending',
+          ),
+        );
+      }
+    }
+    final expanded = areasByLocation.values.toList()
+      ..sort((left, right) {
+        final stateComparison = left.state.compareTo(right.state);
+        return stateComparison != 0
+            ? stateComparison
+            : left.name.compareTo(right.name);
+      });
+    return expanded;
   }
 
   List<AreaData> _areasFromProfiles(
