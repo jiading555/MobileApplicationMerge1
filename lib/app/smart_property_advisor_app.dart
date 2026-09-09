@@ -78,35 +78,53 @@ class _SplashScreen extends StatelessWidget {
             colors: [Color(0xFF083E7C), Color(0xFF087CC6), Color(0xFF28C6B7)],
           ),
         ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.home_work_rounded, color: Colors.white, size: 72),
-              SizedBox(height: 18),
-              Text(
-                'Smart Property Advisor',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                ),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.home_work_rounded,
+                    color: Colors.white,
+                    size: 72,
+                  ),
+                  const SizedBox(height: 18),
+                  const SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      'Smart Property Advisor',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      'Smarter property decisions',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: 10),
-              Text(
-                'Smarter property decisions',
-                style: TextStyle(color: Colors.white70, fontSize: 16),
-              ),
-              SizedBox(height: 32),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
