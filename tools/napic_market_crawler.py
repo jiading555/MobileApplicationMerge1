@@ -30,6 +30,9 @@ ARCHIVED_PRICE_URLS = (
     "https://napic.jpph.gov.my/storage/app/media//3-penerbitan/Shahrul/"
     "Bahagian%20Pasaran%20Harta%20Tanah/Harga%20Kediaman%20Sukuan/"
     "Q3%202025/Jadual%20Harga%20Kediaman%20Sukuan%20Tahunan%20Q3_2025.xlsx",
+    "https://napic.jpph.gov.my/storage/app/media//3-penerbitan/Shahrul/"
+    "Bahagian%20Pasaran%20Harta%20Tanah/Harga%20Kediaman%20Sukuan/"
+    "Q4%202025/Jadual%20Harga%20Kediaman%20Sukuan%20Tahunan%20Q4%202025.xlsx",
 )
 TARGETS = (
     ("Selangor", "Petaling"),
