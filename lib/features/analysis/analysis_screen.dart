@@ -404,7 +404,7 @@ class _Overview extends StatelessWidget {
             ? 'Unavailable'
             : '${area.safetyScore.round()}/100',
         trend: area.crimeYear == null
-            ? 'Crime data unavailable'
+            ? 'No crime data reference'
             : 'Crime data ${area.crimeYear}',
         icon: Icons.shield_outlined,
         color: const Color(0xFF7758C8),
@@ -1155,7 +1155,26 @@ class _AreaBars extends StatelessWidget {
               children: [
                 _Bar(value: area.priceGrowth / 10, color: AppTheme.blue),
                 const SizedBox(height: 4),
-                _Bar(value: area.safetyScore / 100, color: AppTheme.green),
+                area.crimeYear == null
+                    ? const SizedBox(
+                        height: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Safety unavailable — no data reference',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 8,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _Bar(
+                        value: area.safetyScore / 100,
+                        color: AppTheme.green,
+                      ),
                 const SizedBox(height: 4),
                 _Bar(
                   value: area.infrastructureScore / 100,
