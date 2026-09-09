@@ -380,8 +380,17 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return null;
     }
+    if (!value.minimumBudget.isFinite ||
+        !value.maximumBudget.isFinite ||
+        value.minimumBudget < 0 ||
+        value.maximumBudget <= 0) {
+      return 'Enter a valid budget range.';
+    }
     if (value.minimumBudget > value.maximumBudget) {
       return 'Minimum budget cannot exceed maximum budget.';
+    }
+    if (value.maximumBudget > 1000000000) {
+      return 'Maximum budget cannot exceed RM 1,000,000,000.';
     }
     isAccountBusy = true;
     notifyListeners();
