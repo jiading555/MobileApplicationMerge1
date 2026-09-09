@@ -272,7 +272,7 @@ class AreaData {
         ? null
         : crimeCount / population * 100000;
     final safetyScore = crimeRate == null
-        ? fallback?.safetyScore ?? 75.0
+        ? 0.0
         : (100 - crimeRate / 35).clamp(45, 95).toDouble();
     final schoolCount =
         profile.educationInstitutionCount ?? fallback?.schools ?? 0;
@@ -316,7 +316,7 @@ class AreaData {
       sourceUrl: profile.sourceUrl,
       populationYear: profile.populationYear ?? fallback?.populationYear,
       incomeYear: profile.incomeYear ?? fallback?.incomeYear,
-      crimeYear: profile.crimeYear ?? fallback?.crimeYear,
+      crimeYear: profile.crimeCount == null ? null : profile.crimeYear,
       educationYear: profile.educationYear ?? fallback?.educationYear,
       hospitalYear: profile.hospitalYear ?? fallback?.hospitalYear,
       transportYear: profile.transportYear ?? fallback?.transportYear,
