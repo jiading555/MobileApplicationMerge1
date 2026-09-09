@@ -539,13 +539,18 @@ class _Overview extends StatelessWidget {
                 area.transportYear == null
             ? 'Unavailable'
             : '${area.infrastructureScore.round()}/100',
-        trend: area.educationYear == null
-            ? '${area.schools} schools, ${area.hospitalBeds} hospital beds'
-            : '${area.schools} schools (${area.educationYear}), '
-                  '${area.hospitalBeds} beds'
-                  '${area.hospitalYear == null ? '' : ' (${area.hospitalYear})'}, '
-                  '${area.transportStopCount} transport stops'
-                  '${area.transportYear == null ? '' : ' (${area.transportYear})'}',
+        trend: [
+          area.educationYear == null
+              ? 'schools unavailable'
+              : '${area.schools} schools (${area.educationYear})',
+          area.hospitalYear == null
+              ? 'hospital beds unavailable'
+              : '${area.hospitalBeds} beds (${area.hospitalYear})',
+          area.transportYear == null
+              ? 'transport unavailable'
+              : '${area.transportStopCount} transport stops '
+                    '(${area.transportYear})',
+        ].join(', '),
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
@@ -669,6 +674,12 @@ class _PriceFilters extends StatelessWidget {
         labelText: 'NAPIC market area',
         prefixIcon: Icon(Icons.location_city_outlined),
       ),
+      disabledHint: Text(
+        marketArea,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.ink),
+      ),
       items: marketAreas
           .map(
             (option) => DropdownMenuItem(
@@ -681,9 +692,11 @@ class _PriceFilters extends StatelessWidget {
             ),
           )
           .toList(),
-      onChanged: (selected) {
-        if (selected != null) onMarketAreaChanged(selected);
-      },
+      onChanged: marketAreas.length <= 1
+          ? null
+          : (selected) {
+              if (selected != null) onMarketAreaChanged(selected);
+            },
     );
     final typeFilter = _PropertyTypeFilter(
       value: propertyType,
@@ -732,6 +745,12 @@ class _PropertyTypeFilter extends StatelessWidget {
         labelText: 'Property type',
         prefixIcon: Icon(Icons.home_work_outlined),
       ),
+      disabledHint: Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.ink),
+      ),
       items: options
           .map(
             (option) => DropdownMenuItem(
@@ -744,9 +763,11 @@ class _PropertyTypeFilter extends StatelessWidget {
             ),
           )
           .toList(),
-      onChanged: (selected) {
-        if (selected != null) onChanged(selected);
-      },
+      onChanged: options.length <= 1
+          ? null
+          : (selected) {
+              if (selected != null) onChanged(selected);
+            },
     );
   }
 }
