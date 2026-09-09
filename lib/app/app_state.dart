@@ -153,30 +153,66 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final targets = areas
+      if (!SupabaseConfig.isConfigured) {
+        throw Exception('Supabase is not configured.');
+      }
+      final latestCloudProfiles =
+          await _areaProfileRepository.getAreaProfiles();
+      if (latestCloudProfiles.isEmpty) {
+        throw Exception('No NAPIC market data was returned by Supabase.');
+      }
+
+      final areasWithLatestMarketData = _areasFromProfiles(
+        latestCloudProfiles,
+        areas,
+      );
+      final targets = areasWithLatestMarketData
           .map((area) => (area.state, area.name))
           .toSet()
           .toList();
-      final areaProfiles = await _openDataService.fetchAreaProfiles(
+      final governmentProfiles = await _openDataService.fetchAreaProfiles(
         targets: targets,
       );
-      areas = _areasFromProfiles(areaProfiles, areas);
+      final refreshedAreas = _areasFromProfiles(
+        governmentProfiles,
+        areasWithLatestMarketData,
+      );
       final cachedAt = DateTime.now().toUtc();
-      await _saveMarketTrendCache(areas, cachedAt);
+      await _saveMarketTrendCache(refreshedAreas, cachedAt);
+      areas = refreshedAreas;
       marketTrendCacheUpdatedAt = cachedAt;
       isUsingLiveAreaProfiles = true;
       isUsingCloudAreaProfiles = false;
       isUsingProcessedAreaProfiles = false;
       isUsingMarketTrendCache = false;
-      governmentDataSyncMessage =
-          'Loaded the latest available government data for '
-          '${areaProfiles.length} districts.';
+      final years = _dataYears(refreshedAreas);
+      governmentDataSyncMessage = years.isEmpty
+          ? 'Data refreshed successfully.'
+          : 'Data refreshed successfully · ${years.join(', ')}';
     } catch (error) {
-      governmentDataSyncMessage = 'Government data load failed: $error';
+      final detail = error.toString().replaceFirst('Exception: ', '');
+      governmentDataSyncMessage = 'Refresh failed. $detail';
     } finally {
       isSyncingGovernmentData = false;
       notifyListeners();
     }
+  }
+
+  List<int> _dataYears(List<AreaData> values) {
+    final years = <int>{};
+    for (final area in values) {
+      years.addAll([
+        ?area.populationYear,
+        ?area.incomeYear,
+        ?area.crimeYear,
+        ?area.educationYear,
+        ?area.hospitalYear,
+        ?area.transportYear,
+        ?area.marketPriceYear,
+      ]);
+    }
+    final sorted = years.toList()..sort();
+    return sorted;
   }
 
   Future<String?> login(String email, String password) async {
