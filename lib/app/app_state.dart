@@ -13,6 +13,7 @@ import '../models/area_profile.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
+import '../services/market_trend_cache.dart';
 import '../services/open_data_service.dart';
 import '../services/recommendation_service.dart';
 
@@ -24,7 +25,9 @@ class AppState extends ChangeNotifier {
     this._recommendationService = const RecommendationService(),
     this._userAccountRepository = const UserAccountRepository(),
     OpenDataService? openDataService,
-  }) : _openDataService = openDataService ?? OpenDataService();
+    MarketTrendCache? marketTrendCache,
+  }) : _openDataService = openDataService ?? OpenDataService(),
+       _marketTrendCache = marketTrendCache ?? MarketTrendCache();
 
   final AssetRepository _repository;
   final AreaProfileRepository _areaProfileRepository;
@@ -32,6 +35,7 @@ class AppState extends ChangeNotifier {
   final RecommendationService _recommendationService;
   final UserAccountRepository _userAccountRepository;
   final OpenDataService _openDataService;
+  final MarketTrendCache _marketTrendCache;
   final Set<String> _favouriteIds = {'p01', 'p03'};
 
   bool isLoading = true;
@@ -48,11 +52,13 @@ class AppState extends ChangeNotifier {
   List<Property> properties = const [];
   bool isUsingCloudAreaProfiles = false;
   bool isUsingProcessedAreaProfiles = false;
+  bool isUsingMarketTrendCache = false;
   bool isUsingLiveAreaProfiles = false;
   bool isUsingCloudProperties = false;
   bool isUsingProcessedTeduhProperties = false;
   bool isSyncingGovernmentData = false;
   bool hasAttemptedInitialMarketRefresh = false;
+  DateTime? marketTrendCacheUpdatedAt;
   String? openDataLoadMessage;
   String? governmentDataSyncMessage;
   bool isAccountBusy = false;
@@ -79,15 +85,22 @@ class AppState extends ChangeNotifier {
       areas = localAreas;
       properties = localProperties;
 
-      final cloudProfiles = await _loadCloudAreaProfiles();
-      if (cloudProfiles.isNotEmpty) {
-        areas = _areasFromProfiles(cloudProfiles, localAreas);
-        isUsingCloudAreaProfiles = true;
+      final cachedMarketTrend = await _loadMarketTrendCache();
+      if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
+        areas = cachedMarketTrend.areas;
+        marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+        isUsingMarketTrendCache = true;
       } else {
-        final processedProfiles = await _repository.loadProcessedAreaProfiles();
-        if (processedProfiles.isNotEmpty) {
-          areas = _areasFromProfiles(processedProfiles, localAreas);
-          isUsingProcessedAreaProfiles = true;
+        final cloudProfiles = await _loadCloudAreaProfiles();
+        if (cloudProfiles.isNotEmpty) {
+          areas = _areasFromProfiles(cloudProfiles, localAreas);
+          isUsingCloudAreaProfiles = true;
+        } else {
+          final processedProfiles = await _repository.loadProcessedAreaProfiles();
+          if (processedProfiles.isNotEmpty) {
+            areas = _areasFromProfiles(processedProfiles, localAreas);
+            isUsingProcessedAreaProfiles = true;
+          }
         }
       }
 
@@ -123,6 +136,12 @@ class AppState extends ChangeNotifier {
   Future<void> ensureInitialMarketData() async {
     if (hasAttemptedInitialMarketRefresh) return;
     hasAttemptedInitialMarketRefresh = true;
+    final updatedAt = marketTrendCacheUpdatedAt;
+    if (updatedAt != null &&
+        DateTime.now().toUtc().difference(updatedAt.toUtc()) <
+            const Duration(days: 1)) {
+      return;
+    }
     await refreshGovernmentData();
   }
 
@@ -142,9 +161,13 @@ class AppState extends ChangeNotifier {
         targets: targets,
       );
       areas = _areasFromProfiles(areaProfiles, areas);
+      final cachedAt = DateTime.now().toUtc();
+      await _saveMarketTrendCache(areas, cachedAt);
+      marketTrendCacheUpdatedAt = cachedAt;
       isUsingLiveAreaProfiles = true;
       isUsingCloudAreaProfiles = false;
       isUsingProcessedAreaProfiles = false;
+      isUsingMarketTrendCache = false;
       governmentDataSyncMessage =
           'Loaded the latest available government data for '
           '${areaProfiles.length} districts.';
@@ -418,6 +441,25 @@ class AppState extends ChangeNotifier {
   Future<void> _loadAccount(User authUser) async {
     user = await _userAccountRepository.loadProfile(authUser);
     preferences = await _userAccountRepository.loadPreferences(authUser.id);
+  }
+
+  Future<MarketTrendCacheEntry?> _loadMarketTrendCache() async {
+    try {
+      return await _marketTrendCache.load();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveMarketTrendCache(
+    List<AreaData> value,
+    DateTime updatedAt,
+  ) async {
+    try {
+      await _marketTrendCache.save(value, updatedAt: updatedAt);
+    } catch (_) {
+      // A cache write must never discard successfully downloaded data.
+    }
   }
 
   Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
