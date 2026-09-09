@@ -1,4 +1,7 @@
-enum PropertyGoal { ownStay, investment }
+enum PropertyGoal {
+  ownStay,
+  investment,
+}
 
 class UserPreferences {
   const UserPreferences({
@@ -6,6 +9,16 @@ class UserPreferences {
     this.budget = 900000,
     this.preferredAreaId = 'any',
     this.propertyType = 'Any',
+
+    this.ownStaySafetyPriority = 30,
+    this.ownStayEducationPriority = 25,
+    this.ownStayTransportPriority = 20,
+
+    this.investmentIncomePriority = 20,
+    this.investmentTransportPriority = 15,
+    this.investmentAffordabilityPriority = 15,
+
+    // Legacy fields kept for compatibility.
     this.safetyPriority = 0.8,
     this.transportPriority = 0.7,
     this.facilitiesPriority = 0.7,
@@ -15,6 +28,15 @@ class UserPreferences {
   final double budget;
   final String preferredAreaId;
   final String propertyType;
+
+  final double ownStaySafetyPriority;
+  final double ownStayEducationPriority;
+  final double ownStayTransportPriority;
+
+  final double investmentIncomePriority;
+  final double investmentTransportPriority;
+  final double investmentAffordabilityPriority;
+
   final double safetyPriority;
   final double transportPriority;
   final double facilitiesPriority;
@@ -24,6 +46,15 @@ class UserPreferences {
     double? budget,
     String? preferredAreaId,
     String? propertyType,
+
+    double? ownStaySafetyPriority,
+    double? ownStayEducationPriority,
+    double? ownStayTransportPriority,
+
+    double? investmentIncomePriority,
+    double? investmentTransportPriority,
+    double? investmentAffordabilityPriority,
+
     double? safetyPriority,
     double? transportPriority,
     double? facilitiesPriority,
@@ -31,11 +62,43 @@ class UserPreferences {
     return UserPreferences(
       goal: goal ?? this.goal,
       budget: budget ?? this.budget,
-      preferredAreaId: preferredAreaId ?? this.preferredAreaId,
-      propertyType: propertyType ?? this.propertyType,
-      safetyPriority: safetyPriority ?? this.safetyPriority,
-      transportPriority: transportPriority ?? this.transportPriority,
-      facilitiesPriority: facilitiesPriority ?? this.facilitiesPriority,
+      preferredAreaId:
+      preferredAreaId ?? this.preferredAreaId,
+      propertyType:
+      propertyType ?? this.propertyType,
+
+      ownStaySafetyPriority:
+      ownStaySafetyPriority ??
+          this.ownStaySafetyPriority,
+
+      ownStayEducationPriority:
+      ownStayEducationPriority ??
+          this.ownStayEducationPriority,
+
+      ownStayTransportPriority:
+      ownStayTransportPriority ??
+          this.ownStayTransportPriority,
+
+      investmentIncomePriority:
+      investmentIncomePriority ??
+          this.investmentIncomePriority,
+
+      investmentTransportPriority:
+      investmentTransportPriority ??
+          this.investmentTransportPriority,
+
+      investmentAffordabilityPriority:
+      investmentAffordabilityPriority ??
+          this.investmentAffordabilityPriority,
+
+      safetyPriority:
+      safetyPriority ?? this.safetyPriority,
+
+      transportPriority:
+      transportPriority ?? this.transportPriority,
+
+      facilitiesPriority:
+      facilitiesPriority ?? this.facilitiesPriority,
     );
   }
 }

@@ -74,10 +74,47 @@ class Property {
   double? get pricePerSqft {
     final askingPrice = price;
     final size = sizeSqft;
+
     if (askingPrice == null || size == null || size == 0) {
       return null;
     }
+
     return askingPrice / size;
+  }
+
+  /// User-friendly property categories derived from TEDUH `unit_types`.
+  ///
+  /// A project may belong to more than one category. For example, a project
+  /// containing both RUMAH TERES and RUMAH BERKEMBAR can match both Terrace
+  /// and Semi-D filters.
+  List<String> get normalizedPropertyTypes {
+    final result = <String>{};
+
+    for (final unitType in unitTypes) {
+      final normalized = _normalizePropertyType(unitType);
+      if (normalized != null) {
+        result.add(normalized);
+      }
+    }
+
+    // Compatibility for local JSON or older records that only have `type`.
+    if (result.isEmpty) {
+      final normalized = _normalizePropertyType(type);
+      if (normalized != null) {
+        result.add(normalized);
+      }
+    }
+
+    final values = result.toList()..sort();
+    return values;
+  }
+
+  bool matchesPropertyType(String selectedType) {
+    if (selectedType == 'Any') {
+      return true;
+    }
+
+    return normalizedPropertyTypes.contains(selectedType);
   }
 
   factory Property.fromJson(Map<String, dynamic> json) {
@@ -120,10 +157,10 @@ class Property {
   }
 
   factory Property.fromTeduhJson(
-    Map<String, dynamic> json, {
-    required String areaId,
-    required int palette,
-  }) {
+      Map<String, dynamic> json, {
+        required String areaId,
+        required int palette,
+      }) {
     final sourceId = _stringFromJson(json['source_id'] ?? json['sourceId']);
     final projectName = _stringFromJson(
       json['project_name'] ?? json['projectName'],
@@ -136,7 +173,7 @@ class Property {
     );
     final priceMin = _intFromJson(json['price_min'] ?? json['priceMin']);
     final priceMax = _intFromJson(json['price_max'] ?? json['priceMax']);
-    final type = _nullableStringFromJson(
+    final rawPropertyType = _nullableStringFromJson(
       json['property_type'] ?? json['propertyType'],
     );
     final developer = _nullableStringFromJson(
@@ -148,12 +185,16 @@ class Property {
     );
     final location = [?district, ?state].join(', ');
 
+    final displayType = rawPropertyType ??
+        _displayTypeFromUnitTypes(unitTypes) ??
+        'Public housing';
+
     return Property(
       id: 'teduh_$sourceId',
       name: projectName,
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
-      type: type ?? 'Public housing',
+      type: displayType,
       tenure: scheme ?? 'Government housing',
       state: state,
       district: district,
@@ -172,8 +213,7 @@ class Property {
       ),
       facilities: [?scheme, ?developer, ?state],
       palette: palette,
-      source:
-          _nullableStringFromJson(json['source']) ??
+      source: _nullableStringFromJson(json['source']) ??
           'TEDUH - Jabatan Perumahan Negara, KPKT',
       sourceId: sourceId,
       scheme: scheme,
@@ -245,6 +285,91 @@ class Property {
     return parts.join(' ');
   }
 
+  static String? _displayTypeFromUnitTypes(List<String> unitTypes) {
+    final categories = <String>{};
+
+    for (final unitType in unitTypes) {
+      final normalized = _normalizePropertyType(unitType);
+      if (normalized != null) {
+        categories.add(normalized);
+      }
+    }
+
+    if (categories.isEmpty) {
+      return null;
+    }
+
+    final sorted = categories.toList()..sort();
+    return sorted.join(' / ');
+  }
+
+  static String? _normalizePropertyType(String value) {
+    final text = value
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[-_/]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
+
+    if (text.isEmpty) {
+      return null;
+    }
+
+    if (text.contains('KONDOMINIUM') ||
+        text.contains('CONDOMINIUM')) {
+      return 'Condominium';
+    }
+
+    if (text.contains('PANGSAPURI') ||
+        text.contains('APARTMEN') ||
+        text.contains('APARTMENT')) {
+      return 'Apartment';
+    }
+
+    if (text.contains('BERKEMBAR') ||
+        text.contains('SEMI D') ||
+        text.contains('SEMI-D')) {
+      return 'Semi-D';
+    }
+
+    if (text.contains('TERES')) {
+      return 'Terrace';
+    }
+
+    if (text.contains('RUMAH BANDAR') ||
+        text.contains('TOWNHOUSE') ||
+        text.contains('TOWN HOUSE')) {
+      return 'Townhouse';
+    }
+
+    if (text.contains('RUMAH KEDAI') ||
+        text.contains('SHOP HOUSE') ||
+        text.contains('SHOPHOUSE') ||
+        text.contains('SHOP LOT') ||
+        text.contains('SHOPLOT')) {
+      return 'Shop House';
+    }
+
+    if (text.contains('BANGLO') ||
+        text.contains('BUNGALOW')) {
+      return 'Bungalow';
+    }
+
+    if (text.contains('FLAT')) {
+      return 'Flat';
+    }
+
+    if (text.contains('KLUSTER') ||
+        text.contains('CLUSTER')) {
+      return 'Cluster House';
+    }
+
+    if (text.contains('STUDIO')) {
+      return 'Studio';
+    }
+
+    return 'Other';
+  }
+
   static String _stringFromJson(Object? value) => value?.toString() ?? '';
 
   static String? _nullableStringFromJson(Object? value) {
@@ -291,10 +416,12 @@ class Property {
           .where((item) => item.isNotEmpty)
           .toList();
     }
+
     final text = _nullableStringFromJson(value);
     if (text == null) {
       return const [];
     }
+
     return text
         .split(';')
         .map((item) => item.trim())

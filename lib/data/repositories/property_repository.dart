@@ -22,11 +22,11 @@ class PropertyRepository {
       return rows.indexed
           .map(
             (entry) => Property.fromTeduhJson(
-              entry.$2,
-              areaId: _areaIdForRow(entry.$2, areas),
-              palette: (entry.$1 + 10) % 12,
-            ),
-          )
+          entry.$2,
+          areaId: _areaIdForRow(entry.$2, areas),
+          palette: (entry.$1 + 10) % 12,
+        ),
+      )
           .toList();
     } on PropertyRepositoryException {
       rethrow;
@@ -48,9 +48,9 @@ class PropertyRepository {
       await _supabase
           .from('properties')
           .upsert(
-            properties.map((property) => property.toSupabaseJson()).toList(),
-            onConflict: 'source_id',
-          );
+        properties.map((property) => property.toSupabaseJson()).toList(),
+        onConflict: 'source_id',
+      );
     } catch (error, stackTrace) {
       throw PropertyRepositoryException(
         'Failed to sync TEDUH properties to Supabase.',
@@ -60,25 +60,40 @@ class PropertyRepository {
     }
   }
 
-  String _areaIdForRow(Map<String, dynamic> row, List<AreaData> areas) {
+  String _areaIdForRow(
+      Map<String, dynamic> row,
+      List<AreaData> areas,
+      ) {
     final state = _normalise(row['state']);
     final district = _normalise(row['district']);
+
+    // Do not guess an area when district/state data is missing.
+    if (state.isEmpty || district.isEmpty) {
+      return 'unknown';
+    }
+
     for (final area in areas) {
       if (_normalise(area.state) == state &&
           _normalise(area.name) == district) {
         return area.id;
       }
     }
-    for (final area in areas) {
-      if (_normalise(area.state) == state) {
-        return area.id;
-      }
-    }
-    return areas.isEmpty ? 'unknown' : areas.first.id;
+
+    // No exact district match means this property cannot safely be used by
+    // the area-based advisor yet.
+    return 'unknown';
   }
 
   String _normalise(Object? value) {
-    return value.toString().trim().toLowerCase().replaceAll(
+    if (value == null) {
+      return '';
+    }
+
+    return value
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replaceAll(
       RegExp(r'[^a-z0-9]+'),
       ' ',
     );
@@ -86,7 +101,11 @@ class PropertyRepository {
 }
 
 class PropertyRepositoryException implements Exception {
-  const PropertyRepositoryException(this.message, this.cause, this.stackTrace);
+  const PropertyRepositoryException(
+      this.message,
+      this.cause,
+      this.stackTrace,
+      );
 
   final String message;
   final Object cause;
