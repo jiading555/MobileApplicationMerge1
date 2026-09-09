@@ -31,6 +31,8 @@ class AreaData {
     this.marketPricePeriods = const [],
     this.marketPriceHistoryByType = const {},
     this.marketPricePeriodsByType = const {},
+    this.marketAreaPriceHistoryByType = const {},
+    this.marketAreaPricePeriodsByType = const {},
     this.medianResidentialPrice,
     this.marketPriceYear,
     this.transactionCount,
@@ -73,6 +75,8 @@ class AreaData {
   final List<String> marketPricePeriods;
   final Map<String, List<double>> marketPriceHistoryByType;
   final Map<String, List<String>> marketPricePeriodsByType;
+  final Map<String, Map<String, List<double>>> marketAreaPriceHistoryByType;
+  final Map<String, Map<String, List<String>>> marketAreaPricePeriodsByType;
   final double? medianResidentialPrice;
   final int? marketPriceYear;
   final int? transactionCount;
@@ -101,30 +105,79 @@ class AreaData {
     return types;
   }
 
-  List<double> priceHistoryFor(String propertyType) =>
-      propertyType == 'All residential'
-      ? priceHistory
-      : marketPriceHistoryByType[propertyType] ?? const [];
+  List<String> get marketAreas {
+    final areas = marketAreaPriceHistoryByType.keys.where((marketArea) {
+      final histories = marketAreaPriceHistoryByType[marketArea];
+      return histories != null && histories.values.any((values) => values.isNotEmpty);
+    }).toList()
+      ..sort();
+    return areas;
+  }
 
-  List<String> pricePeriodsFor(String propertyType) =>
-      propertyType == 'All residential'
-      ? marketPricePeriods
-      : marketPricePeriodsByType[propertyType] ?? const [];
+  List<String> propertyTypesForMarketArea(String marketArea) {
+    if (marketArea == 'Overall') return marketPropertyTypes;
+    final histories = marketAreaPriceHistoryByType[marketArea] ?? const {};
+    final periods = marketAreaPricePeriodsByType[marketArea] ?? const {};
+    final types = histories.keys.where((type) {
+      final values = histories[type] ?? const [];
+      final labels = periods[type] ?? const [];
+      return values.isNotEmpty && values.length == labels.length;
+    }).toList()
+      ..sort();
+    return types;
+  }
 
-  double? latestPriceFor(String propertyType) {
-    if (propertyType == 'All residential') return medianResidentialPrice;
-    final values = priceHistoryFor(propertyType);
+  List<double> priceHistoryFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    if (marketArea != 'Overall') {
+      return marketAreaPriceHistoryByType[marketArea]?[propertyType] ??
+          const [];
+    }
+    return propertyType == 'All residential'
+        ? priceHistory
+        : marketPriceHistoryByType[propertyType] ?? const [];
+  }
+
+  List<String> pricePeriodsFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    if (marketArea != 'Overall') {
+      return marketAreaPricePeriodsByType[marketArea]?[propertyType] ??
+          const [];
+    }
+    return propertyType == 'All residential'
+        ? marketPricePeriods
+        : marketPricePeriodsByType[propertyType] ?? const [];
+  }
+
+  double? latestPriceFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    if (marketArea == 'Overall' && propertyType == 'All residential') {
+      return medianResidentialPrice;
+    }
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
     return values.isEmpty ? null : values.last;
   }
 
-  bool hasPriceHistoryFor(String propertyType) {
-    final values = priceHistoryFor(propertyType);
-    final periods = pricePeriodsFor(propertyType);
+  bool hasPriceHistoryFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
+    final periods = pricePeriodsFor(propertyType, marketArea: marketArea);
     return values.length >= 2 && values.length == periods.length;
   }
 
-  double? priceGrowthFor(String propertyType) {
-    final values = priceHistoryFor(propertyType);
+  double? priceGrowthFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
     if (values.length < 2 || values[values.length - 2] == 0) return null;
     return (values.last - values[values.length - 2]) /
         values[values.length - 2] *
@@ -216,6 +269,8 @@ class AreaData {
     'marketPricePeriods': marketPricePeriods,
     'marketPriceHistoryByType': marketPriceHistoryByType,
     'marketPricePeriodsByType': marketPricePeriodsByType,
+    'marketAreaPriceHistoryByType': marketAreaPriceHistoryByType,
+    'marketAreaPricePeriodsByType': marketAreaPricePeriodsByType,
     'medianResidentialPrice': medianResidentialPrice,
     'marketPriceYear': marketPriceYear,
     'transactionCount': transactionCount,
@@ -261,6 +316,39 @@ class AreaData {
               .toList(),
       };
     }
+    Map<String, Map<String, List<double>>> nestedDoubleListMap(String key) {
+      final value = json[key];
+      if (value is! Map) return const {};
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): entry.value is Map
+              ? {
+                  for (final nested in (entry.value as Map).entries)
+                    nested.key.toString():
+                        (nested.value as List<dynamic>? ?? const [])
+                            .whereType<num>()
+                            .map((item) => item.toDouble())
+                            .toList(),
+                }
+              : const {},
+      };
+    }
+    Map<String, Map<String, List<String>>> nestedStringListMap(String key) {
+      final value = json[key];
+      if (value is! Map) return const {};
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): entry.value is Map
+              ? {
+                  for (final nested in (entry.value as Map).entries)
+                    nested.key.toString():
+                        (nested.value as List<dynamic>? ?? const [])
+                            .map((item) => item.toString())
+                            .toList(),
+                }
+              : const {},
+      };
+    }
 
     return AreaData(
       id: json['id'] as String,
@@ -297,6 +385,10 @@ class AreaData {
               .toList(),
       marketPriceHistoryByType: doubleListMap('marketPriceHistoryByType'),
       marketPricePeriodsByType: stringListMap('marketPricePeriodsByType'),
+      marketAreaPriceHistoryByType:
+          nestedDoubleListMap('marketAreaPriceHistoryByType'),
+      marketAreaPricePeriodsByType:
+          nestedStringListMap('marketAreaPricePeriodsByType'),
       medianResidentialPrice: optionalDecimal('medianResidentialPrice'),
       marketPriceYear: optionalInteger('marketPriceYear'),
       transactionCount: optionalInteger('transactionCount'),
@@ -400,6 +492,14 @@ class AreaData {
       marketPricePeriodsByType: profile.marketPricePeriodsByType.isNotEmpty
           ? profile.marketPricePeriodsByType
           : fallback?.marketPricePeriodsByType ?? const {},
+      marketAreaPriceHistoryByType:
+          profile.marketAreaPriceHistoryByType.isNotEmpty
+          ? profile.marketAreaPriceHistoryByType
+          : fallback?.marketAreaPriceHistoryByType ?? const {},
+      marketAreaPricePeriodsByType:
+          profile.marketAreaPricePeriodsByType.isNotEmpty
+          ? profile.marketAreaPricePeriodsByType
+          : fallback?.marketAreaPricePeriodsByType ?? const {},
       medianResidentialPrice:
           profile.medianResidentialPrice ?? fallback?.medianResidentialPrice,
       marketPriceYear: profile.marketPriceYear ?? fallback?.marketPriceYear,
