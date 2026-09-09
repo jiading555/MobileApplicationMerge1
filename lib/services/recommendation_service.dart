@@ -1,3 +1,4 @@
+import '../core/constants/property_preference_options.dart';
 import '../models/area_data.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
@@ -20,12 +21,24 @@ class RecommendationService {
                 return false;
               }
               final typeMatches =
-                  preferences.propertyType == 'Any' ||
-                  property.type == preferences.propertyType;
+                  PropertyPreferenceOptions.matchesPropertyType(
+                    preferences.propertyType,
+                    property.type,
+                  );
               final areaMatches =
                   preferences.preferredAreaId == 'any' ||
                   property.areaId == preferences.preferredAreaId;
-              return typeMatches && areaMatches;
+              final stateMatches = preferences.preferredState.isEmpty ||
+                  _normalise(property.state) ==
+                      _normalise(preferences.preferredState);
+              final districtMatches =
+                  preferences.preferredDistrict.isEmpty ||
+                  _normalise(property.district) ==
+                      _normalise(preferences.preferredDistrict);
+              return typeMatches &&
+                  areaMatches &&
+                  stateMatches &&
+                  districtMatches;
             })
             .map(
               (property) =>
@@ -149,4 +162,11 @@ class RecommendationService {
     final excess = (price - budget) / budget;
     return (88 - excess * 140).clamp(5, 88).toDouble();
   }
+
+  String _normalise(Object? value) => value
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+
 }
