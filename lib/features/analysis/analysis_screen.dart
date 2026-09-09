@@ -151,6 +151,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           child: ChoiceChip(
                             label: Text(label),
                             selected: selectedView == label,
+                            showCheckmark: false,
                             onSelected: (_) =>
                                 setState(() => selectedView = label),
                           ),
@@ -575,7 +576,7 @@ class _DistrictComparison extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Compare price growth, safety and infrastructure on the same normalized scale.',
+          'Compare NAPIC residential price indicators and public-data metrics.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 16),
@@ -598,8 +599,8 @@ class _DistrictComparison extends StatelessWidget {
             child: DataTable(
               columns: const [
                 DataColumn(label: Text('District')),
-                DataColumn(label: Text('Avg. price')),
-                DataColumn(label: Text('Rental yield')),
+                DataColumn(label: Text('Median price indicator')),
+                DataColumn(label: Text('Market period')),
                 DataColumn(label: Text('Population')),
                 DataColumn(label: Text('Median income')),
               ],
@@ -614,10 +615,16 @@ class _DistrictComparison extends StatelessWidget {
                           ),
                         ),
                         DataCell(
-                          Text('${formatRinggit(area.averagePricePsf)} psf'),
+                          Text(
+                            area.hasMarketPrice
+                                ? formatRinggit(
+                                    area.medianResidentialPrice!.round(),
+                                  )
+                                : 'Unavailable',
+                          ),
                         ),
                         DataCell(
-                          Text('${area.rentalYield.toStringAsFixed(1)}%'),
+                          Text(area.marketPeriod ?? 'Unavailable'),
                         ),
                         DataCell(Text(formatCount(area.population))),
                         DataCell(Text(formatRinggit(area.medianIncome))),
@@ -691,11 +698,31 @@ class _ChartCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SimpleLineChart(
-              values: values,
-              labels: labels,
-              height: large ? 300 : 205,
-            ),
+            if (values.length >= 2)
+              SimpleLineChart(
+                values: values,
+                labels: labels,
+                height: large ? 300 : 205,
+              )
+            else
+              Container(
+                height: large ? 150 : 110,
+                width: double.infinity,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F8FB),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'At least two quarterly snapshots are required '
+                    'to draw a price trend.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.muted),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
