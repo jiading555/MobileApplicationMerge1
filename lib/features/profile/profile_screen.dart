@@ -157,86 +157,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _editProfile() async {
     final state = AppScope.of(context);
-    final formKey = GlobalKey<FormState>();
-    final name = TextEditingController(text: state.user.name);
-    final phone = TextEditingController(text: state.user.phone);
-    await showModalBottomSheet<void>(
+    final updated = await showModalBottomSheet<AppUser>(
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
       enableDrag: false,
       useSafeArea: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          16,
-          24,
-          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-        ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-              Text('Personal information', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: name,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Full name'),
-                validator: (value) => value == null || value.trim().length < 2
-                    ? 'Enter at least 2 characters'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Phone number'),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final updated = state.user.copyWith(
-                          name: name.text.trim(),
-                          phone: phone.text.trim(),
-                        );
-                        final error = await state.saveUser(updated);
-                        if (!mounted || !sheetContext.mounted) return;
-                        if (error == null) {
-                          Navigator.of(sheetContext).pop();
-                        }
-                        _message(
-                          error ?? 'Profile updated successfully.',
-                          error != null,
-                        );
-                      },
-                      child: const Text('Save changes'),
-                    ),
-                  ),
-                ],
-              ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      builder: (context) => _EditProfileSheet(initialValue: state.user),
     );
-    name.dispose();
-    phone.dispose();
+    if (!mounted || updated == null) return;
+
+    final error = await state.saveUser(updated);
+    if (!mounted) return;
+    _message(
+      error ?? 'Profile updated successfully.',
+      error != null,
+    );
   }
 
   Future<void> _editPreferences() async {
@@ -350,6 +286,109 @@ class _ProfileScreenState extends State<ProfileScreen> {
     currentPassword.dispose();
     newPassword.dispose();
     confirmPassword.dispose();
+  }
+}
+
+class _EditProfileSheet extends StatefulWidget {
+  const _EditProfileSheet({required this.initialValue});
+
+  final AppUser initialValue;
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.initialValue.name);
+    _phone = TextEditingController(text: widget.initialValue.phone);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Personal information',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _name,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Full name'),
+                validator: (value) => value == null || value.trim().length < 2
+                    ? 'Enter at least 2 characters'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone number'),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: () {
+                        if (!_formKey.currentState!.validate()) return;
+                        Navigator.of(context).pop(
+                          widget.initialValue.copyWith(
+                            name: _name.text.trim(),
+                            phone: _phone.text.trim(),
+                          ),
+                        );
+                      },
+                      child: const Text('Save changes'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
