@@ -20,19 +20,6 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
   String selectedView = 'Overview';
-  bool _refreshScheduled = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_refreshScheduled) return;
-    _refreshScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      AppScope.of(context).refreshGovernmentData();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -306,7 +293,9 @@ class _Overview extends StatelessWidget {
         value: '${area.infrastructureScore.round()}/100',
         trend: area.educationYear == null
             ? '${area.schools} schools, ${area.hospitalBeds} hospital beds'
-            : '${area.schools} schools, ${area.hospitalBeds} beds',
+            : '${area.schools} schools (${area.educationYear}), '
+                  '${area.hospitalBeds} beds'
+                  '${area.hospitalYear == null ? '' : ' (${area.hospitalYear})'}',
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
@@ -326,8 +315,15 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 900 ? 4 : 2;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final columns = constraints.maxWidth >= 900
+                ? 4
+                : constraints.maxWidth >= 560
+                ? 2
+                : 1;
+            final width = (constraints.maxWidth - (columns - 1) * 12)
+                .clamp(0.0, double.infinity)
+                .toDouble() /
+                columns;
             return Wrap(
               spacing: 12,
               runSpacing: 12,
