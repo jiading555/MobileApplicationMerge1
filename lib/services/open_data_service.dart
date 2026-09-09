@@ -70,12 +70,15 @@ class OpenDataService {
     List<(String state, String district)> targets = defaultTargets,
   }) async {
     final results = await Future.wait<List<Map<String, dynamic>>>([
-      _fetchPopulationDataset(),
-      _fetchDataset('hh_income_district'),
-      _fetchDataset('schools_district'),
-      _fetchDataset('crime_district'),
-      _fetchDataset('hospital_beds'),
+      _safeFetch(_fetchPopulationDataset),
+      _safeFetch(() => _fetchDataset('hh_income_district')),
+      _safeFetch(() => _fetchDataset('schools_district')),
+      _safeFetch(() => _fetchDataset('crime_district')),
+      _safeFetch(() => _fetchDataset('hospital_beds')),
     ]);
+    if (results.every((rows) => rows.isEmpty)) {
+      throw Exception('All government data sources failed.');
+    }
     return targets
         .map(
           (target) => _buildAreaProfile(
@@ -206,6 +209,16 @@ class OpenDataService {
     final apiRows = await _fetchDataset('population_district');
     if (apiRows.isNotEmpty) return apiRows;
     return _fetchCsv(_populationDistrictCsv);
+  }
+
+  Future<List<Map<String, dynamic>>> _safeFetch(
+    Future<List<Map<String, dynamic>>> Function() request,
+  ) async {
+    try {
+      return await request();
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchCsv(String url) async {
