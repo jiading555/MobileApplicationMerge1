@@ -350,7 +350,12 @@ def transaction_indicators(content: bytes, targets: Iterable[str]):
     return results
 
 
-def existing_history(session: requests.Session, state: str, district: str):
+def existing_history(
+    session: requests.Session,
+    state: str,
+    district: str,
+    supabase_headers: dict[str, str],
+):
     url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/area_profiles"
     response = session.get(
         url,
@@ -364,6 +369,7 @@ def existing_history(session: requests.Session, state: str, district: str):
             ),
             "limit": "1",
         },
+        headers=supabase_headers,
         timeout=TIMEOUT,
     )
     response.raise_for_status()
@@ -472,18 +478,32 @@ def merge_market_area_history(
     return merged_periods, merged_history
 
 
-def upsert(session: requests.Session, rows: list[dict]):
+def write_snapshots(
+    session: requests.Session,
+    rows: list[dict],
+    supabase_headers: dict[str, str],
+):
     if not rows:
-        raise RuntimeError("No complete NAPIC district records were produced.")
+        raise RuntimeError("No NAPIC district records were produced.")
     url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/area_profiles"
-    response = session.post(
-        url,
-        params={"on_conflict": "area_id"},
-        json=rows,
-        headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
-        timeout=TIMEOUT,
-    )
-    response.raise_for_status()
+    for row in rows:
+        payload = dict(row)
+        record_id = payload.pop("area_id")
+        response = session.patch(
+            url,
+            params={"area_id": f"eq.{record_id}"},
+            json=payload,
+            headers={
+                **supabase_headers,
+                "Prefer": "return=minimal",
+            },
+            timeout=TIMEOUT,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"NAPIC snapshot write failed for {record_id} "
+                f"({response.status_code}): {response.text[:2000]}"
+            )
 
 
 def main():
@@ -495,10 +515,12 @@ def main():
     session.headers.update(
         {
             "User-Agent": "SmartPropertyAdvisor-NAPIC-Crawler/1.0",
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
         }
     )
+    supabase_headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
     price_url, transaction_urls = discover_workbooks(session)
     price_series: dict[tuple[str, str], dict[str, float]] = {}
     price_series_by_type: dict[
@@ -536,96 +558,130 @@ def main():
     rows = []
 
     for state in sorted({state for state, _ in TARGETS}):
-        state_targets = [district for target_state, district in TARGETS if target_state == state]
+        state_targets = [
+            district
+            for target_state, district in TARGETS
+            if target_state == state
+        ]
         transaction_url = transaction_urls.get(state)
+        transactions = {}
         if not transaction_url:
-            print(f"warning: transaction workbook not found for {state}", file=sys.stderr)
-            continue
-        try:
-            transactions = transaction_indicators(
-                get_bytes(session, transaction_url), state_targets
+            print(
+                f"warning: transaction workbook not found for {state}",
+                file=sys.stderr,
             )
-        except Exception as error:
-            print(f"warning: transaction workbook skipped for {state}: {error}", file=sys.stderr)
-            continue
+        else:
+            try:
+                transactions = transaction_indicators(
+                    get_bytes(session, transaction_url), state_targets
+                )
+            except Exception as error:
+                print(
+                    f"warning: transaction workbook skipped for {state}: {error}",
+                    file=sys.stderr,
+                )
 
         for district in state_targets:
             price_points = price_series.get((state, district))
             transaction = transactions.get(district)
-            if not price_points or not transaction:
-                print(f"warning: incomplete market data skipped for {district}, {state}", file=sys.stderr)
+            if not price_points and not transaction:
+                print(
+                    f"warning: no processed NAPIC data for {district}, {state}",
+                    file=sys.stderr,
+                )
                 continue
-            price_period = max(price_points)
-            price_value = price_points[price_period]
-            (
-                periods,
-                history,
-                periods_by_type,
-                history_by_type,
-                market_area_periods,
-                market_area_history,
-            ) = existing_history(session, state, district)
-            for historic_period, historic_value in price_points.items():
-                periods, history = merge_history(
+
+            row = {
+                "area_id": area_id(state, district),
+                "state": state,
+                "district": district,
+                "market_retrieved_at": retrieved_at,
+            }
+
+            if price_points:
+                price_period = max(price_points)
+                price_value = price_points[price_period]
+                (
                     periods,
                     history,
-                    historic_period,
-                    historic_value,
+                    periods_by_type,
+                    history_by_type,
+                    market_area_periods,
+                    market_area_history,
+                ) = existing_history(
+                    session,
+                    state,
+                    district,
+                    supabase_headers,
                 )
-            for property_type, type_points in price_series_by_type.get(
-                (state, district), {}
-            ).items():
-                for historic_period, historic_value in type_points.items():
-                    periods_by_type, history_by_type = merge_type_history(
-                        periods_by_type,
-                        history_by_type,
+                for historic_period, historic_value in price_points.items():
+                    periods, history = merge_history(
+                        periods,
+                        history,
                         historic_period,
-                        {property_type: historic_value},
+                        historic_value,
                     )
-            for market_area, market_types in price_series_by_market_area.get(
-                (state, district), {}
-            ).items():
-                for property_type, type_points in market_types.items():
+                for property_type, type_points in price_series_by_type.get(
+                    (state, district), {}
+                ).items():
                     for historic_period, historic_value in type_points.items():
-                        (
-                            market_area_periods,
-                            market_area_history,
-                        ) = merge_market_area_history(
-                            market_area_periods,
-                            market_area_history,
+                        periods_by_type, history_by_type = merge_type_history(
+                            periods_by_type,
+                            history_by_type,
                             historic_period,
-                            {
-                                market_area: {
-                                    property_type: historic_value,
-                                },
-                            },
+                            {property_type: historic_value},
                         )
-            rows.append(
-                {
-                    "area_id": area_id(state, district),
-                    "state": state,
-                    "district": district,
-                    "market_price_periods": periods,
-                    "market_price_history": history,
-                    "market_price_periods_by_type": periods_by_type,
-                    "market_price_history_by_type": history_by_type,
-                    "market_area_price_periods_by_type": market_area_periods,
-                    "market_area_price_history_by_type": market_area_history,
-                    "median_residential_price": price_value,
-                    "market_price_year": int(price_period[:4]),
-                    "transaction_count": transaction.count,
-                    "previous_transaction_count": transaction.previous_count,
-                    "transaction_value_million": transaction.value_million,
-                    "previous_transaction_value_million": transaction.previous_value_million,
-                    "market_period": transaction.period,
-                    "market_source_url": "; ".join(
-                        [*successful_price_urls, transaction_url]
-                    ),
-                    "market_retrieved_at": retrieved_at,
-                }
-            )
+                for market_area, market_types in price_series_by_market_area.get(
+                    (state, district), {}
+                ).items():
+                    for property_type, type_points in market_types.items():
+                        for historic_period, historic_value in type_points.items():
+                            (
+                                market_area_periods,
+                                market_area_history,
+                            ) = merge_market_area_history(
+                                market_area_periods,
+                                market_area_history,
+                                historic_period,
+                                {
+                                    market_area: {
+                                        property_type: historic_value,
+                                    },
+                                },
+                            )
+                row.update(
+                    {
+                        "market_price_periods": periods,
+                        "market_price_history": history,
+                        "market_price_periods_by_type": periods_by_type,
+                        "market_price_history_by_type": history_by_type,
+                        "market_area_price_periods_by_type": market_area_periods,
+                        "market_area_price_history_by_type": market_area_history,
+                        "median_residential_price": price_value,
+                        "market_price_year": int(price_period[:4]),
+                    }
+                )
 
-    upsert(session, rows)
+            if transaction:
+                row.update(
+                    {
+                        "transaction_count": transaction.count,
+                        "previous_transaction_count": transaction.previous_count,
+                        "transaction_value_million": transaction.value_million,
+                        "previous_transaction_value_million": (
+                            transaction.previous_value_million
+                        ),
+                        "market_period": transaction.period,
+                    }
+                )
+
+            source_urls = list(successful_price_urls)
+            if transaction_url:
+                source_urls.append(transaction_url)
+            row["market_source_url"] = "; ".join(source_urls)
+            rows.append(row)
+
+    write_snapshots(session, rows, supabase_headers)
     print(json.dumps({"updated": len(rows), "districts": [row["area_id"] for row in rows]}))
 
 
