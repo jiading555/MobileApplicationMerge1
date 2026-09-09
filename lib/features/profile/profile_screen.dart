@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../app/app_scope.dart';
@@ -317,6 +318,16 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
+  String? _validatePhone(String? value) {
+    final phone = value?.trim() ?? '';
+    if (phone.isEmpty) return 'Enter your phone number.';
+    final normalised = phone.replaceAll(RegExp(r'[\s\-()]'), '');
+    if (!RegExp(r'^(?:\+60|0)1\d{8,9}$').hasMatch(normalised)) {
+      return 'Use a Malaysian mobile number, e.g. 012-345 6789.';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -350,7 +361,19 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               TextFormField(
                 controller: _phone,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Phone number'),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                    RegExp(r'[0-9+\-()\s]'),
+                  ),
+                  LengthLimitingTextInputFormatter(18),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Phone number',
+                  hintText: '012-345 6789',
+                  helperText: 'Malaysia mobile format: 01X or +601X',
+                ),
+                validator: _validatePhone,
               ),
               const SizedBox(height: 18),
               Row(
