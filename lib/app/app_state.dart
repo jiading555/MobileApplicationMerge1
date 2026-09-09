@@ -549,13 +549,12 @@ class AppState extends ChangeNotifier {
   ) {
     final areasByLocation = {
       for (final area in currentAreas)
-        '${_normaliseId(area.state)}|${_normaliseId(area.name)}': area,
+        _locationKey(area.state, area.name): area,
     };
     for (final stateEntry
         in PropertyPreferenceOptions.districtsByState.entries) {
       for (final district in stateEntry.value) {
-        final key =
-            '${_normaliseId(stateEntry.key)}|${_normaliseId(district)}';
+        final key = _locationKey(stateEntry.key, district);
         areasByLocation.putIfAbsent(
           key,
           () => AreaData(
@@ -604,6 +603,26 @@ class AppState extends ChangeNotifier {
       ...converted,
       ...localAreas.where((area) => !convertedIds.contains(area.id)),
     ];
+  }
+
+  String _locationKey(String state, String district) {
+    var stateId = _normaliseId(state);
+    var districtId = _normaliseId(district);
+    if (stateId == 'kuala_lumpur' || stateId == 'wp_kuala_lumpur') {
+      stateId = 'w_p_kuala_lumpur';
+      if (districtId == 'kuala_lumpur' || districtId == 'wp_kuala_lumpur') {
+        districtId = 'w_p_kuala_lumpur';
+      }
+    }
+    if (stateId == 'putrajaya' || stateId == 'wp_putrajaya') {
+      stateId = 'w_p_putrajaya';
+      districtId = 'w_p_putrajaya';
+    }
+    if (stateId == 'labuan' || stateId == 'wp_labuan') {
+      stateId = 'w_p_labuan';
+      districtId = 'w_p_labuan';
+    }
+    return '$stateId|$districtId';
   }
 
   String _normaliseId(String value) {
