@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter/services.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/constants/property_preference_options.dart';
@@ -242,221 +241,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _editPreferences() async {
     final state = AppScope.of(context);
-    final current = state.preferences;
-    final formKey = GlobalKey<FormState>();
-    final minimum = TextEditingController(
-      text: current.minimumBudget.round().toString(),
-    );
-    final maximum = TextEditingController(
-      text: current.maximumBudget.round().toString(),
-    );
-
-    final states = PropertyPreferenceOptions.states;
-    var selectedState = states.contains(current.preferredState)
-        ? current.preferredState
-        : '';
-
-    List<String> districtsFor(String selected) =>
-        PropertyPreferenceOptions.districtsFor(selected);
-
-    var districts = districtsFor(selectedState);
-    var selectedDistrict = districts.contains(current.preferredDistrict)
-        ? current.preferredDistrict
-        : '';
-
-    const propertyTypes = PropertyPreferenceOptions.propertyTypes;
-    var type = propertyTypes.contains(current.propertyType)
-        ? current.propertyType
-        : 'Any';
-
-    await showModalBottomSheet<void>(
+    final updated = await showModalBottomSheet<UserPreferences>(
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
       enableDrag: false,
       useSafeArea: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            16,
-            24,
-            MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Property preferences',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 20),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedState,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Preferred state',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Any state'),
-                      ),
-                      ...states.map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) => setSheetState(() {
-                      selectedState = value ?? '';
-                      districts = districtsFor(selectedState);
-                      selectedDistrict = '';
-                    }),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(selectedState),
-                    initialValue: selectedDistrict,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Preferred district',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Any district'),
-                      ),
-                      ...districts.map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value),
-                        ),
-                      ),
-                    ],
-                    onChanged: selectedState.isEmpty
-                        ? null
-                        : (value) => setSheetState(
-                            () => selectedDistrict = value ?? '',
-                          ),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    initialValue: type,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Property type',
-                    ),
-                    items: propertyTypes
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setSheetState(
-                      () => type = value ?? 'Any',
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final minimumField = _BudgetField(
-                        controller: minimum,
-                        label: 'Minimum budget',
-                        allowZero: true,
-                      );
-                      final maximumField = _BudgetField(
-                        controller: maximum,
-                        label: 'Maximum budget',
-                      );
-                      if (constraints.maxWidth < 520) {
-                        return Column(
-                          children: [
-                            minimumField,
-                            const SizedBox(height: 12),
-                            maximumField,
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Expanded(child: minimumField),
-                          const SizedBox(width: 12),
-                          Expanded(child: maximumField),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                          onPressed: () => Navigator.of(sheetContext).pop(),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                          onPressed: () async {
-                            if (!formKey.currentState!.validate()) return;
-                            final min = int.parse(minimum.text).toDouble();
-                            final max = int.parse(maximum.text).toDouble();
-                            if (min > max) {
-                              _message(
-                                'Minimum budget cannot exceed maximum budget.',
-                                true,
-                              );
-                              return;
-                            }
-                            final value = current.copyWith(
-                              preferredState: selectedState,
-                              preferredDistrict: selectedDistrict,
-                              propertyType: type,
-                              minimumBudget: min,
-                              maximumBudget: max,
-                              budget: max,
-                            );
-                            final error = await state.saveAccountPreferences(
-                              value,
-                            );
-                            if (!mounted || !sheetContext.mounted) return;
-                            if (error == null) {
-                              Navigator.of(sheetContext).pop();
-                            }
-                            _message(
-                              error ?? 'Preferences updated successfully.',
-                              error != null,
-                            );
-                          },
-                          child: const Text('Save preferences'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      builder: (context) => _PropertyPreferencesSheet(
+        initialValue: state.preferences,
       ),
     );
-    minimum.dispose();
-    maximum.dispose();
+    if (!mounted || updated == null) return;
+
+    final error = await state.saveAccountPreferences(updated);
+    if (!mounted) return;
+    _message(
+      error ?? 'Preferences updated successfully.',
+      error != null,
+    );
   }
 
   Future<void> _changePassword() async {
@@ -771,40 +573,289 @@ class _InfoRow extends StatelessWidget {
   );
 }
 
-class _BudgetField extends StatelessWidget {
-  const _BudgetField({
-    required this.controller,
-    required this.label,
-    this.allowZero = false,
-  });
+class _PropertyPreferencesSheet extends StatefulWidget {
+  const _PropertyPreferencesSheet({required this.initialValue});
 
-  static const maximumSupportedBudget = 1000000000;
-  final TextEditingController controller;
-  final String label;
-  final bool allowZero;
+  final UserPreferences initialValue;
 
   @override
-  Widget build(BuildContext context) => TextFormField(
-    controller: controller,
-    keyboardType: TextInputType.number,
-    inputFormatters: [
-      FilteringTextInputFormatter.digitsOnly,
-      LengthLimitingTextInputFormatter(10),
+  State<_PropertyPreferencesSheet> createState() =>
+      _PropertyPreferencesSheetState();
+}
+
+class _PropertyPreferencesSheetState
+    extends State<_PropertyPreferencesSheet> {
+  static const double _minimumBudget = 0;
+  static const double _maximumBudget = 1600000;
+  static const int _budgetDivisions = 32;
+
+  late String selectedState;
+  late String selectedDistrict;
+  late String propertyType;
+  late RangeValues budgetRange;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialValue;
+    selectedState =
+        PropertyPreferenceOptions.states.contains(initial.preferredState)
+        ? initial.preferredState
+        : '';
+    final districts = PropertyPreferenceOptions.districtsFor(selectedState);
+    selectedDistrict = districts.contains(initial.preferredDistrict)
+        ? initial.preferredDistrict
+        : '';
+    propertyType =
+        PropertyPreferenceOptions.propertyTypes.contains(initial.propertyType)
+        ? initial.propertyType
+        : 'Any';
+
+    final minimum = initial.minimumBudget
+        .clamp(_minimumBudget, _maximumBudget)
+        .toDouble();
+    final maximum = initial.maximumBudget
+        .clamp(_minimumBudget, _maximumBudget)
+        .toDouble();
+    budgetRange = RangeValues(
+      minimum <= maximum ? minimum : maximum,
+      maximum,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final districts = PropertyPreferenceOptions.districtsFor(selectedState);
+    return FractionallySizedBox(
+      heightFactor: 0.9,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Property preferences',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedState,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Preferred state',
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('Any state'),
+                          ),
+                          ...PropertyPreferenceOptions.states.map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) => setState(() {
+                          selectedState = value ?? '';
+                          selectedDistrict = '';
+                        }),
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(selectedState),
+                        initialValue: selectedDistrict,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Preferred district',
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('Any district'),
+                          ),
+                          ...districts.map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value),
+                            ),
+                          ),
+                        ],
+                        onChanged: selectedState.isEmpty
+                            ? null
+                            : (value) => setState(
+                                () => selectedDistrict = value ?? '',
+                              ),
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        initialValue: propertyType,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Property type',
+                        ),
+                        items: PropertyPreferenceOptions.propertyTypes
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setState(
+                          () => propertyType = value ?? 'Any',
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Preferred budget range',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _BudgetValue(
+                              label: 'Minimum',
+                              value: budgetRange.start,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _BudgetValue(
+                              label: 'Maximum',
+                              value: budgetRange.end,
+                              alignEnd: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      RangeSlider(
+                        min: _minimumBudget,
+                        max: _maximumBudget,
+                        divisions: _budgetDivisions,
+                        values: budgetRange,
+                        labels: RangeLabels(
+                          formatRinggit(budgetRange.start),
+                          formatRinggit(budgetRange.end),
+                        ),
+                        onChanged: (value) =>
+                            setState(() => budgetRange = value),
+                      ),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'RM 0',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                          Text(
+                            'RM 1.6M',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop(
+                          widget.initialValue.copyWith(
+                            preferredState: selectedState,
+                            preferredDistrict: selectedDistrict,
+                            propertyType: propertyType,
+                            minimumBudget: budgetRange.start,
+                            maximumBudget: budgetRange.end,
+                            budget: budgetRange.end,
+                          ),
+                        );
+                      },
+                      child: const Text('Save preferences'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BudgetValue extends StatelessWidget {
+  const _BudgetValue({
+    required this.label,
+    required this.value,
+    this.alignEnd = false,
+  });
+
+  final String label;
+  final double value;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment:
+        alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+      ),
+      const SizedBox(height: 3),
+      Text(
+        formatRinggit(value),
+        style: const TextStyle(
+          color: AppTheme.blue,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     ],
-    decoration: InputDecoration(
-      labelText: label,
-      prefixText: 'RM ',
-      counterText: '',
-    ),
-    maxLength: 10,
-    validator: (value) {
-      final amount = int.tryParse(value ?? '');
-      if (amount == null) return 'Enter a valid amount';
-      if (!allowZero && amount == 0) return 'Amount must be above RM 0';
-      if (amount > maximumSupportedBudget) {
-        return 'Maximum supported amount is RM 1,000,000,000';
-      }
-      return null;
-    },
   );
 }
+
