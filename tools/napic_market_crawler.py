@@ -114,6 +114,17 @@ DISTRICT_ALIASES = {
     "W.P. Putrajaya": "WP Putrajaya",
     "W.P. Labuan": "WP Labuan",
 }
+MARKET_AREAS_BY_DISTRICT = {
+    ("W.P. Kuala Lumpur", "W.P. Kuala Lumpur"): (
+        "Ampang",
+        "Batu",
+        "Cheras",
+        "Kuala Lumpur Town Centre",
+        "Petaling",
+        "Setapak",
+        "Ulu Kelang",
+    ),
+}
 TIMEOUT = 90
 
 
@@ -183,6 +194,46 @@ def publication_period(ws) -> str:
     raise RuntimeError(f"Cannot determine publication period from {ws.title}.")
 
 
+def _district_price_snapshot(ws, source_district: str):
+    weighted_sum = 0.0
+    sample_sum = 0
+    property_type = None
+    type_weighted_sums: dict[str, float] = {}
+    type_sample_sums: dict[str, int] = {}
+    for row in ws.iter_rows(min_row=6, values_only=True):
+        if row[0]:
+            property_type = str(row[0]).strip()
+        district = normalise(row[1] if len(row) > 1 else None)
+        if district != normalise(source_district) or not property_type:
+            continue
+        median = row[5] if len(row) > 5 else None
+        sample = row[8] if len(row) > 8 else None
+        if (
+            isinstance(median, (int, float))
+            and isinstance(sample, (int, float))
+            and sample > 0
+        ):
+            sample_count = int(sample)
+            weighted_sum += float(median) * sample_count
+            sample_sum += sample_count
+            type_weighted_sums[property_type] = (
+                type_weighted_sums.get(property_type, 0.0)
+                + float(median) * sample_count
+            )
+            type_sample_sums[property_type] = (
+                type_sample_sums.get(property_type, 0) + sample_count
+            )
+    if not sample_sum:
+        return None
+    prices_by_type = {
+        property_type: round(weighted / type_sample_sums[property_type], 2)
+        for property_type, weighted in type_weighted_sums.items()
+        if type_sample_sums[property_type] > 0
+    }
+    aggregate = round(weighted_sum / sample_sum, 2)
+    return aggregate, prices_by_type
+
+
 def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
     book = workbook(content)
     results = {}
@@ -193,41 +244,28 @@ def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
         ws = book[sheet_name]
         period = publication_period(ws)
         source_district = DISTRICT_ALIASES.get(display_district, display_district)
-        weighted_sum = 0.0
-        sample_sum = 0
-        property_type = None
-        type_weighted_sums: dict[str, float] = {}
-        type_sample_sums: dict[str, int] = {}
-        for row in ws.iter_rows(min_row=6, values_only=True):
-            if row[0]:
-                property_type = str(row[0]).strip()
-            district = normalise(row[1] if len(row) > 1 else None)
-            if district != normalise(source_district) or not property_type:
+        overall = _district_price_snapshot(ws, source_district)
+        if overall is None:
+            continue
+        aggregate, prices_by_type = overall
+        prices_by_market_area = {}
+        for market_area in MARKET_AREAS_BY_DISTRICT.get(
+            (state, display_district), ()
+        ):
+            market_snapshot = _district_price_snapshot(ws, market_area)
+            if market_snapshot is None:
                 continue
-            median = row[5] if len(row) > 5 else None
-            sample = row[8] if len(row) > 8 else None
-            if isinstance(median, (int, float)) and isinstance(sample, (int, float)) and sample > 0:
-                sample_count = int(sample)
-                weighted_sum += float(median) * sample_count
-                sample_sum += sample_count
-                type_weighted_sums[property_type] = (
-                    type_weighted_sums.get(property_type, 0.0)
-                    + float(median) * sample_count
-                )
-                type_sample_sums[property_type] = (
-                    type_sample_sums.get(property_type, 0) + sample_count
-                )
-        if sample_sum:
-            prices_by_type = {
-                property_type: round(weighted / type_sample_sums[property_type], 2)
-                for property_type, weighted in type_weighted_sums.items()
-                if type_sample_sums[property_type] > 0
+            market_aggregate, market_types = market_snapshot
+            prices_by_market_area[market_area] = {
+                "All residential": market_aggregate,
+                **market_types,
             }
-            results[(state, display_district)] = (
-                period,
-                round(weighted_sum / sample_sum, 2),
-                prices_by_type,
-            )
+        results[(state, display_district)] = (
+            period,
+            aggregate,
+            prices_by_type,
+            prices_by_market_area,
+        )
     return results
 
 
@@ -320,7 +358,9 @@ def existing_history(session: requests.Session, state: str, district: str):
             "area_id": f"eq.{area_id(state, district)}",
             "select": (
                 "market_price_periods,market_price_history,"
-                "market_price_periods_by_type,market_price_history_by_type"
+                "market_price_periods_by_type,market_price_history_by_type,"
+                "market_area_price_periods_by_type,"
+                "market_area_price_history_by_type"
             ),
             "limit": "1",
         },
@@ -329,7 +369,7 @@ def existing_history(session: requests.Session, state: str, district: str):
     response.raise_for_status()
     rows = response.json()
     if not rows:
-        return [], [], {}, {}
+        return [], [], {}, {}, {}, {}
     row = rows[0]
     periods_by_type = {
         str(key): [str(period) for period in value]
@@ -341,11 +381,35 @@ def existing_history(session: requests.Session, state: str, district: str):
         for key, value in (row.get("market_price_history_by_type") or {}).items()
         if isinstance(value, list)
     }
+    market_area_periods = {
+        str(market_area): {
+            str(property_type): [str(period) for period in values]
+            for property_type, values in property_types.items()
+            if isinstance(values, list)
+        }
+        for market_area, property_types in (
+            row.get("market_area_price_periods_by_type") or {}
+        ).items()
+        if isinstance(property_types, dict)
+    }
+    market_area_history = {
+        str(market_area): {
+            str(property_type): [float(number) for number in values]
+            for property_type, values in property_types.items()
+            if isinstance(values, list)
+        }
+        for market_area, property_types in (
+            row.get("market_area_price_history_by_type") or {}
+        ).items()
+        if isinstance(property_types, dict)
+    }
     return (
         list(row.get("market_price_periods") or []),
         [float(value) for value in row.get("market_price_history") or []],
         periods_by_type,
         history_by_type,
+        market_area_periods,
+        market_area_history,
     )
 
 
@@ -373,6 +437,38 @@ def merge_type_history(
         )
         merged_periods[property_type] = periods
         merged_history[property_type] = history
+    return merged_periods, merged_history
+
+
+def merge_market_area_history(
+    periods_by_area: dict[str, dict[str, list[str]]],
+    history_by_area: dict[str, dict[str, list[float]]],
+    period: str,
+    prices_by_area: dict[str, dict[str, float]],
+):
+    merged_periods = {
+        market_area: {
+            property_type: list(values)
+            for property_type, values in property_types.items()
+        }
+        for market_area, property_types in periods_by_area.items()
+    }
+    merged_history = {
+        market_area: {
+            property_type: list(values)
+            for property_type, values in property_types.items()
+        }
+        for market_area, property_types in history_by_area.items()
+    }
+    for market_area, prices_by_type in prices_by_area.items():
+        area_periods, area_history = merge_type_history(
+            merged_periods.get(market_area, {}),
+            merged_history.get(market_area, {}),
+            period,
+            prices_by_type,
+        )
+        merged_periods[market_area] = area_periods
+        merged_history[market_area] = area_history
     return merged_periods, merged_history
 
 
@@ -408,16 +504,29 @@ def main():
     price_series_by_type: dict[
         tuple[str, str], dict[str, dict[str, float]]
     ] = {}
+    price_series_by_market_area: dict[
+        tuple[str, str], dict[str, dict[str, dict[str, float]]]
+    ] = {}
     successful_price_urls = []
     for candidate_url in (*ARCHIVED_PRICE_URLS, price_url):
         try:
             snapshot = price_indicators(get_bytes(session, candidate_url), TARGETS)
             successful_price_urls.append(candidate_url)
-            for location, (period, value, prices_by_type) in snapshot.items():
+            for (
+                location,
+                (period, value, prices_by_type, prices_by_market_area),
+            ) in snapshot.items():
                 price_series.setdefault(location, {})[period] = value
                 location_types = price_series_by_type.setdefault(location, {})
                 for property_type, type_price in prices_by_type.items():
                     location_types.setdefault(property_type, {})[period] = type_price
+                location_areas = price_series_by_market_area.setdefault(
+                    location, {}
+                )
+                for market_area, market_types in prices_by_market_area.items():
+                    area_types = location_areas.setdefault(market_area, {})
+                    for property_type, type_price in market_types.items():
+                        area_types.setdefault(property_type, {})[period] = type_price
         except Exception as error:
             print(
                 f"warning: price workbook skipped ({candidate_url}): {error}",
@@ -453,6 +562,8 @@ def main():
                 history,
                 periods_by_type,
                 history_by_type,
+                market_area_periods,
+                market_area_history,
             ) = existing_history(session, state, district)
             for historic_period, historic_value in price_points.items():
                 periods, history = merge_history(
@@ -471,6 +582,24 @@ def main():
                         historic_period,
                         {property_type: historic_value},
                     )
+            for market_area, market_types in price_series_by_market_area.get(
+                (state, district), {}
+            ).items():
+                for property_type, type_points in market_types.items():
+                    for historic_period, historic_value in type_points.items():
+                        (
+                            market_area_periods,
+                            market_area_history,
+                        ) = merge_market_area_history(
+                            market_area_periods,
+                            market_area_history,
+                            historic_period,
+                            {
+                                market_area: {
+                                    property_type: historic_value,
+                                },
+                            },
+                        )
             rows.append(
                 {
                     "area_id": area_id(state, district),
@@ -480,6 +609,8 @@ def main():
                     "market_price_history": history,
                     "market_price_periods_by_type": periods_by_type,
                     "market_price_history_by_type": history_by_type,
+                    "market_area_price_periods_by_type": market_area_periods,
+                    "market_area_price_history_by_type": market_area_history,
                     "median_residential_price": price_value,
                     "market_price_year": int(price_period[:4]),
                     "transaction_count": transaction.count,
