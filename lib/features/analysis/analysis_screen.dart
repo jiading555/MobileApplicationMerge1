@@ -532,8 +532,8 @@ class _PriceTrend extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _ChartCard(
-          title: 'Sample-weighted median residential price',
-          subtitle: area.marketPricePeriods.join(' to '),
+          title: 'Historical price indicator',
+          subtitle: 'NAPIC sample-weighted district median (RM/unit)',
           value: formatRinggit(area.medianResidentialPrice!.round()),
           trend: changePercent == null
               ? 'More quarters required'
