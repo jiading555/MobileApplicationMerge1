@@ -140,6 +140,107 @@ class AreaData {
     return (weightedScore / availableWeight).clamp(0, 100).toDouble();
   }
 
+  Map<String, dynamic> toCacheJson() => {
+    'id': id,
+    'name': name,
+    'state': state,
+    'population': population,
+    'populationGrowth': populationGrowth,
+    'medianIncome': medianIncome,
+    'safetyScore': safetyScore,
+    'connectivityScore': connectivityScore,
+    'transportScore': transportScore,
+    'schools': schools,
+    'hospitals': hospitals,
+    'hospitalBeds': hospitalBeds,
+    'transportStopCount': transportStopCount,
+    'averagePricePsf': averagePricePsf,
+    'rentalYield': rentalYield,
+    'priceGrowth': priceGrowth,
+    'priceHistory': priceHistory,
+    'snapshotDate': snapshotDate,
+    'source': source,
+    'sourceUrl': sourceUrl,
+    'populationYear': populationYear,
+    'incomeYear': incomeYear,
+    'crimeYear': crimeYear,
+    'educationYear': educationYear,
+    'hospitalYear': hospitalYear,
+    'transportYear': transportYear,
+    'marketPricePeriods': marketPricePeriods,
+    'medianResidentialPrice': medianResidentialPrice,
+    'marketPriceYear': marketPriceYear,
+    'transactionCount': transactionCount,
+    'previousTransactionCount': previousTransactionCount,
+    'transactionValueMillion': transactionValueMillion,
+    'previousTransactionValueMillion': previousTransactionValueMillion,
+    'marketPeriod': marketPeriod,
+    'marketSourceUrl': marketSourceUrl,
+    'marketRetrievedAt': marketRetrievedAt?.toIso8601String(),
+    'retrievedAt': retrievedAt?.toIso8601String(),
+    'isGovernmentProfile': isGovernmentProfile,
+  };
+
+  factory AreaData.fromCacheJson(Map<String, dynamic> json) {
+    int integer(String key, [int fallback = 0]) =>
+        (json[key] as num?)?.round() ?? fallback;
+    double decimal(String key, [double fallback = 0]) =>
+        (json[key] as num?)?.toDouble() ?? fallback;
+    int? optionalInteger(String key) => (json[key] as num?)?.round();
+    double? optionalDecimal(String key) => (json[key] as num?)?.toDouble();
+    DateTime? dateTime(String key) {
+      final value = json[key]?.toString();
+      return value == null ? null : DateTime.tryParse(value);
+    }
+
+    return AreaData(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      state: json['state'] as String,
+      population: integer('population'),
+      populationGrowth: decimal('populationGrowth'),
+      medianIncome: integer('medianIncome'),
+      safetyScore: decimal('safetyScore'),
+      connectivityScore: decimal('connectivityScore'),
+      transportScore: decimal('transportScore'),
+      schools: integer('schools'),
+      hospitals: integer('hospitals'),
+      hospitalBeds: integer('hospitalBeds'),
+      transportStopCount: integer('transportStopCount'),
+      averagePricePsf: integer('averagePricePsf'),
+      rentalYield: decimal('rentalYield'),
+      priceGrowth: decimal('priceGrowth'),
+      priceHistory: (json['priceHistory'] as List<dynamic>? ?? const [])
+          .map((value) => (value as num).toDouble())
+          .toList(),
+      snapshotDate: json['snapshotDate']?.toString() ?? '',
+      source: json['source']?.toString() ?? 'SQLite cache',
+      sourceUrl: json['sourceUrl']?.toString(),
+      populationYear: optionalInteger('populationYear'),
+      incomeYear: optionalInteger('incomeYear'),
+      crimeYear: optionalInteger('crimeYear'),
+      educationYear: optionalInteger('educationYear'),
+      hospitalYear: optionalInteger('hospitalYear'),
+      transportYear: optionalInteger('transportYear'),
+      marketPricePeriods:
+          (json['marketPricePeriods'] as List<dynamic>? ?? const [])
+              .map((value) => value.toString())
+              .toList(),
+      medianResidentialPrice: optionalDecimal('medianResidentialPrice'),
+      marketPriceYear: optionalInteger('marketPriceYear'),
+      transactionCount: optionalInteger('transactionCount'),
+      previousTransactionCount: optionalInteger('previousTransactionCount'),
+      transactionValueMillion: optionalDecimal('transactionValueMillion'),
+      previousTransactionValueMillion:
+          optionalDecimal('previousTransactionValueMillion'),
+      marketPeriod: json['marketPeriod']?.toString(),
+      marketSourceUrl: json['marketSourceUrl']?.toString(),
+      marketRetrievedAt: dateTime('marketRetrievedAt'),
+      retrievedAt: dateTime('retrievedAt'),
+      isGovernmentProfile: json['isGovernmentProfile'] as bool? ?? false,
+    );
+  }
+
   factory AreaData.fromJson(Map<String, dynamic> json) {
     return AreaData(
       id: json['id'] as String,
