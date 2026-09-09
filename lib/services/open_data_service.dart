@@ -3,11 +3,17 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/area_profile.dart';
+import 'transport_data_service.dart';
 
 class OpenDataService {
-  OpenDataService({http.Client? client}) : _client = client ?? http.Client();
+  OpenDataService({
+    http.Client? client,
+    TransportDataService? transportDataService,
+  }) : _client = client ?? http.Client(),
+       _transportDataService = transportDataService ?? TransportDataService(client: client);
 
   final http.Client _client;
+  final TransportDataService _transportDataService;
 
   static const _apiBase = 'https://api.data.gov.my/data-catalogue';
   static const _populationDistrictCsv =
@@ -28,6 +34,8 @@ class OpenDataService {
     'crime_district': 'https://data.gov.my/data-catalogue/crime_district',
     'schools_district': 'https://data.gov.my/data-catalogue/schools_district',
     'hospital_beds': 'https://data.gov.my/data-catalogue/hospital_beds',
+    'gtfs_static': 'https://developer.data.gov.my/realtime-api/gtfs-static',
+    'district_boundaries': TransportDataService.districtBoundaryUrl,
   };
 
   static const _stateAliases = {
@@ -79,6 +87,7 @@ class OpenDataService {
     if (results.every((rows) => rows.isEmpty)) {
       throw Exception('All government data sources failed.');
     }
+    final transport = await _safeFetchTransport(targets);
     return targets
         .map(
           (target) => _buildAreaProfile(
@@ -89,6 +98,7 @@ class OpenDataService {
             schoolRows: results[2],
             allCrimeRows: results[3],
             hospitalRows: results[4],
+            transport: transport,
           ),
         )
         .toList();
@@ -102,6 +112,7 @@ class OpenDataService {
     required List<Map<String, dynamic>> schoolRows,
     required List<Map<String, dynamic>> allCrimeRows,
     required List<Map<String, dynamic>> hospitalRows,
+    required TransportSnapshot? transport,
   }) {
     final population = _newest(
       _filterLocation(populationRows, state, district)
@@ -168,8 +179,8 @@ class OpenDataService {
       educationYear: educationYear,
       hospitalBedCount: _firstField(hospitalBeds, 'beds')?.round(),
       hospitalYear: hospitalYear,
-      transportStopCount: null,
-      transportYear: null,
+      transportStopCount: transport?.countFor(state, district),
+      transportYear: transport == null ? null : transport.retrievedAt.year,
       dataYear: years.isEmpty ? null : years.reduce((a, b) => a > b ? a : b),
       source: 'OpenDOSM; data.gov.my',
       sourceUrl: _sourceReferences.values.join('; '),
@@ -203,6 +214,16 @@ class OpenDataService {
       }
     }
     return const [];
+  }
+
+  Future<TransportSnapshot?> _safeFetchTransport(
+    List<(String state, String district)> targets,
+  ) async {
+    try {
+      return await _transportDataService.fetchStopCounts(targets: targets);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchPopulationDataset() async {
