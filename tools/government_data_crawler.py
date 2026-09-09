@@ -65,6 +65,12 @@ CRIME_DISTRICT_ALIASES = {
     ("johor", "kulai"): ("Kulaijaya",),
     ("johor", "tangkak"): ("Ledang",),
     ("penang", "timur laut"): ("Timur Laut",),
+    ("penang", "sp selatan"): ("Seberang Perai Selatan",),
+    ("penang", "sp tengah"): ("Seberang Perai Tengah",),
+    ("penang", "sp utara"): ("Seberang Perai Utara",),
+    ("pahang", "cameron highland"): ("Cameron Highlands",),
+    ("pahang", "lipis"): ("Kuala Lipis",),
+    ("perlis", "perlis"): ("All",),
     ("kuala lumpur", "kuala lumpur"): ("All",),
 }
 HOSPITAL_DISTRICT_ALIASES = {
@@ -179,6 +185,12 @@ def crime_rows(rows: list[dict], state: str, district: str) -> list[dict]:
     aliases = CRIME_DISTRICT_ALIASES.get(
         (state_key, district_key), (district,)
     )
+    if state_key == "putrajaya":
+        state_key = "kuala lumpur"
+        aliases = ("W.P. Putrajaya",)
+    elif state_key == "labuan":
+        state_key = "sabah"
+        aliases = ("Labuan",)
     alias_keys = {normalise(alias) for alias in aliases}
     state_rows = [
         row for row in rows
@@ -282,18 +294,24 @@ def transport_counts(
     except Exception as error:
         print(f"warning: district boundary feed skipped: {error}")
         return {}
-    target_keys = {location_key(*target) for target in targets}
+    target_keys_by_district: dict[str, list[str]] = {}
+    for state, district in targets:
+        target_keys_by_district.setdefault(normalise(district), []).append(
+            location_key(state, district)
+        )
+
     boundaries = {}
     for feature in response.json().get("features", []):
         properties = feature.get("properties") or {}
-        key = location_key(
-            str(properties.get("state") or ""),
-            str(properties.get("district") or ""),
+        district = str(
+            properties.get("district") or feature.get("id") or ""
         )
-        if key in target_keys:
-            polygons = read_polygons(feature.get("geometry") or {})
-            if polygons:
-                boundaries[key] = polygons
+        candidates = target_keys_by_district.get(normalise(district), [])
+        if len(candidates) != 1:
+            continue
+        polygons = read_polygons(feature.get("geometry") or {})
+        if polygons:
+            boundaries[candidates[0]] = polygons
     if not boundaries:
         print("warning: no district boundaries matched; transport is unavailable")
         return {}
