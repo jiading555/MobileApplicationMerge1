@@ -19,6 +19,8 @@ class AnalysisScreen extends StatefulWidget {
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
+  String? selectedState;
+  String? comparisonState;
   String selectedView = 'Overview';
   bool _initialRefreshScheduled = false;
 
@@ -37,7 +39,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     selectedAreaId ??= state.areas.first.id;
-    final area = state.areaFor(selectedAreaId!);
+    var area = state.areaFor(selectedAreaId!);
+    final states = state.areas.map((item) => item.state).toSet().toList()
+      ..sort();
+    selectedState ??= area.state;
+    var stateDistricts = state.areas
+        .where((item) => item.state == selectedState)
+        .toList()
+      ..sort((left, right) => left.name.compareTo(right.name));
+    if (!stateDistricts.any((item) => item.id == selectedAreaId)) {
+      selectedAreaId = stateDistricts.first.id;
+      area = state.areaFor(selectedAreaId!);
+    }
     final sourceMode = state.isUsingLiveAreaProfiles
         ? 'data.gov.my API'
         : state.isUsingMarketTrendCache
@@ -89,32 +102,56 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             children: [
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final select = DropdownButtonFormField<String>(
-                    initialValue: selectedAreaId,
+                  final stateSelect = DropdownButtonFormField<String>(
+                    initialValue: selectedState,
                     isExpanded: true,
                     menuMaxHeight: 420,
                     decoration: const InputDecoration(
-                      labelText: 'Selected district',
-                      prefixIcon: Icon(Icons.location_on_outlined),
+                      labelText: 'State',
+                      prefixIcon: Icon(Icons.map_outlined),
                     ),
-                    selectedItemBuilder: (context) => state.areas
+                    items: states
                         .map(
-                          (item) => Align(
-                            alignment: Alignment.centerLeft,
+                          (value) => DropdownMenuItem(
+                            value: value,
                             child: Text(
-                              '${item.name}, ${item.state}',
+                              value,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         )
                         .toList(),
-                    items: state.areas
+                    onChanged: (value) {
+                      if (value == null || value == selectedState) return;
+                      final districts = state.areas
+                          .where((item) => item.state == value)
+                          .toList()
+                        ..sort(
+                          (left, right) => left.name.compareTo(right.name),
+                        );
+                      setState(() {
+                        selectedState = value;
+                        selectedAreaId = districts.first.id;
+                      });
+                    },
+                  );
+                  final districtSelect =
+                      DropdownButtonFormField<String>(
+                    key: ValueKey(selectedState),
+                    initialValue: selectedAreaId,
+                    isExpanded: true,
+                    menuMaxHeight: 420,
+                    decoration: const InputDecoration(
+                      labelText: 'District',
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                    ),
+                    items: stateDistricts
                         .map(
                           (item) => DropdownMenuItem(
                             value: item.id,
                             child: Text(
-                              '${item.name}, ${item.state}',
+                              item.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -159,17 +196,25 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       ],
                     ),
                   );
-                  return constraints.maxWidth >= 720
+                  return constraints.maxWidth >= 900
                       ? Row(
                           children: [
-                            Expanded(child: select),
+                            Expanded(flex: 2, child: stateSelect),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 3, child: districtSelect),
                             const SizedBox(width: 12),
                             stamp,
                           ],
                         )
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [select, const SizedBox(height: 10), stamp],
+                          children: [
+                            stateSelect,
+                            const SizedBox(height: 10),
+                            districtSelect,
+                            const SizedBox(height: 10),
+                            stamp,
+                          ],
                         );
                 },
               ),
@@ -240,7 +285,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 _Overview(area: area, sourceMode: sourceMode),
               if (selectedView == 'Price trend') _PriceTrend(area: area),
               if (selectedView == 'District comparison')
-                _DistrictComparison(areas: state.areas),
+                _DistrictComparison(
+                  areas: state.areas,
+                  selectedState: comparisonState ?? area.state,
+                  onStateChanged: (value) =>
+                      setState(() => comparisonState = value),
+                ),
               const SizedBox(height: 22),
               const _DataCaveat(),
             ],
@@ -645,13 +695,23 @@ class _PriceTrend extends StatelessWidget {
 }
 
 class _DistrictComparison extends StatelessWidget {
-  const _DistrictComparison({required this.areas});
+  const _DistrictComparison({
+    required this.areas,
+    required this.selectedState,
+    required this.onStateChanged,
+  });
 
   final List<AreaData> areas;
+  final String selectedState;
+  final ValueChanged<String> onStateChanged;
 
   @override
   Widget build(BuildContext context) {
-    final ranked = [...areas]
+    final states = areas.map((area) => area.state).toSet().toList()..sort();
+    final activeState = states.contains(selectedState)
+        ? selectedState
+        : states.first;
+    final ranked = areas.where((area) => area.state == activeState).toList()
       ..sort((left, right) => right.priceGrowth.compareTo(left.priceGrowth));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -662,8 +722,33 @@ class _DistrictComparison extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Compare NAPIC residential price indicators and public-data metrics.',
+          'Compare districts within one state using NAPIC and public-data metrics.',
           style: TextStyle(color: AppTheme.muted),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          initialValue: activeState,
+          isExpanded: true,
+          menuMaxHeight: 420,
+          decoration: const InputDecoration(
+            labelText: 'Filter by state',
+            prefixIcon: Icon(Icons.filter_alt_outlined),
+          ),
+          items: states
+              .map(
+                (state) => DropdownMenuItem(
+                  value: state,
+                  child: Text(
+                    state,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) onStateChanged(value);
+          },
         ),
         const SizedBox(height: 16),
         Card(
@@ -709,11 +794,21 @@ class _DistrictComparison extends StatelessWidget {
                                 : 'Unavailable',
                           ),
                         ),
+                        DataCell(Text(area.marketPeriod ?? 'Unavailable')),
                         DataCell(
-                          Text(area.marketPeriod ?? 'Unavailable'),
+                          Text(
+                            area.populationYear == null
+                                ? 'Unavailable'
+                                : formatCount(area.population),
+                          ),
                         ),
-                        DataCell(Text(formatCount(area.population))),
-                        DataCell(Text(formatRinggit(area.medianIncome))),
+                        DataCell(
+                          Text(
+                            area.incomeYear == null
+                                ? 'Unavailable'
+                                : formatRinggit(area.medianIncome),
+                          ),
+                        ),
                       ],
                     ),
                   )
