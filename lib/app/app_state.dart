@@ -158,7 +158,12 @@ class AppState extends ChangeNotifier {
       }
       final latestCloudProfiles =
           await _areaProfileRepository.getAreaProfiles();
-      if (latestCloudProfiles.isEmpty) {
+      if (latestCloudProfiles.isEmpty ||
+          latestCloudProfiles.every(
+            (profile) =>
+                profile.marketPriceHistory.isEmpty &&
+                profile.marketPeriod == null,
+          )) {
         throw Exception('No NAPIC market data was returned by Supabase.');
       }
 
@@ -188,7 +193,7 @@ class AppState extends ChangeNotifier {
       final years = _dataYears(refreshedAreas);
       governmentDataSyncMessage = years.isEmpty
           ? 'Data refreshed successfully.'
-          : 'Data refreshed successfully · ${years.join(', ')}';
+          : 'Data years: ${years.join(', ')}';
     } catch (error) {
       final detail = error.toString().replaceFirst('Exception: ', '');
       governmentDataSyncMessage = 'Refresh failed. $detail';
