@@ -567,15 +567,51 @@ class AppState extends ChangeNotifier {
     List<AreaData> localAreas,
   ) {
     final localById = {for (final area in localAreas) area.id: area};
-    final converted = profiles.map((profile) {
+    final bestByLocation = <String, AreaProfile>{};
+    for (final profile in profiles) {
+      final key = _locationKey(profile.state, profile.district);
+      final current = bestByLocation[key];
+      if (current == null || _profileScore(profile) > _profileScore(current)) {
+        bestByLocation[key] = profile;
+      } else if (_profileScore(profile) == _profileScore(current) &&
+          (profile.retrievedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .isAfter(
+                current.retrievedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+              )) {
+        bestByLocation[key] = profile;
+      }
+    }
+    final converted = bestByLocation.values.map((profile) {
       final id = _normaliseId(profile.district);
       return AreaData.fromProfile(profile, fallback: localById[id]);
     }).toList();
-    final convertedIds = converted.map((area) => area.id).toSet();
+    final convertedLocations = converted
+        .map((area) => _locationKey(area.state, area.name))
+        .toSet();
     return [
       ...converted,
-      ...localAreas.where((area) => !convertedIds.contains(area.id)),
+      ...localAreas.where(
+        (area) => !convertedLocations.contains(
+          _locationKey(area.state, area.name),
+        ),
+      ),
     ];
+  }
+
+  int _profileScore(AreaProfile profile) {
+    return [
+          profile.population,
+          profile.medianHouseholdIncome,
+          profile.crimeCount,
+          profile.educationInstitutionCount,
+          profile.hospitalBedCount,
+          profile.transportStopCount,
+          profile.medianResidentialPrice,
+          profile.transactionCount,
+        ].where((value) => value != null).length +
+        profile.marketPriceHistory.length +
+        profile.marketPriceHistoryByType.length +
+        profile.marketAreaPriceHistoryByType.length;
   }
 
   String _locationKey(String state, String district) {
