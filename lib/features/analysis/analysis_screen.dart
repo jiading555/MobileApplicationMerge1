@@ -207,6 +207,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         'https://developer.data.gov.my/realtime-api/gtfs-static',
       ),
       _DataSource(
+        'District residential prices and transactions',
+        'NAPIC / JPPH quarterly XLSX publications',
+        'https://napic.jpph.gov.my/en/latest-publication',
+      ),
+      _DataSource(
         'Administrative district boundaries',
         'DOSM official district GeoJSON',
         'https://github.com/dosm-malaysia/data-open/blob/main/datasets/geodata/administrative_2_district.geojson',
@@ -363,13 +368,27 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 22),
         LayoutBuilder(
           builder: (context, constraints) {
-            final price = _ChartCard(
-              title: 'Historical price indicator',
-              subtitle: 'Average RM per square foot - 2018-2024',
-              value: '${formatRinggit(area.averagePricePsf)} psf',
-              trend: '+${area.priceGrowth.toStringAsFixed(1)}%',
-              values: area.priceHistory,
-            );
+            final price = area.hasMarketPrice
+                ? _ChartCard(
+                    title: 'Historical price indicator',
+                    subtitle:
+                        'NAPIC sample-weighted district median (RM/unit)',
+                    value: formatRinggit(
+                      area.medianResidentialPrice!.round(),
+                    ),
+                    trend: area.hasMarketHistory
+                        ? '${area.priceGrowth >= 0 ? '+' : ''}'
+                              '${area.priceGrowth.toStringAsFixed(1)}%'
+                        : '1 quarter collected',
+                    values: area.priceHistory,
+                    labels: area.marketPricePeriods,
+                  )
+                : const _UnavailableCard(
+                    title: 'Historical price indicator',
+                    message:
+                        'NAPIC market snapshot is not loaded yet. Run the '
+                        'crawler after applying the Supabase migration.',
+                  );
             final demand = _DemandCard(area: area);
             return constraints.maxWidth >= 820
                 ? Row(
@@ -465,8 +484,17 @@ class _PriceTrend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final change = area.priceHistory.last - area.priceHistory.first;
-    final changePercent = change / area.priceHistory.first * 100;
+    if (!area.hasMarketPrice) {
+      return const _UnavailableCard(
+        title: 'Historical price indicator',
+        message: 'No NAPIC price snapshot is available for this district.',
+      );
+    }
+    final changePercent = area.hasMarketHistory
+        ? (area.priceHistory.last - area.priceHistory.first) /
+              area.priceHistory.first *
+              100
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -476,16 +504,20 @@ class _PriceTrend extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Historical sample series, normalized to RM per square foot.',
+          'Official NAPIC quarterly district price snapshots.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 16),
         _ChartCard(
-          title: 'Average transacted-price indicator',
-          subtitle: '2018-2024 snapshot series',
-          value: '${formatRinggit(area.averagePricePsf)} psf',
-          trend: '+${changePercent.toStringAsFixed(1)}% over the period',
+          title: 'Sample-weighted median residential price',
+          subtitle: area.marketPricePeriods.join(' to '),
+          value: formatRinggit(area.medianResidentialPrice!.round()),
+          trend: changePercent == null
+              ? 'More quarters required'
+              : '${changePercent >= 0 ? '+' : ''}'
+                    '${changePercent.toStringAsFixed(1)}% over the period',
           values: area.priceHistory,
+          labels: area.marketPricePeriods,
           large: true,
         ),
         const SizedBox(height: 14),
@@ -493,15 +525,18 @@ class _PriceTrend extends StatelessWidget {
           children: [
             Expanded(
               child: _SmallStat(
-                label: 'Latest annual signal',
-                value: '+${area.priceGrowth.toStringAsFixed(1)}%',
+                label: 'Latest quarterly price signal',
+                value: area.hasMarketHistory
+                    ? '${area.priceGrowth >= 0 ? '+' : ''}'
+                          '${area.priceGrowth.toStringAsFixed(1)}%'
+                    : 'Unavailable',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _SmallStat(
-                label: 'Rental yield estimate',
-                value: '${area.rentalYield.toStringAsFixed(1)}%',
+                label: 'Latest NAPIC period',
+                value: area.marketPeriod ?? 'Unavailable',
               ),
             ),
           ],
@@ -595,6 +630,7 @@ class _ChartCard extends StatelessWidget {
     required this.trend,
     required this.values,
     this.large = false,
+    this.labels = const [],
   });
 
   final String title;
@@ -603,6 +639,7 @@ class _ChartCard extends StatelessWidget {
   final String trend;
   final List<double> values;
   final bool large;
+  final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
@@ -643,7 +680,11 @@ class _ChartCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SimpleLineChart(values: values, height: large ? 300 : 205),
+            SimpleLineChart(
+              values: values,
+              labels: labels,
+              height: large ? 300 : 205,
+            ),
           ],
         ),
       ),
@@ -658,12 +699,14 @@ class _DemandCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final demand =
-        ((area.populationGrowth * 9) +
-                (area.rentalYield * 8) +
-                (area.transportScore * 0.28))
-            .clamp(0, 100)
-            .toDouble();
+    final demand = area.marketDemandScore;
+    if (demand == null) {
+      return const _UnavailableCard(
+        title: 'Market demand signal',
+        message:
+            'NAPIC current and previous-year transaction totals are required.',
+      );
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -715,14 +758,56 @@ class _DemandCard extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _SignalRow(
-              label: 'Population growth',
-              value: area.populationGrowth / 6,
+              label:
+                  'Transaction volume '
+                  '(${_signed(area.transactionVolumeGrowth)} YoY)',
+              value: _growthSignal(area.transactionVolumeGrowth),
             ),
-            _SignalRow(label: 'Rental yield', value: area.rentalYield / 6),
             _SignalRow(
-              label: 'Public transport',
-              value: area.transportScore / 100,
+              label:
+                  'Transaction value '
+                  '(${_signed(area.transactionValueGrowth)} YoY)',
+              value: _growthSignal(area.transactionValueGrowth),
             ),
+            const Text(
+              'Score: 60% volume growth + 40% value growth. '
+              'Each growth rate is capped from -20% to +20%.',
+              style: TextStyle(color: AppTheme.muted, fontSize: 10),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _signed(double? value) {
+    if (value == null) return 'Unavailable';
+    return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+  }
+
+  double _growthSignal(double? value) {
+    if (value == null) return 0;
+    return (value.clamp(-20, 20) + 20) / 40;
+  }
+}
+
+class _UnavailableCard extends StatelessWidget {
+  const _UnavailableCard({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Text(message, style: const TextStyle(color: AppTheme.muted)),
           ],
         ),
       ),
