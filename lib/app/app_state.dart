@@ -140,12 +140,6 @@ class AppState extends ChangeNotifier {
   Future<void> ensureInitialMarketData() async {
     if (hasAttemptedInitialMarketRefresh) return;
     hasAttemptedInitialMarketRefresh = true;
-    final updatedAt = marketTrendCacheUpdatedAt;
-    if (updatedAt != null &&
-        DateTime.now().toUtc().difference(updatedAt.toUtc()) <
-            const Duration(days: 1)) {
-      return;
-    }
     await refreshGovernmentData();
   }
 
