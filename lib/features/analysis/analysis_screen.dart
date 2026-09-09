@@ -91,15 +91,33 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 builder: (context, constraints) {
                   final select = DropdownButtonFormField<String>(
                     initialValue: selectedAreaId,
+                    isExpanded: true,
+                    menuMaxHeight: 420,
                     decoration: const InputDecoration(
                       labelText: 'Selected district',
                       prefixIcon: Icon(Icons.location_on_outlined),
                     ),
+                    selectedItemBuilder: (context) => state.areas
+                        .map(
+                          (item) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '${item.name}, ${item.state}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
                     items: state.areas
                         .map(
                           (item) => DropdownMenuItem(
                             value: item.id,
-                            child: Text('${item.name}, ${item.state}'),
+                            child: Text(
+                              '${item.name}, ${item.state}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(),
