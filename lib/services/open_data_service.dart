@@ -70,6 +70,7 @@ class OpenDataService {
     'johor|johor bahru': ['Johor Bahru Selatan', 'Johor Bahru Utara'],
     'johor|kulai': ['Kulaijaya'],
     'johor|tangkak': ['Ledang'],
+    'kuala lumpur|kuala lumpur': ['All'],
     'selangor|ulu selangor': ['Hulu Selangor'],
     'selangor|klang': ['Klang Selatan', 'Klang Utara'],
     'penang|timur laut': ['Timur Laut'],
