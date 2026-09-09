@@ -220,16 +220,24 @@ class AreaData {
       educationYear: profile.educationYear ?? fallback?.educationYear,
       hospitalYear: profile.hospitalYear ?? fallback?.hospitalYear,
       transportYear: profile.transportYear ?? fallback?.transportYear,
-      marketPricePeriods: profile.marketPricePeriods,
-      medianResidentialPrice: profile.medianResidentialPrice,
-      marketPriceYear: profile.marketPriceYear,
-      transactionCount: profile.transactionCount,
-      previousTransactionCount: profile.previousTransactionCount,
-      transactionValueMillion: profile.transactionValueMillion,
-      previousTransactionValueMillion: profile.previousTransactionValueMillion,
-      marketPeriod: profile.marketPeriod,
-      marketSourceUrl: profile.marketSourceUrl,
-      marketRetrievedAt: profile.marketRetrievedAt,
+      marketPricePeriods: profile.marketPricePeriods.isNotEmpty
+          ? profile.marketPricePeriods
+          : fallback?.marketPricePeriods ?? const [],
+      medianResidentialPrice:
+          profile.medianResidentialPrice ?? fallback?.medianResidentialPrice,
+      marketPriceYear: profile.marketPriceYear ?? fallback?.marketPriceYear,
+      transactionCount: profile.transactionCount ?? fallback?.transactionCount,
+      previousTransactionCount:
+          profile.previousTransactionCount ?? fallback?.previousTransactionCount,
+      transactionValueMillion:
+          profile.transactionValueMillion ?? fallback?.transactionValueMillion,
+      previousTransactionValueMillion:
+          profile.previousTransactionValueMillion ??
+          fallback?.previousTransactionValueMillion,
+      marketPeriod: profile.marketPeriod ?? fallback?.marketPeriod,
+      marketSourceUrl: profile.marketSourceUrl ?? fallback?.marketSourceUrl,
+      marketRetrievedAt:
+          profile.marketRetrievedAt ?? fallback?.marketRetrievedAt,
       retrievedAt: profile.retrievedAt,
       isGovernmentProfile: true,
     );
