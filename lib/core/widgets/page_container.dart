@@ -14,13 +14,17 @@ class PageContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final effectivePadding = screenWidth < 360
+        ? EdgeInsets.fromLTRB(12, padding.top, 12, padding.bottom)
+        : padding;
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: SizedBox(
           width: double.infinity,
-          child: Padding(padding: padding, child: child),
+          child: Padding(padding: effectivePadding, child: child),
         ),
       ),
     );
