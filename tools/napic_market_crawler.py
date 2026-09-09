@@ -29,7 +29,7 @@ PUBLICATIONS_URL = "https://napic.jpph.gov.my/en/latest-publication"
 TARGETS = (
     ("Selangor", "Petaling"),
     ("Selangor", "Gombak"),
-    ("Selangor", "Hulu Langat"),
+    ("Selangor", "Ulu Langat"),
     ("Johor", "Johor Bahru"),
     ("Pulau Pinang", "Timur Laut"),
 )
