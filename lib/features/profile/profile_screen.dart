@@ -845,7 +845,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     if (_seeded) return;
 
     final state = AppScope.of(context);
-    _usableProperties = _usableProperties;
+    _usableProperties = _profileAdvisorProperties(state);
     _propertyAreas = {
       for (final property in _usableProperties)
         property: _propertyAreas[property]!,
@@ -1371,7 +1371,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton(
-                      onPressed: () {
+                        onPressed: () {
                         final finalState = effectiveState;
                         final finalDistrict = effectiveDistrict;
                         final finalAreaId = _areaIdForSelection(
@@ -1397,7 +1397,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                             budget: maximumBudget,
                           ),
                         );
-                      },
+                        },
                         child: const FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text('Save preferences'),
