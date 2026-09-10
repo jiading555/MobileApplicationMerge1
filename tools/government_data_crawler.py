@@ -384,6 +384,40 @@ def transport_counts(
         )
         return {}
 
+    boundary_points = [
+        point
+        for polygons in boundaries.values()
+        for polygon in polygons
+        for ring in polygon
+        for point in ring
+    ]
+    stop_points = list(stops.values())
+    print(json.dumps({
+        "boundary_coordinate_range": {
+            "longitude": [
+                min(point[0] for point in boundary_points),
+                max(point[0] for point in boundary_points),
+            ],
+            "latitude": [
+                min(point[1] for point in boundary_points),
+                max(point[1] for point in boundary_points),
+            ],
+        },
+        "gtfs_coordinate_range": {
+            "latitude": [
+                min(point[0] for point in stop_points),
+                max(point[0] for point in stop_points),
+            ],
+            "longitude": [
+                min(point[1] for point in stop_points),
+                max(point[1] for point in stop_points),
+            ],
+        },
+        "sample_boundary_key": next(iter(boundaries)),
+        "sample_boundary_point": boundary_points[0],
+        "sample_gtfs_stop": stop_points[0],
+    }), flush=True)
+
     counts = {key: 0 for key in boundaries}
     boxes = {}
     for key, polygons in boundaries.items():
