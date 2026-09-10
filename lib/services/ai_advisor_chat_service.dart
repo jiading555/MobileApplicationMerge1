@@ -130,10 +130,6 @@ class AiAdvisorChatService {
       final property =
           recommendation.property;
 
-      // -------------------------------------------------------
-      // SCORING FACTORS
-      // -------------------------------------------------------
-
       final sortedFactors =
       List<ScoreFactor>.from(
         recommendation.factors,
@@ -159,10 +155,6 @@ class AiAdvisorChatService {
       )
           .join('\n');
 
-      // -------------------------------------------------------
-      // RECOMMENDATION REASONS
-      // -------------------------------------------------------
-
       final advantages =
       recommendation.reasons.isEmpty
           ? 'None supplied'
@@ -180,10 +172,6 @@ class AiAdvisorChatService {
             (item) => '- $item',
       )
           .join('\n');
-
-      // -------------------------------------------------------
-      // PROPERTY BASIC DATA
-      // -------------------------------------------------------
 
       final price = _priceText(
         property.price,
@@ -255,14 +243,6 @@ class AiAdvisorChatService {
           ? 'Unavailable'
           : '${property.sizeSqft} sq ft';
 
-      // -------------------------------------------------------
-      // UNIT OPTIONS
-      //
-      // Important:
-      // unitOptions.length = number of listed configurations.
-      // It is NOT the total available-unit inventory.
-      // -------------------------------------------------------
-
       final unitOptionCount =
           property.unitOptions.length;
 
@@ -270,10 +250,6 @@ class AiAdvisorChatService {
       _unitOptionsText(
         property.unitOptions,
       );
-
-      // -------------------------------------------------------
-      // FACILITIES
-      // -------------------------------------------------------
 
       final facilities =
       property.facilities.isEmpty
@@ -305,7 +281,6 @@ $advantages
 
 Cautions identified by the deterministic recommendation system:
 $cautions
-
 
 PROPERTY FACTUAL INFORMATION
 
@@ -351,7 +326,6 @@ $bathrooms
 Property size:
 $sizeSqft
 
-
 UNIT AVAILABILITY INFORMATION
 
 Total project units:
@@ -373,7 +347,6 @@ available units.
 Listed unit options:
 $unitOptions
 
-
 FACILITIES SUPPLIED BY THE SYSTEM
 
 $facilities
@@ -381,10 +354,6 @@ $facilities
     }).join(
       '\n\n',
     );
-
-    // ---------------------------------------------------------
-    // PREVIOUS CHAT
-    // ---------------------------------------------------------
 
     final historyText =
     conversationHistory.isEmpty
@@ -401,10 +370,6 @@ $facilities
       return '$role: $text';
     }).join('\n');
 
-    // ---------------------------------------------------------
-    // USER PREFERENCES
-    // ---------------------------------------------------------
-
     final goal =
     preferences.goal ==
         PropertyGoal.ownStay
@@ -417,10 +382,6 @@ $facilities
         ? 'Any area'
         : preferences.preferredAreaId;
 
-    // ---------------------------------------------------------
-    // COMPLETE GEMINI PROMPT
-    // ---------------------------------------------------------
-
     return '''
 You are an AI Property Advisor for a Malaysian smart property recommendation application.
 
@@ -431,7 +392,6 @@ The application has already retrieved the property data and calculated the recom
 You do NOT calculate the recommendation ranking.
 You do NOT replace the application's recommendation algorithm.
 You do NOT independently search for other properties.
-
 
 ============================================================
 STRICT SCORING RULES
@@ -456,7 +416,6 @@ STRICT SCORING RULES
 9. If two or more properties have the same factor score, clearly state that none gains an advantage on that factor.
 
 10. If overall suitability scores are tied, do not invent a winner.
-
 
 ============================================================
 PROPERTY FACTUAL DATA RULES
@@ -497,7 +456,6 @@ PROPERTY FACTUAL DATA RULES
 
 19. If the required information is unavailable, clearly say that the current system data does not provide it.
 
-
 ============================================================
 AVAILABLE UNIT RULES
 ============================================================
@@ -537,7 +495,6 @@ you may use Number of listed unit options/configurations.
 
 30. Do not assume that a lower starting price means that every unit of that type is available at that exact price.
 
-
 ============================================================
 IMPORTANT PROPERTY RESTRICTIONS
 ============================================================
@@ -563,7 +520,6 @@ IMPORTANT PROPERTY RESTRICTIONS
 "best investment",
 "certain return",
 or similar absolute claims unless explicitly supported.
-
 
 ============================================================
 MULTIPLE PROPERTY RULES
@@ -593,7 +549,6 @@ may be discussed when explicitly supplied.
 46. These factual differences must not be used to secretly recalculate or replace the recommendation ranking.
 
 47. If properties have equal overall scores, explain the tie instead of inventing a winner.
-
 
 ============================================================
 STRICT CURRENT RECOMMENDATION SCOPE
@@ -633,7 +588,6 @@ in the Smart Property Advisor and generate a new recommendation set.
 
 58. Only the application's recommendation system can create a new recommendation set.
 
-
 ============================================================
 PREVIOUS CHAT RULES
 ============================================================
@@ -652,7 +606,6 @@ PREVIOUS CHAT RULES
 
 65. If the user refers to an old property that is no longer part of the current recommendation results, explain that it is not part of the current recommendation set.
 
-
 ============================================================
 OUT-OF-SCOPE RULES
 ============================================================
@@ -670,7 +623,6 @@ OUT-OF-SCOPE RULES
 71. Do NOT claim that you checked external sources.
 
 72. If the user needs another property or location, direct them back to the Smart Property Advisor to regenerate recommendations.
-
 
 ============================================================
 ANSWER STYLE
@@ -714,7 +666,6 @@ Do not unnecessarily explain the scoring algorithm.
 
 83. Simple numbered points are allowed when useful.
 
-
 ============================================================
 USER PREFERENCES
 ============================================================
@@ -737,13 +688,11 @@ $preferredArea
 Preferred property type:
 ${preferences.propertyType}
 
-
 ============================================================
 CURRENT SMART RECOMMENDATION RESULTS
 ============================================================
 
 $recommendationContext
-
 
 ============================================================
 PREVIOUS CHAT
@@ -751,13 +700,11 @@ PREVIOUS CHAT
 
 $historyText
 
-
 ============================================================
 CURRENT USER QUESTION
 ============================================================
 
 $question
-
 
 Answer the current user question as a property decision-support advisor.
 
@@ -777,10 +724,6 @@ Remember:
 ''';
   }
 
-  // ===========================================================
-  // UNIT OPTION CONTEXT
-  // ===========================================================
-
   String _unitOptionsText(
       List<dynamic> options,
       ) {
@@ -788,7 +731,6 @@ Remember:
       return 'No unit options supplied.';
     }
 
-    // Prevent the prompt becoming unnecessarily large.
     const maximumOptions = 12;
 
     final visibleOptions =
@@ -840,10 +782,6 @@ Unit option ${i + 1}:
     return rows.join('\n');
   }
 
-  // ===========================================================
-  // PRICE
-  // ===========================================================
-
   String _priceText(
       int? price,
       int? priceMin,
@@ -863,10 +801,6 @@ Unit option ${i + 1}:
         : 'RM $displayPrice';
   }
 
-  // ===========================================================
-  // NULLABLE TEXT
-  // ===========================================================
-
   String _textOrUnavailable(
       String? value,
       ) {
@@ -879,10 +813,6 @@ Unit option ${i + 1}:
 
     return text;
   }
-
-  // ===========================================================
-  // TENURE
-  // ===========================================================
 
   String _validTenure(
       String value,

@@ -201,9 +201,6 @@ def crime_rows(rows: list[dict], state: str, district: str) -> list[dict]:
         if normalise(row.get("district")) in alias_keys
     ]
 
-    # "All" is a catalogue/UI aggregate and is not guaranteed to be a
-    # physical row. For a state-level target such as W.P. Kuala Lumpur,
-    # aggregate every police district when that row is absent.
     if alias_keys == {"all"} and not matched:
         matched = state_rows
 
@@ -250,9 +247,6 @@ def read_polygons(geometry: dict) -> list[list[list[tuple[float, float]]]]:
                 if not isinstance(point, list) or len(point) < 2:
                     continue
                 first, second = float(point[0]), float(point[1])
-                # GeoJSON normally uses [longitude, latitude], but the
-                # Kawasanku mobile boundary file uses [latitude, longitude].
-                # Normalise either representation to (longitude, latitude).
                 if abs(first) <= 15 and 90 <= abs(second) <= 125:
                     points.append((second, first))
                 else:
@@ -327,8 +321,6 @@ def transport_counts(
             properties.get("district") or feature.get("id") or ""
         )
 
-        # Prefer an exact state + district match. Fall back to the district name
-        # only when it is unique across Malaysia.
         boundary_key = location_key(state, district)
         if boundary_key not in target_keys:
             candidates = target_keys_by_district.get(normalise(district), [])

@@ -6,52 +6,35 @@ class UserPreferences {
     this.budget = 900000,
     this.preferredAreaId = 'any',
     this.propertyType = 'Any',
-
-    // Added by teammate
     this.preferredState = '',
     this.preferredDistrict = '',
     this.minimumBudget = 350000,
     this.maximumBudget = 900000,
-
-    // Smart Recommendation priorities
     this.ownStaySafetyPriority = 30,
     this.ownStayEducationPriority = 25,
     this.ownStayTransportPriority = 20,
-
     this.investmentIncomePriority = 20,
     this.investmentTransportPriority = 15,
     this.investmentAffordabilityPriority = 15,
-
-    // Legacy fields kept for compatibility.
     this.safetyPriority = 0.8,
     this.transportPriority = 0.7,
     this.facilitiesPriority = 0.7,
   });
 
   final PropertyGoal goal;
-
-  // Existing Smart Advisor preference
   final double budget;
   final String preferredAreaId;
   final String propertyType;
-
-  // Teammate preference fields
   final String preferredState;
   final String preferredDistrict;
   final double minimumBudget;
   final double maximumBudget;
-
-  // Own Stay scoring priorities
   final double ownStaySafetyPriority;
   final double ownStayEducationPriority;
   final double ownStayTransportPriority;
-
-  // Investment scoring priorities
   final double investmentIncomePriority;
   final double investmentTransportPriority;
   final double investmentAffordabilityPriority;
-
-  // Legacy fields
   final double safetyPriority;
   final double transportPriority;
   final double facilitiesPriority;

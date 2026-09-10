@@ -81,14 +81,6 @@ class RecommendationService {
 
     final budgetMatches = price <= _effectiveBudget(preferences);
 
-    // Search and Advisor use the property's real State/District values
-    // as the authoritative location filter.
-    //
-    // AreaData is used only for scoring signals. Do not compare
-    // preferences.preferredDistrict with area.name because an AreaData
-    // profile may represent a broader region than the property's district
-    // (for example: property district = Cheras while the resolved AreaData
-    // profile name = Kuala Lumpur).
     final propertyState =
     LocationNormalizer.nullableDisplayStateName(property.state);
     final propertyDistrict =
@@ -114,9 +106,6 @@ class RecommendationService {
                   state: propertyState,
                 ));
 
-    // State + District are authoritative for the new Search-style location
-    // selection. preferredAreaId is kept only for legacy compatibility when
-    // no district preference is available.
     final areaMatches =
     preferredDistrict.isNotEmpty ||
         preferences.preferredAreaId == 'any'

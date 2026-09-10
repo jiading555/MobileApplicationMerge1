@@ -59,9 +59,7 @@ class TransportDataService {
               '${stop.longitude.toStringAsFixed(5)}';
           uniqueStops.putIfAbsent(coordinateKey, () => stop);
         }
-      } catch (_) {
-        // A single operator must not discard data returned by other operators.
-      }
+      } catch (_) {}
     }
     if (successfulFeeds == 0) {
       throw Exception('All official GTFS feeds failed.');

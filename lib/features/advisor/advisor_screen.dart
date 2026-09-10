@@ -194,16 +194,12 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
       goal = preferences.goal;
 
-      // User Management stores a budget range.
-      // Smart Advisor uses the saved maximum budget as its default.
       final savedMaximumBudget = preferences.maximumBudget > 0
           ? preferences.maximumBudget
           : preferences.budget;
 
       budget = savedMaximumBudget.clamp(350000.0, 1600000.0).toDouble();
 
-      // Use the same state source and display normalization as Property Search:
-      // raw property.state values -> LocationNormalizer display state names.
       final availableStates = _advisorStateOptions(_cachedAdvisorProperties);
       final savedState = LocationNormalizer.nullableDisplayStateName(
         preferences.preferredState,
@@ -216,8 +212,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       areaId = 'any';
       propertyType = 'Any';
 
-      // Use the same Area identity as Property Search:
-      // canonicalAreaId(displayState, displayDistrict).
       if (selectedState != 'any' &&
           preferences.preferredDistrict.trim().isNotEmpty) {
         final areaOptions = _advisorAreaOptions(
@@ -235,9 +229,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         }
       }
 
-      // Compatibility with older Advisor data.
-      // If preferredDistrict was not available, try to map a legacy AreaData
-      // id to the Search-style canonical locality id.
       if (areaId == 'any' &&
           selectedState != 'any' &&
           preferences.preferredAreaId != 'any') {
@@ -267,10 +258,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         }
       }
 
-      // Property Type can be selected independently:
-      // Any State -> nationwide
-      // selected State + Any Area -> whole state
-      // selected Area -> that district only
       final initialAvailableTypes = _availablePropertyTypes(
         state: appState,
         targetBudget: budget,
@@ -292,7 +279,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       investmentAffordabilityPriority =
           preferences.investmentAffordabilityPriority;
 
-      // Prefill only. Do not generate results automatically.
       showResults = false;
       scoringLocked = false;
       appliedWeights = [];
@@ -307,8 +293,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     final state = AppScope.of(context);
     final compactLandscape = ResponsiveLayout.isCompactLandscapePhone(context);
 
-    // Ranking is intentionally deferred until Generate matches is pressed.
-    // Re-running it during every slider tick or goal switch blocks the UI thread.
     final recommendations = showResults
         ? const RecommendationService().rank(
             properties: _advisorPropertiesForPreferences(
@@ -463,8 +447,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   setState(() {
                     propertyType = value;
 
-                    // Property Type is the final level of the cascade.
-                    // Changing it must never reset State or Area.
                     _resetScoringAfterPreferenceChange();
                   });
                 },
@@ -811,15 +793,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       }
     }
 
-    // Update only the current in-app recommendation session.
-    // This does NOT call saveAccountPreferences(), so the saved Supabase
-    // User Management preferences are not overwritten.
-    //
-    // preferredAreaId is intentionally kept as "any" here because Advisor's
-    // Area dropdown now uses the same Search-style canonical locality id
-    // (State + District), which is not necessarily the same as AreaData.id.
-    // The actual location filter is carried by preferredState and
-    // preferredDistrict and is also applied before RecommendationService.
     state.updatePreferences(
       state.preferences.copyWith(
         goal: goal,
@@ -1497,10 +1470,6 @@ class _PreferencePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Match Property Search exactly:
-    // State values come from raw Property.state values after display
-    // normalization, and Area values come from raw Property.district values
-    // using canonicalAreaId(state, district).
     final availableStates = _advisorStateOptions(advisorProperties);
 
     final effectiveSelectedState =
@@ -1521,10 +1490,6 @@ class _PreferencePanel extends StatelessWidget {
         ? areaId
         : 'any';
 
-    // Property Type remains dynamic by current budget/location scope.
-    // Any State -> nationwide
-    // selected State + Any Area -> whole state
-    // selected Area -> that district only
     final availablePropertyTypes =
         advisorProperties
             .where((property) {

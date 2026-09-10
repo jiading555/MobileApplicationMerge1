@@ -301,8 +301,6 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // After the first message, suggestions remain
-            // available horizontally above the input box.
             if (_messages.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.fromLTRB(14, 9, 14, 5),
@@ -548,10 +546,6 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 }
-
-// ============================================================
-// AI THINKING
-// ============================================================
 
 class _TypingBubble extends StatelessWidget {
   const _TypingBubble();

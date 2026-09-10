@@ -8,19 +8,6 @@ class SavedRecommendationService {
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
-  // ============================================================
-  // SAVE ONE RECOMMENDATION SESSION
-  //
-  // One save =
-  // - Goal
-  // - Budget
-  // - State
-  // - Area
-  // - Property Type
-  // - Applied user weights
-  // - Current Top 3 recommendation snapshot
-  // ============================================================
-
   Future<void> saveRecommendationSession({
     required List<PropertyRecommendation> recommendations,
     required UserPreferences preferences,
@@ -87,10 +74,6 @@ class SavedRecommendationService {
     });
   }
 
-  // ============================================================
-  // LOAD ALL SAVED SESSIONS FOR CURRENT USER
-  // ============================================================
-
   Future<List<Map<String, dynamic>>>
   getSavedRecommendationSessions() async {
     final user = _supabase.auth.currentUser;
@@ -112,11 +95,6 @@ class SavedRecommendationService {
       response,
     );
   }
-
-  // ============================================================
-  // LOAD ONE SAVED SESSION
-  // Useful later for "View Saved Recommendation"
-  // ============================================================
 
   Future<Map<String, dynamic>?>
   getSavedRecommendationSession(
@@ -144,10 +122,6 @@ class SavedRecommendationService {
     );
   }
 
-  // ============================================================
-  // DELETE SAVED SESSION
-  // ============================================================
-
   Future<void> deleteRecommendationSession(
       String id,
       ) async {
@@ -166,10 +140,6 @@ class SavedRecommendationService {
         .eq('user_id', user.id);
   }
 
-  // ============================================================
-  // BUILD TOP 3 SNAPSHOT
-  // ============================================================
-
   Map<String, dynamic> _recommendationSnapshot({
     required PropertyRecommendation
     recommendation,
@@ -186,10 +156,6 @@ class SavedRecommendationService {
     return {
       'rank': rank,
 
-      // --------------------------------------------------------
-      // Property identity
-      // --------------------------------------------------------
-
       'property_id': property.id,
 
       'property_name': property.name,
@@ -200,23 +166,14 @@ class SavedRecommendationService {
 
       'district': property.district,
 
-      // Use the same normalized type used by Advisor filtering.
       'property_types':
       property.normalizedPropertyTypes,
-
-      // --------------------------------------------------------
-      // Price snapshot
-      // --------------------------------------------------------
 
       'price': comparablePrice,
 
       'price_min': property.priceMin,
 
       'price_max': property.priceMax,
-
-      // --------------------------------------------------------
-      // Recommendation result
-      // --------------------------------------------------------
 
       'score': recommendation.score,
 
@@ -243,11 +200,6 @@ class SavedRecommendationService {
       List<String>.from(
         recommendation.cautions,
       ),
-
-      // --------------------------------------------------------
-      // Factual property details
-      // Useful if the live property record changes later.
-      // --------------------------------------------------------
 
       'scheme': property.scheme,
 
@@ -277,12 +229,6 @@ class SavedRecommendationService {
       'source': property.source,
     };
   }
-
-  // ============================================================
-  // APPLIED USER WEIGHTS
-  //
-  // These represent the three priorities shown in Advisor UI.
-  // ============================================================
 
   List<Map<String, dynamic>>
   _resolveAppliedWeights({
@@ -347,10 +293,6 @@ class SavedRecommendationService {
         },
     ];
   }
-
-  // ============================================================
-  // FALLBACK WEIGHT NORMALIZATION
-  // ============================================================
 
   List<double> _normalisePriorities(
       List<double> priorities,

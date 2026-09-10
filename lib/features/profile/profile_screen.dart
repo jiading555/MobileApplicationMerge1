@@ -1134,9 +1134,6 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // Use the exact same source as Property Search:
-    // State = property.state
-    // Area = property.district
     final availableStates = _profileStateOptions(_usableProperties);
 
     final effectiveState =
@@ -1394,10 +1391,6 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                             widget.initialValue.copyWith(
                               preferredState: finalState,
                               preferredDistrict: finalDistrict,
-
-                              // Search-style locality IDs are not guaranteed
-                              // to equal AreaData.id, so State + District are
-                              // the authoritative saved location values.
                               preferredAreaId: 'any',
 
                               propertyType: effectivePropertyType,

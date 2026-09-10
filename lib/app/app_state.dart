@@ -873,9 +873,7 @@ class AppState extends ChangeNotifier {
   ) async {
     try {
       await _marketTrendCache.save(value, updatedAt: updatedAt);
-    } catch (_) {
-      // A cache write must never discard successfully downloaded data.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadCurrentAuthSession() async {
@@ -888,9 +886,7 @@ class AppState extends ChangeNotifier {
         await _loadAccount(authUser);
         isAuthenticated = true;
       }
-    } catch (_) {
-      // Unit tests and uninitialized local tooling may not have Supabase ready.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadAccount(User authUser) async {
@@ -912,9 +908,7 @@ class AppState extends ChangeNotifier {
     }
     try {
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
-    } catch (_) {
-      // Signing out should not block local state cleanup.
-    }
+    } catch (_) {}
   }
 
   String? _currentAuthEmail() {
