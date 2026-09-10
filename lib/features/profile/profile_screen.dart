@@ -199,131 +199,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _changePassword() async {
-    final state = AppScope.of(context);
-    final currentPassword = TextEditingController();
-    final newPassword = TextEditingController();
-    final confirmPassword = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    var obscureCurrentPassword = true;
-    var obscureNewPassword = true;
-    var obscureConfirmPassword = true;
-
-    await showDialog<void>(
+    final updated = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-        title: const Text('Change password'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: currentPassword,
-                    obscureText: obscureCurrentPassword,
-                    autofillHints: const [AutofillHints.password],
-                    decoration: InputDecoration(
-                      labelText: 'Current password',
-                      prefixIcon: const Icon(Icons.lock_outline_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: () => setDialogState(
-                          () => obscureCurrentPassword = !obscureCurrentPassword,
-                        ),
-                        icon: Icon(
-                          obscureCurrentPassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                    ),
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Enter your current password'
-                        : null,
+      builder: (_) => const _ChangePasswordDialog(),
+    );
+    if (!mounted || updated != true) return;
+    _message('Password updated successfully.', false);
+  }
+}
+
+class _ChangePasswordDialog extends StatefulWidget {
+  const _ChangePasswordDialog();
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  var _obscureCurrentPassword = true;
+  var _obscureNewPassword = true;
+  var _obscureConfirmPassword = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _currentPassword.dispose();
+    _newPassword.dispose();
+    _confirmPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final error = await AppScope.of(context).updatePassword(
+      currentPassword: _currentPassword.text,
+      newPassword: _newPassword.text,
+    );
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context, true);
+      return;
+    }
+    setState(() => _error = error);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change password'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _passwordField(
+                  controller: _currentPassword,
+                  label: 'Current password',
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscureCurrentPassword,
+                  onVisibilityChanged: () => setState(
+                    () => _obscureCurrentPassword = !_obscureCurrentPassword,
                   ),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Enter your current password'
+                      : null,
+                  autofillHints: const [AutofillHints.password],
+                ),
+                const SizedBox(height: 12),
+                _passwordField(
+                  controller: _newPassword,
+                  label: 'New password',
+                  icon: Icons.password_rounded,
+                  obscureText: _obscureNewPassword,
+                  onVisibilityChanged: () => setState(
+                    () => _obscureNewPassword = !_obscureNewPassword,
+                  ),
+                  validator: (value) => value == null || value.length < 8
+                      ? 'Use at least 8 characters'
+                      : null,
+                  autofillHints: const [AutofillHints.newPassword],
+                ),
+                const SizedBox(height: 12),
+                _passwordField(
+                  controller: _confirmPassword,
+                  label: 'Confirm new password',
+                  icon: Icons.password_rounded,
+                  obscureText: _obscureConfirmPassword,
+                  onVisibilityChanged: () => setState(
+                    () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                  ),
+                  validator: (value) => value != _newPassword.text
+                      ? 'New passwords do not match'
+                      : null,
+                  autofillHints: const [AutofillHints.newPassword],
+                ),
+                if (_error != null) ...[
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: newPassword,
-                    obscureText: obscureNewPassword,
-                    autofillHints: const [AutofillHints.newPassword],
-                    decoration: InputDecoration(
-                      labelText: 'New password',
-                      prefixIcon: const Icon(Icons.password_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: () => setDialogState(
-                          () => obscureNewPassword = !obscureNewPassword,
-                        ),
-                        icon: Icon(
-                          obscureNewPassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                    ),
-                    validator: (value) => value == null || value.length < 8
-                        ? 'Use at least 8 characters'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: confirmPassword,
-                    obscureText: obscureConfirmPassword,
-                    autofillHints: const [AutofillHints.newPassword],
-                    decoration: InputDecoration(
-                      labelText: 'Confirm new password',
-                      prefixIcon: const Icon(Icons.password_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: () => setDialogState(
-                          () => obscureConfirmPassword = !obscureConfirmPassword,
-                        ),
-                        icon: Icon(
-                          obscureConfirmPassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                    ),
-                    validator: (value) => value != newPassword.text
-                        ? 'New passwords do not match'
-                        : null,
-                  ),
+                  Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
                 ],
-              ),
+              ],
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final error = await state.updatePassword(
-                currentPassword: currentPassword.text,
-                newPassword: newPassword.text,
-              );
-              if (!mounted || !dialogContext.mounted) return;
-              if (error == null) Navigator.pop(dialogContext);
-              _message(
-                error ?? 'Password updated successfully.',
-                error != null,
-              );
-            },
-            child: const Text('Update password'),
-          ),
-        ],
-          );
-        },
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Update password'),
+        ),
+      ],
     );
-    currentPassword.dispose();
-    newPassword.dispose();
-    confirmPassword.dispose();
+  }
+
+  Widget _passwordField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required bool obscureText,
+    required VoidCallback onVisibilityChanged,
+    required String? Function(String?) validator,
+    required Iterable<String> autofillHints,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      autofillHints: autofillHints,
+      onChanged: (_) => setState(() => _error = null),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixIcon: IconButton(
+          onPressed: onVisibilityChanged,
+          icon: Icon(
+            obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+          ),
+        ),
+      ),
+      validator: validator,
+    );
   }
 }
 
