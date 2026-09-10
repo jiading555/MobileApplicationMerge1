@@ -6,25 +6,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: government-data-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          flutter-version: "3.47.1"
-          channel: stable
-          cache: true
+          python-version: "3.12"
+          cache: pip
 
-      - name: Install dependencies
-        run: flutter pub get
+      - name: Install crawler dependencies
+        run: pip install -r tools/requirements.txt
 
-      - name: Run government data sync
-        run: dart run tool/government_sync.dart
+      # Use the same transport-aware crawler as the scheduled workflow.
+      # The former Dart sync emitted null transport fields and could overwrite
+      # transport_stop_count populated by this crawler.
+      - name: Sync government and transport data
+        run: python tools/government_data_crawler.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
