@@ -334,10 +334,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 onGoalChanged: _changeGoal,
 
                 onBudgetChanged: (value) {
-                  setState(() {
-                    budget = value;
-                    _resetScoringAfterPreferenceChange();
-                  });
+                  budget = value;
+                  _resetScoringAfterPreferenceChange();
                 },
 
                 onStateChanged: (value) {
@@ -386,51 +384,27 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 },
 
                 onOwnStaySafetyChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    ownStaySafetyPriority = value;
-                  });
+                  if (!scoringLocked) ownStaySafetyPriority = value;
                 },
 
                 onOwnStayEducationChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    ownStayEducationPriority = value;
-                  });
+                  if (!scoringLocked) ownStayEducationPriority = value;
                 },
 
                 onOwnStayTransportChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    ownStayTransportPriority = value;
-                  });
+                  if (!scoringLocked) ownStayTransportPriority = value;
                 },
 
                 onInvestmentIncomeChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    investmentIncomePriority = value;
-                  });
+                  if (!scoringLocked) investmentIncomePriority = value;
                 },
 
                 onInvestmentTransportChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    investmentTransportPriority = value;
-                  });
+                  if (!scoringLocked) investmentTransportPriority = value;
                 },
 
                 onInvestmentAffordabilityChanged: (value) {
-                  if (scoringLocked) return;
-
-                  setState(() {
-                    investmentAffordabilityPriority = value;
-                  });
+                  if (!scoringLocked) investmentAffordabilityPriority = value;
                 },
 
                 onResetWeights: _resetPriorities,
