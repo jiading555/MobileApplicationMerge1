@@ -136,42 +136,38 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final useSideNavigation = ResponsiveLayout.usesSideNavigation(context);
+    final isTablet = ResponsiveLayout.isTablet(context);
     final compactLandscape =
         ResponsiveLayout.isCompactLandscapePhone(context);
-    final extendedRail =
-        ResponsiveLayout.isDesktop(context) && !compactLandscape;
+    final extendedRail = ResponsiveLayout.isDesktop(context);
     final content = _buildContent();
 
-    if (useSideNavigation) {
+    if (isTablet) {
       return Scaffold(
         body: SafeArea(
           child: Row(
             children: [
-              if (compactLandscape)
-                _buildCompactSideNavigation()
-              else
-                NavigationRail(
-                  extended: extendedRail,
-                  selectedIndex: selectedIndex,
-                  onDestinationSelected: selectDestination,
-                  labelType: extendedRail
-                      ? NavigationRailLabelType.none
-                      : NavigationRailLabelType.all,
-                  leading: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
-                    child: AdvisorBrand(compact: !extendedRail),
-                  ),
-                  destinations: destinations
-                      .map(
-                        (item) => NavigationRailDestination(
-                          icon: Icon(item.icon),
-                          selectedIcon: Icon(item.selectedIcon),
-                          label: Text(item.label),
-                        ),
-                      )
-                      .toList(),
+              NavigationRail(
+                extended: extendedRail,
+                selectedIndex: selectedIndex,
+                onDestinationSelected: selectDestination,
+                labelType: extendedRail
+                    ? NavigationRailLabelType.none
+                    : NavigationRailLabelType.all,
+                leading: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
+                  child: AdvisorBrand(compact: !extendedRail),
                 ),
+                destinations: destinations
+                    .map(
+                      (item) => NavigationRailDestination(
+                        icon: Icon(item.icon),
+                        selectedIcon: Icon(item.selectedIcon),
+                        label: Text(item.label),
+                      ),
+                    )
+                    .toList(),
+              ),
               const VerticalDivider(width: 1, color: Color(0xFFE5EAF1)),
               Expanded(child: content),
             ],
@@ -181,19 +177,63 @@ class _AppShellState extends State<AppShell> {
     }
 
     return Scaffold(
-      body: SafeArea(child: content),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: selectDestination,
-        destinations: destinations
-            .map(
-              (item) => NavigationDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.selectedIcon, color: AppTheme.blue),
-                label: item.label,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AnimatedPadding(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                padding: EdgeInsets.only(
+                  left: compactLandscape ? 73 : 0,
+                  bottom: compactLandscape ? 0 : 80,
+                ),
+                child: content,
               ),
-            )
-            .toList(),
+            ),
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                ignoring: !compactLandscape,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 100),
+                  opacity: compactLandscape ? 1 : 0,
+                  child: _buildCompactSideNavigation(),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                ignoring: compactLandscape,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 100),
+                  opacity: compactLandscape ? 0 : 1,
+                  child: NavigationBar(
+                    selectedIndex: selectedIndex,
+                    onDestinationSelected: selectDestination,
+                    destinations: destinations
+                        .map(
+                          (item) => NavigationDestination(
+                            icon: Icon(item.icon),
+                            selectedIcon: Icon(
+                              item.selectedIcon,
+                              color: AppTheme.blue,
+                            ),
+                            label: item.label,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
