@@ -311,6 +311,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 selectedState: selectedState,
                 areaId: areaId,
                 propertyType: propertyType,
+                advisorProperties: _cachedAdvisorProperties,
+                propertyAreas: _cachedPropertyAreas,
 
                 scoringLocked: scoringLocked,
 
@@ -1013,6 +1015,8 @@ class _PreferencePanel extends StatelessWidget {
     required this.selectedState,
     required this.areaId,
     required this.propertyType,
+    required this.advisorProperties,
+    required this.propertyAreas,
 
     required this.scoringLocked,
     required this.appliedWeights,
@@ -1048,6 +1052,8 @@ class _PreferencePanel extends StatelessWidget {
   final String selectedState;
   final String areaId;
   final String propertyType;
+  final List<Property> advisorProperties;
+  final Map<Property, AreaData> propertyAreas;
 
   final bool scoringLocked;
   final List<double> appliedWeights;
@@ -1091,15 +1097,16 @@ class _PreferencePanel extends StatelessWidget {
 
     // Only properties with a valid Advisor area, valid price and
     // price within the selected budget participate in the location cascade.
-    final areaIdsWithProperties = _advisorProperties(state)
+    final areaIdsWithProperties = advisorProperties
         .where((property) {
           final price = _advisorComparablePrice(property);
 
           return price != null &&
               price <= budget &&
-              state.matchedAreaFor(property) != null;
+              propertyAreas[property] != null;
         })
-        .map((property) => state.matchedAreaFor(property)!.id)
+        .map((property) => propertyAreas[property]?.id)
+        .whereType<String>()
         .toSet();
 
     // Level 1: State.
@@ -1149,10 +1156,10 @@ class _PreferencePanel extends StatelessWidget {
     final availablePropertyTypes =
         effectiveAreaId == 'any'
               ? <String>[]
-              : _advisorProperties(state)
+              : advisorProperties
                     .where((property) {
                       final price = _advisorComparablePrice(property);
-                      final area = state.matchedAreaFor(property);
+                      final area = propertyAreas[property];
 
                       return price != null &&
                           price <= budget &&
