@@ -245,11 +245,18 @@ def read_polygons(geometry: dict) -> list[list[list[tuple[float, float]]]]:
         for ring in value:
             if not isinstance(ring, list):
                 continue
-            points = [
-                (float(point[0]), float(point[1]))
-                for point in ring
-                if isinstance(point, list) and len(point) >= 2
-            ]
+            points = []
+            for point in ring:
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                first, second = float(point[0]), float(point[1])
+                # GeoJSON normally uses [longitude, latitude], but the
+                # Kawasanku mobile boundary file uses [latitude, longitude].
+                # Normalise either representation to (longitude, latitude).
+                if abs(first) <= 15 and 90 <= abs(second) <= 125:
+                    points.append((second, first))
+                else:
+                    points.append((first, second))
             if len(points) >= 3:
                 output.append(points)
         return output
