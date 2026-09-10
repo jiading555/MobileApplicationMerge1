@@ -332,44 +332,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 onGoalChanged: _changeGoal,
 
                 onBudgetChanged: (value) {
-                  final appState = AppScope.of(context);
-
                   setState(() {
                     budget = value;
-
-                    final availableStates = _availableStates(
-                      state: appState,
-                      targetBudget: value,
-                    );
-
-                    if (selectedState != 'any' &&
-                        !availableStates.contains(selectedState)) {
-                      selectedState = 'any';
-                      areaId = 'any';
-                      propertyType = 'Any';
-                    } else if (selectedState != 'any') {
-                      if (areaId != 'any' &&
-                          !_areaHasPropertyWithinBudget(
-                            state: appState,
-                            targetAreaId: areaId,
-                            targetBudget: value,
-                          )) {
-                        areaId = 'any';
-                        propertyType = 'Any';
-                      } else if (areaId != 'any') {
-                        final availableTypes = _availablePropertyTypes(
-                          state: appState,
-                          targetBudget: value,
-                          targetAreaId: areaId,
-                        );
-
-                        if (propertyType != 'Any' &&
-                            !availableTypes.contains(propertyType)) {
-                          propertyType = 'Any';
-                        }
-                      }
-                    }
-
                     _resetScoringAfterPreferenceChange();
                   });
                 },
