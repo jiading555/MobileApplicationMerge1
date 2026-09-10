@@ -430,9 +430,9 @@ class _ModuleTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(
-            minHeight: 118,
+            minHeight: 88,
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
@@ -444,8 +444,8 @@ class _ModuleTile extends StatelessWidget {
             CrossAxisAlignment.start,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: AppTheme.blue.withValues(
                     alpha: 0.10,
@@ -492,9 +492,12 @@ class _ModuleTile extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       module.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppTheme.muted,
                         fontSize: 12,
+                        height: 1.25,
                       ),
                     ),
                   ],
