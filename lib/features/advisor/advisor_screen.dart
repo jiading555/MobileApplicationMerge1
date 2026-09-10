@@ -78,6 +78,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   late double investmentAffordabilityPriority;
 
   List<double> appliedWeights = [];
+  List<Property> _cachedAdvisorProperties = const [];
+  Map<Property, AreaData> _cachedPropertyAreas = const {};
 
   final Set<String> selectedComparisonIds = {};
 
@@ -100,6 +102,17 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     if (!seeded) {
       final appState = AppScope.of(context);
       final preferences = appState.preferences;
+      _cachedAdvisorProperties = _advisorProperties(appState);
+      _cachedPropertyAreas = <Property, AreaData>{};
+      for (final property in _cachedAdvisorProperties) {
+        final area = appState.matchedAreaFor(property);
+        if (area != null) {
+          _cachedPropertyAreas[property] = area;
+        }
+      }
+      _cachedAdvisorProperties = _cachedAdvisorProperties
+          .where(_cachedPropertyAreas.containsKey)
+          .toList(growable: false);
 
       goal = preferences.goal;
 
@@ -240,7 +253,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     // Re-running it during every slider tick or goal switch blocks the UI thread.
     final recommendations = showResults
         ? const RecommendationService().rank(
-            properties: _advisorProperties(state),
+            properties: _cachedAdvisorProperties,
             areas: state.areas,
             preferences: state.preferences,
           )
@@ -642,9 +655,9 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     required String targetAreaId,
     required double targetBudget,
   }) {
-    return _advisorProperties(state).any((property) {
+    return _cachedAdvisorProperties.any((property) {
       final price = _advisorComparablePrice(property);
-      final area = state.matchedAreaFor(property);
+      final area = _cachedPropertyAreas[property];
       if (price == null) {
         return false;
       }
@@ -662,14 +675,15 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     required AppState state,
     required double targetBudget,
   }) {
-    final areaIdsWithProperties = _advisorProperties(state)
+    final areaIdsWithProperties = _cachedAdvisorProperties
         .where((property) {
           final price = _advisorComparablePrice(property);
           return price != null &&
               price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
+              _cachedPropertyAreas[property] != null;
         })
-        .map((property) => state.matchedAreaFor(property)!.id)
+        .map((property) => _cachedPropertyAreas[property]?.id)
+        .whereType<String>()
         .toSet();
 
     final states =
@@ -694,10 +708,10 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     }
 
     final types =
-        _advisorProperties(state)
+        _cachedAdvisorProperties
             .where((property) {
               final price = _advisorComparablePrice(property);
-              final area = state.matchedAreaFor(property);
+              final area = _cachedPropertyAreas[property];
 
               if (price == null || price > targetBudget) {
                 return false;
