@@ -12,12 +12,6 @@ class AiAdvisorChatService {
     required UserPreferences preferences,
     List<Map<String, String>> conversationHistory = const [],
   }) async {
-    if (!GeminiConfig.isConfigured) {
-      throw Exception(
-        'Gemini API key is not configured.',
-      );
-    }
-
     if (question.trim().isEmpty) {
       throw Exception(
         'Question cannot be empty.',
