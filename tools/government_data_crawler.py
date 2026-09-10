@@ -294,6 +294,10 @@ def transport_counts(
     except Exception as error:
         print(f"warning: district boundary feed skipped: {error}")
         return {}
+    target_keys = {
+        location_key(state, district)
+        for state, district in targets
+    }
     target_keys_by_district: dict[str, list[str]] = {}
     for state, district in targets:
         target_keys_by_district.setdefault(normalise(district), []).append(
@@ -303,15 +307,23 @@ def transport_counts(
     boundaries = {}
     for feature in response.json().get("features", []):
         properties = feature.get("properties") or {}
+        state = str(properties.get("state") or "")
         district = str(
             properties.get("district") or feature.get("id") or ""
         )
-        candidates = target_keys_by_district.get(normalise(district), [])
-        if len(candidates) != 1:
-            continue
+
+        # Prefer an exact state + district match. Fall back to the district name
+        # only when it is unique across Malaysia.
+        boundary_key = location_key(state, district)
+        if boundary_key not in target_keys:
+            candidates = target_keys_by_district.get(normalise(district), [])
+            if len(candidates) != 1:
+                continue
+            boundary_key = candidates[0]
+
         polygons = read_polygons(feature.get("geometry") or {})
         if polygons:
-            boundaries[candidates[0]] = polygons
+            boundaries[boundary_key] = polygons
     if not boundaries:
         print("warning: no district boundaries matched; transport is unavailable")
         return {}
@@ -476,6 +488,22 @@ def main() -> None:
             "source_url": SOURCE_URLS,
             "retrieved_at": retrieved_at.isoformat(),
         })
+
+    transport_profiles = [
+        row for row in output
+        if row["transport_stop_count"] is not None
+    ]
+    if not transport_profiles:
+        raise RuntimeError(
+            "Transport sync produced zero populated districts; "
+            "check the official GTFS feeds and district-boundary mapping."
+        )
+    print(json.dumps({
+        "transport_districts": len(transport_profiles),
+        "transport_stops": sum(
+            row["transport_stop_count"] for row in transport_profiles
+        ),
+    }))
 
     kl_snapshot = next(
         (
