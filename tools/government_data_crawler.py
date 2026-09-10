@@ -17,8 +17,8 @@ import requests
 API_BASE = "https://api.data.gov.my/data-catalogue"
 POPULATION_CSV = "https://storage.dosm.gov.my/population/population_district.csv"
 BOUNDARIES_URL = (
-    "https://raw.githubusercontent.com/dosm-malaysia/kawasanku-front/main/"
-    "geojson/district_mobile.json"
+    "https://raw.githubusercontent.com/dosm-malaysia/data-open/main/"
+    "datasets/geodata/administrative_2_district.geojson"
 )
 GTFS_FEEDS = (
     "https://api.data.gov.my/gtfs-static/ktmb",
