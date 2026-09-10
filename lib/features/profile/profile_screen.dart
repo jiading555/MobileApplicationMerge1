@@ -793,6 +793,75 @@ class _InfoRow extends StatelessWidget {
   );
 }
 
+class _ProfileBudgetControl extends StatefulWidget {
+  const _ProfileBudgetControl({
+    required this.value,
+    required this.minimum,
+    required this.maximum,
+    required this.divisions,
+    required this.onChangeEnd,
+  });
+
+  final double value;
+  final double minimum;
+  final double maximum;
+  final int divisions;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  State<_ProfileBudgetControl> createState() => _ProfileBudgetControlState();
+}
+
+class _ProfileBudgetControlState extends State<_ProfileBudgetControl> {
+  late double _draftValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _draftValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProfileBudgetControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _draftValue = widget.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Text(
+              'Maximum budget',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Spacer(),
+            Text(
+              formatRinggit(_draftValue),
+              style: const TextStyle(
+                color: AppTheme.blue,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          min: widget.minimum,
+          max: widget.maximum,
+          divisions: widget.divisions,
+          value: _draftValue,
+          onChanged: (value) => setState(() => _draftValue = value),
+          onChangeEnd: widget.onChangeEnd,
+        ),
+      ],
+    );
+  }
+}
+
 class _PropertyPreferencesSheet extends StatefulWidget {
   const _PropertyPreferencesSheet({required this.initialValue});
 
@@ -1188,28 +1257,12 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Maximum budget',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const Spacer(),
-                          Text(
-                            formatRinggit(maximumBudget),
-                            style: const TextStyle(
-                              color: AppTheme.blue,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        min: _minimumBudget,
-                        max: _maximumBudget,
-                        divisions: _budgetDivisions,
+                      _ProfileBudgetControl(
                         value: maximumBudget,
-                        onChanged: (value) => _changeBudget(state, value),
+                        minimum: _minimumBudget,
+                        maximum: _maximumBudget,
+                        divisions: _budgetDivisions,
+                        onChangeEnd: (value) => _changeBudget(state, value),
                       ),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 4),
