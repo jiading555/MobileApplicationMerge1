@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/config/gemini_config.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 
@@ -34,7 +36,7 @@ class AiAdvisorChatService {
     try {
       final response = await Supabase.instance.client.functions
           .invoke(
-            'gemini-advisor',
+            GeminiConfig.edgeFunctionName,
             body: {'prompt': prompt},
           )
           .timeout(const Duration(seconds: 90));
