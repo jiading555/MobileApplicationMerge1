@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 import '../../services/ai_advisor_chat_service.dart';
@@ -34,13 +35,30 @@ class _AiAdvisorChatScreenState
 
   bool _isLoading = false;
 
-  final List<String> _suggestedQuestions = const [
-    'Why is the first property ranked highest?',
-    'What is the main weakness of the top property?',
-    'Which factor affects my recommendation the most?',
-    'Which property best matches my priorities?',
-    'What should I consider before choosing a property?',
-  ];
+  List<String> get _suggestedQuestions {
+    final questions = <String>[
+      'Why is the first property ranked highest?',
+      'What is the main weakness of the top property?',
+      'Which factor affects my recommendation the most?',
+      'Which property best matches my priorities?',
+      'What should I consider before choosing a property?',
+    ];
+
+    if (widget.recommendations.length >= 2) {
+      questions.insert(
+        1,
+        'Compare Property #1 and Property #2',
+      );
+    }
+
+    if (widget.recommendations.length >= 3) {
+      questions.add(
+        'Compare Property #1 and Property #3',
+      );
+    }
+
+    return questions;
+  }
 
   @override
   void dispose() {
@@ -70,12 +88,14 @@ class _AiAdvisorChatScreenState
       return;
     }
 
-    // Keep only previous messages as conversation history.
+
     final history = _messages
         .map(
           (message) => {
         'role':
-        message.isUser ? 'User' : 'AI Advisor',
+        message.isUser
+            ? 'User'
+            : 'AI Advisor',
         'text': message.text,
       },
     )
@@ -93,14 +113,17 @@ class _AiAdvisorChatScreenState
     });
 
     _controller.clear();
+
     _scrollToBottom();
 
     try {
       final response =
       await _aiService.sendMessage(
         question: question,
-        recommendations: widget.recommendations,
-        preferences: widget.preferences,
+        recommendations:
+        widget.recommendations,
+        preferences:
+        widget.preferences,
         conversationHistory: history,
       );
 
@@ -150,7 +173,9 @@ class _AiAdvisorChatScreenState
               .position
               .maxScrollExtent,
           duration:
-          const Duration(milliseconds: 300),
+          const Duration(
+            milliseconds: 300,
+          ),
           curve: Curves.easeOut,
         );
       },
@@ -158,6 +183,8 @@ class _AiAdvisorChatScreenState
   }
 
   void _clearChat() {
+    if (_isLoading) return;
+
     setState(() {
       _messages.clear();
     });
@@ -181,7 +208,9 @@ class _AiAdvisorChatScreenState
             IconButton(
               tooltip: 'Clear chat',
               onPressed:
-              _isLoading ? null : _clearChat,
+              _isLoading
+                  ? null
+                  : _clearChat,
               icon: const Icon(
                 Icons.delete_outline_rounded,
               ),
@@ -197,16 +226,18 @@ class _AiAdvisorChatScreenState
           ),
 
           Expanded(
-            child: _messages.isEmpty
+            child:
+            _messages.isEmpty
                 ? _buildWelcomeView()
                 : _buildChatView(),
           ),
 
-          _buildInputArea(),
+          _buildBottomArea(),
         ],
       ),
     );
   }
+
 
   Widget _buildWelcomeView() {
     return ListView(
@@ -217,6 +248,7 @@ class _AiAdvisorChatScreenState
         const Icon(
           Icons.smart_toy_outlined,
           size: 64,
+          color: AppTheme.blue,
         ),
 
         const SizedBox(height: 16),
@@ -228,7 +260,8 @@ class _AiAdvisorChatScreenState
               .textTheme
               .titleLarge
               ?.copyWith(
-            fontWeight: FontWeight.bold,
+            fontWeight:
+            FontWeight.bold,
           ),
         ),
 
@@ -239,8 +272,9 @@ class _AiAdvisorChatScreenState
               'recommendations, scores and priorities to '
               'help explain the results.',
           textAlign: TextAlign.center,
-          style:
-          Theme.of(context).textTheme.bodyMedium,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium,
         ),
 
         const SizedBox(height: 24),
@@ -251,7 +285,8 @@ class _AiAdvisorChatScreenState
               .textTheme
               .titleMedium
               ?.copyWith(
-            fontWeight: FontWeight.w600,
+            fontWeight:
+            FontWeight.w700,
           ),
         ),
 
@@ -260,15 +295,32 @@ class _AiAdvisorChatScreenState
         ..._suggestedQuestions.map(
               (question) => Padding(
             padding:
-            const EdgeInsets.only(bottom: 8),
+            const EdgeInsets.only(
+              bottom: 8,
+            ),
             child: OutlinedButton(
-              onPressed: _isLoading
+              onPressed:
+              _isLoading
                   ? null
-                  : () => _sendMessage(question),
-              style: OutlinedButton.styleFrom(
-                alignment: Alignment.centerLeft,
+                  : () =>
+                  _sendMessage(
+                    question,
+                  ),
+              style:
+              OutlinedButton.styleFrom(
+                foregroundColor:
+                AppTheme.blue,
+                side: BorderSide(
+                  color: AppTheme.blue
+                      .withValues(
+                    alpha: 0.25,
+                  ),
+                ),
+                alignment:
+                Alignment.centerLeft,
                 padding:
-                const EdgeInsets.symmetric(
+                const EdgeInsets
+                    .symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
@@ -276,16 +328,34 @@ class _AiAdvisorChatScreenState
               child: Row(
                 children: [
                   const Icon(
-                    Icons.chat_bubble_outline,
-                    size: 18,
+                    Icons
+                        .chat_bubble_outline_rounded,
+                    size: 17,
+                    color:
+                    AppTheme.blue,
                   ),
-                  const SizedBox(width: 10),
+
+                  const SizedBox(
+                    width: 10,
+                  ),
+
                   Expanded(
-                    child: Text(question),
+                    child: Text(
+                      question,
+                      style:
+                      const TextStyle(
+                        color:
+                        AppTheme.blue,
+                      ),
+                    ),
                   ),
+
                   const Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 14,
+                    Icons
+                        .arrow_forward_ios_rounded,
+                    size: 13,
+                    color:
+                    AppTheme.blue,
                   ),
                 ],
               ),
@@ -296,24 +366,32 @@ class _AiAdvisorChatScreenState
     );
   }
 
+
   Widget _buildChatView() {
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(
+      padding:
+      const EdgeInsets.fromLTRB(
         16,
         16,
         16,
         16,
       ),
       itemCount:
-      _messages.length + (_isLoading ? 1 : 0),
-      itemBuilder: (context, index) {
+      _messages.length +
+          (_isLoading ? 1 : 0),
+      itemBuilder: (
+          context,
+          index,
+          ) {
         if (_isLoading &&
-            index == _messages.length) {
+            index ==
+                _messages.length) {
           return const _TypingBubble();
         }
 
-        final message = _messages[index];
+        final message =
+        _messages[index];
 
         return _MessageBubble(
           message: message,
@@ -322,82 +400,275 @@ class _AiAdvisorChatScreenState
     );
   }
 
-  Widget _buildInputArea() {
+
+  Widget _buildBottomArea() {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          12,
-          10,
-          12,
-          12,
-        ),
         decoration: BoxDecoration(
-          color:
-          Theme.of(context).colorScheme.surface,
+          color: Theme.of(context)
+              .colorScheme
+              .surface,
           border: Border(
             top: BorderSide(
               color: Theme.of(context)
                   .dividerColor
-                  .withValues(alpha: 0.5),
+                  .withValues(
+                alpha: 0.5,
+              ),
             ),
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize:
+          MainAxisSize.min,
           crossAxisAlignment:
-          CrossAxisAlignment.end,
+          CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                enabled: !_isLoading,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction:
-                TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText:
-                  'Ask about your recommendations...',
-                  border: OutlineInputBorder(
-                    borderRadius:
-                    BorderRadius.circular(18),
-                  ),
-                  contentPadding:
-                  const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+            // After the first message, suggestions remain
+            // available horizontally above the input box.
+            if (_messages.isNotEmpty) ...[
+              const Padding(
+                padding:
+                EdgeInsets.fromLTRB(
+                  14,
+                  9,
+                  14,
+                  5,
+                ),
+                child: Text(
+                  'Suggested questions',
+                  style: TextStyle(
+                    color:
+                    AppTheme.muted,
+                    fontSize: 10,
+                    fontWeight:
+                    FontWeight.w700,
                   ),
                 ),
               ),
-            ),
 
-            const SizedBox(width: 8),
+              _buildHorizontalSuggestions(),
 
-            IconButton.filled(
-              tooltip: 'Send',
-              onPressed:
-              _isLoading ? null : _sendMessage,
-              icon: _isLoading
-                  ? const SizedBox(
-                width: 20,
-                height: 20,
-                child:
-                CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              )
-                  : const Icon(
-                Icons.send_rounded,
+              const SizedBox(
+                height: 8,
               ),
-            ),
+            ],
+
+            _buildInputArea(),
           ],
         ),
       ),
     );
   }
+
+
+  Widget _buildHorizontalSuggestions() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection:
+        Axis.horizontal,
+        padding:
+        const EdgeInsets.symmetric(
+          horizontal: 12,
+        ),
+        itemCount:
+        _suggestedQuestions.length,
+        separatorBuilder:
+            (_, __) =>
+        const SizedBox(
+          width: 8,
+        ),
+        itemBuilder: (
+            context,
+            index,
+            ) {
+          final question =
+          _suggestedQuestions[index];
+
+          return ActionChip(
+            onPressed:
+            _isLoading
+                ? null
+                : () =>
+                _sendMessage(
+                  question,
+                ),
+            avatar: const Icon(
+              Icons
+                  .auto_awesome_rounded,
+              size: 14,
+              color: AppTheme.blue,
+            ),
+            label: Text(
+              question,
+              maxLines: 1,
+              overflow:
+              TextOverflow
+                  .ellipsis,
+              style:
+              const TextStyle(
+                color:
+                AppTheme.blue,
+                fontSize: 10,
+                fontWeight:
+                FontWeight.w600,
+              ),
+            ),
+            backgroundColor:
+            AppTheme.blue
+                .withValues(
+              alpha: 0.06,
+            ),
+            disabledColor:
+            AppTheme.blue
+                .withValues(
+              alpha: 0.03,
+            ),
+            side: BorderSide(
+              color: AppTheme.blue
+                  .withValues(
+                alpha: 0.20,
+              ),
+            ),
+            shape:
+            RoundedRectangleBorder(
+              borderRadius:
+              BorderRadius.circular(
+                16,
+              ),
+            ),
+            visualDensity:
+            VisualDensity.compact,
+          );
+        },
+      ),
+    );
+  }
+
+
+  Widget _buildInputArea() {
+    return Padding(
+      padding:
+      const EdgeInsets.fromLTRB(
+        12,
+        2,
+        12,
+        12,
+      ),
+      child: Row(
+        crossAxisAlignment:
+        CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: TextField(
+              controller:
+              _controller,
+              enabled:
+              !_isLoading,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction:
+              TextInputAction
+                  .newline,
+              decoration:
+              InputDecoration(
+                hintText:
+                'Ask about your recommendations...',
+                border:
+                OutlineInputBorder(
+                  borderRadius:
+                  BorderRadius
+                      .circular(
+                    18,
+                  ),
+                ),
+                enabledBorder:
+                OutlineInputBorder(
+                  borderRadius:
+                  BorderRadius
+                      .circular(
+                    18,
+                  ),
+                  borderSide:
+                  BorderSide(
+                    color:
+                    AppTheme.blue
+                        .withValues(
+                      alpha: 0.20,
+                    ),
+                  ),
+                ),
+                focusedBorder:
+                OutlineInputBorder(
+                  borderRadius:
+                  BorderRadius
+                      .circular(
+                    18,
+                  ),
+                  borderSide:
+                  const BorderSide(
+                    color:
+                    AppTheme.blue,
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding:
+                const EdgeInsets
+                    .symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(
+            width: 8,
+          ),
+
+          IconButton.filled(
+            tooltip: 'Send',
+            style:
+            IconButton.styleFrom(
+              backgroundColor:
+              AppTheme.blue,
+              foregroundColor:
+              Colors.white,
+            ),
+            onPressed:
+            _isLoading
+                ? null
+                : () =>
+                _sendMessage(),
+            icon:
+            _isLoading
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child:
+              CircularProgressIndicator(
+                strokeWidth:
+                2,
+                color:
+                Colors.white,
+              ),
+            )
+                : const Icon(
+              Icons
+                  .send_rounded,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _AdvisorContextCard extends StatelessWidget {
+
+class _AdvisorContextCard
+    extends StatelessWidget {
   const _AdvisorContextCard({
     required this.goal,
     required this.recommendationCount,
@@ -407,43 +678,71 @@ class _AdvisorContextCard extends StatelessWidget {
   final int recommendationCount;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(
+      margin:
+      const EdgeInsets.fromLTRB(
         12,
         12,
         12,
         0,
       ),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .primaryContainer,
-        borderRadius: BorderRadius.circular(16),
+      padding:
+      const EdgeInsets.all(
+        14,
+      ),
+      decoration:
+      BoxDecoration(
+        color: AppTheme.blue
+            .withValues(
+          alpha: 0.08,
+        ),
+        borderRadius:
+        BorderRadius.circular(
+          16,
+        ),
+        border: Border.all(
+          color: AppTheme.blue
+              .withValues(
+            alpha: 0.15,
+          ),
+        ),
       ),
       child: Row(
         children: [
           const Icon(
-            Icons.psychology_alt_outlined,
+            Icons
+                .psychology_alt_outlined,
+            color:
+            AppTheme.blue,
           ),
 
-          const SizedBox(width: 12),
+          const SizedBox(
+            width: 12,
+          ),
 
           Expanded(
             child: Column(
               crossAxisAlignment:
-              CrossAxisAlignment.start,
+              CrossAxisAlignment
+                  .start,
               children: [
                 const Text(
                   'Current recommendation context',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
+                  style:
+                  TextStyle(
+                    fontWeight:
+                    FontWeight
+                        .bold,
                   ),
                 ),
 
-                const SizedBox(height: 4),
+                const SizedBox(
+                  height: 4,
+                ),
 
                 Text(
                   'Goal: $goal  •  '
@@ -458,7 +757,9 @@ class _AdvisorContextCard extends StatelessWidget {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
+
+class _MessageBubble
+    extends StatelessWidget {
   const _MessageBubble({
     required this.message,
   });
@@ -466,17 +767,27 @@ class _MessageBubble extends StatelessWidget {
   final _ChatMessage message;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     final colorScheme =
-        Theme.of(context).colorScheme;
+        Theme.of(context)
+            .colorScheme;
 
-    final backgroundColor = message.isUser
-        ? colorScheme.primaryContainer
+    final backgroundColor =
+    message.isUser
+        ? AppTheme.blue
+        .withValues(
+      alpha: 0.10,
+    )
         : message.isError
-        ? colorScheme.errorContainer
-        : colorScheme.surfaceContainerHighest;
+        ? colorScheme
+        .errorContainer
+        : colorScheme
+        .surfaceContainerHighest;
 
-    final alignment = message.isUser
+    final alignment =
+    message.isUser
         ? Alignment.centerRight
         : Alignment.centerLeft;
 
@@ -484,45 +795,75 @@ class _MessageBubble extends StatelessWidget {
       alignment: alignment,
       child: Container(
         constraints:
-        const BoxConstraints(maxWidth: 340),
+        const BoxConstraints(
+          maxWidth: 340,
+        ),
         margin:
-        const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(
+        const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding:
+        const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
         ),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(18),
+        decoration:
+        BoxDecoration(
+          color:
+          backgroundColor,
+          borderRadius:
+          BorderRadius.circular(
+            18,
+          ),
         ),
         child: Column(
           crossAxisAlignment:
           CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize:
+              MainAxisSize.min,
               children: [
                 Icon(
                   message.isUser
-                      ? Icons.person_outline
-                      : Icons.smart_toy_outlined,
+                      ? Icons
+                      .person_outline
+                      : Icons
+                      .smart_toy_outlined,
                   size: 16,
+                  color:
+                  message.isUser
+                      ? AppTheme
+                      .blue
+                      : null,
                 ),
 
-                const SizedBox(width: 6),
+                const SizedBox(
+                  width: 6,
+                ),
 
                 Text(
                   message.isUser
                       ? 'You'
                       : 'AI Advisor',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+                  style:
+                  TextStyle(
+                    fontWeight:
+                    FontWeight
+                        .bold,
+                    color:
+                    message.isUser
+                        ? AppTheme
+                        .blue
+                        : null,
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 7),
+            const SizedBox(
+              height: 7,
+            ),
 
             SelectableText(
               message.text,
@@ -534,38 +875,59 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _TypingBubble extends StatelessWidget {
+// ============================================================
+// AI THINKING
+// ============================================================
+
+class _TypingBubble
+    extends StatelessWidget {
   const _TypingBubble();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+      BuildContext context,
+      ) {
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment:
+      Alignment.centerLeft,
       child: Container(
         margin:
-        const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(
+        const EdgeInsets.only(
+          bottom: 12,
+        ),
+        padding:
+        const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
         ),
-        decoration: BoxDecoration(
+        decoration:
+        BoxDecoration(
           color: Theme.of(context)
               .colorScheme
               .surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius:
+          BorderRadius.circular(
+            18,
+          ),
         ),
         child: const Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+          MainAxisSize.min,
           children: [
             SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(
+              child:
+              CircularProgressIndicator(
                 strokeWidth: 2,
+                color:
+                AppTheme.blue,
               ),
             ),
 
-            SizedBox(width: 10),
+            SizedBox(
+              width: 10,
+            ),
 
             Text(
               'AI Advisor is thinking...',
@@ -576,6 +938,7 @@ class _TypingBubble extends StatelessWidget {
     );
   }
 }
+
 
 class _ChatMessage {
   const _ChatMessage({
