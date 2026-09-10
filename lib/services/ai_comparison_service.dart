@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/gemini_config.dart';
 import '../models/recommendation.dart';
@@ -14,12 +12,6 @@ class AiComparisonService {
     required List<PropertyRecommendation> recommendations,
     required PropertyGoal goal,
   }) async {
-    if (!GeminiConfig.isConfigured) {
-      throw Exception(
-        'Gemini API key is not configured.',
-      );
-    }
-
     if (recommendations.length < 2 ||
         recommendations.length > 3) {
       throw Exception(
@@ -32,138 +24,49 @@ class AiComparisonService {
       goal: goal,
     );
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/'
-          'v1beta/models/${GeminiConfig.model}:generateContent',
-    );
+    try {
+      final response = await Supabase.instance.client.functions
+          .invoke(
+            GeminiConfig.edgeFunctionName,
+            body: {'prompt': prompt},
+          )
+          .timeout(const Duration(seconds: 90));
 
-    for (int attempt = 0; attempt < 3; attempt++) {
-      try {
-        final response = await http
-            .post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key':
-            GeminiConfig.apiKey,
-          },
-          body: jsonEncode({
-            'contents': [
-              {
-                'parts': [
-                  {
-                    'text': prompt,
-                  },
-                ],
-              },
-            ],
-            'generationConfig': {
-              'temperature': 0.3,
-              'maxOutputTokens': 400,
-            },
-          }),
-        )
-            .timeout(
-          const Duration(seconds: 90),
-        );
+      final data = response.data;
+      if (data is! Map) {
+        throw Exception('Gemini returned an invalid comparison response.');
+      }
 
-        if (response.statusCode == 503 &&
-            attempt < 2) {
-          await Future.delayed(
-            Duration(
-              seconds: 2 * (attempt + 1),
-            ),
-          );
-
-          continue;
-        }
-
-        if (response.statusCode == 503) {
-          throw Exception(
-            'AI service is temporarily busy. '
-                'Please try again later.',
-          );
-        }
-
-        if (response.statusCode == 429) {
-          throw Exception(
-            'AI request limit reached. '
-                'Please try again later.',
-          );
-        }
-
-        if (response.statusCode != 200) {
-          throw Exception(
-            'Gemini API error: '
-                '${response.statusCode}',
-          );
-        }
-
-        final data =
-        jsonDecode(response.body)
-        as Map<String, dynamic>;
-
-        final candidates =
-        data['candidates']
-        as List<dynamic>?;
-
-        if (candidates == null ||
-            candidates.isEmpty) {
-          throw Exception(
-            'Gemini returned no comparison.',
-          );
-        }
-
-        final first =
-        candidates.first
-        as Map<String, dynamic>;
-
-        final content =
-        first['content']
-        as Map<String, dynamic>?;
-
-        final parts =
-        content?['parts']
-        as List<dynamic>?;
-
-        if (parts == null ||
-            parts.isEmpty) {
-          throw Exception(
-            'Gemini returned empty content.',
-          );
-        }
-
-        final text = parts
-            .map((part) {
-          final item =
-          part
-          as Map<String, dynamic>;
-
-          return item['text']
-              ?.toString() ??
-              '';
-        })
-            .join()
-            .trim();
-
-        if (text.isEmpty) {
-          throw Exception(
-            'Gemini returned an empty comparison.',
-          );
-        }
-
-        return text;
-      } on TimeoutException {
+      final error = data['error']?.toString().trim();
+      if (response.status != 200 || (error != null && error.isNotEmpty)) {
         throw Exception(
-          'AI comparison is taking longer than expected. '
-              'Please check your internet connection and try again.',
+          error == null || error.isEmpty
+              ? 'Gemini API error: ${response.status}'
+              : 'Gemini API error: $error',
         );
       }
-    }
 
-    throw Exception(
-      'Unable to generate comparison.',
-    );
+      final text = data['text']?.toString().trim() ?? '';
+      if (text.isEmpty) {
+        throw Exception('Gemini returned an empty comparison.');
+      }
+
+      return text;
+    } on TimeoutException {
+      throw Exception(
+        'AI comparison is taking longer than expected. '
+        'Please check your internet connection and try again.',
+      );
+    } catch (error) {
+      final message = error.toString();
+      if (message.contains('Gemini API error') ||
+          message.contains('Gemini returned')) {
+        rethrow;
+      }
+      throw Exception(
+        'Failed to generate the AI comparison. Please try again.',
+      );
+    }
   }
 
   String buildPrompt({
