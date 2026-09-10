@@ -13,6 +13,7 @@ import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../../models/user_preferences.dart';
 import '../search/property_detail_screen.dart';
+import '../settings/settings_screen.dart';
 
 
 String _normaliseProfileLocation(Object? value) {
@@ -108,7 +109,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile & settings')),
+      appBar: AppBar(
+        title: const Text('Profile'),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SettingsScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: Stack(
         children: [
           SingleChildScrollView(
