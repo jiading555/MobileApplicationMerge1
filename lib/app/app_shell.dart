@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
@@ -18,8 +20,12 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell>
+    with WidgetsBindingObserver {
   int selectedIndex = 0;
+  Timer? _rotationSettleTimer;
+  Size? _stablePhysicalSize;
+  bool _isRotating = false;
   late final ValueChanged<int> _selectDestinationCallback = selectDestination;
   final List<Widget?> _screenCache = List<Widget?>.filled(
     destinations.length,
@@ -42,7 +48,52 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _screenCache[0] = const HomeScreen();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _stablePhysicalSize ??= View.of(context).physicalSize;
+  }
+
+  @override
+  void didChangeMetrics() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return;
+
+    final currentSize = views.first.physicalSize;
+    final previousSize = _stablePhysicalSize;
+    if (currentSize.isEmpty || previousSize == null) {
+      _stablePhysicalSize = currentSize;
+      return;
+    }
+
+    final widthChanged = (currentSize.width - previousSize.width).abs() > 100;
+    final heightChanged = (currentSize.height - previousSize.height).abs() > 100;
+    if (!widthChanged || !heightChanged) {
+      _stablePhysicalSize = currentSize;
+      return;
+    }
+
+    if (mounted && !_isRotating) {
+      setState(() => _isRotating = true);
+    }
+    _rotationSettleTimer?.cancel();
+    _rotationSettleTimer = Timer(const Duration(milliseconds: 220), () {
+      _stablePhysicalSize = currentSize;
+      if (mounted) {
+        setState(() => _isRotating = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _rotationSettleTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Widget _buildScreen(int index) {
@@ -123,6 +174,14 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isRotating) {
+      return const ColoredBox(
+        key: ValueKey('orientation-transition-cover'),
+        color: Color(0xFFF7F9FC),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
     final useSideNavigation = ResponsiveLayout.usesSideNavigation(context);
     final compactLandscape =
         ResponsiveLayout.isCompactLandscapePhone(context);
