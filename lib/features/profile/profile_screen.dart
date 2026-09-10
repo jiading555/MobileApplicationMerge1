@@ -245,90 +245,127 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final newPassword = TextEditingController();
     final confirmPassword = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    var hideCurrent = true;
+    var hideNew = true;
+    var hideConfirm = true;
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Change password'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: currentPassword,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.password],
-                    decoration: const InputDecoration(
-                      labelText: 'Current password',
-                      prefixIcon: Icon(Icons.lock_outline_rounded),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Change password'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: currentPassword,
+                      obscureText: hideCurrent,
+                      autofillHints: const [AutofillHints.password],
+                      decoration: InputDecoration(
+                        labelText: 'Current password',
+                        prefixIcon: const Icon(Icons.lock_outline_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: hideCurrent ? 'Show password' : 'Hide password',
+                          onPressed: () => setDialogState(
+                            () => hideCurrent = !hideCurrent,
+                          ),
+                          icon: Icon(
+                            hideCurrent
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Enter your current password'
+                          : null,
                     ),
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Enter your current password'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: newPassword,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
-                      labelText: 'New password',
-                      prefixIcon: Icon(Icons.password_rounded),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: newPassword,
+                      obscureText: hideNew,
+                      autofillHints: const [AutofillHints.newPassword],
+                      decoration: InputDecoration(
+                        labelText: 'New password',
+                        prefixIcon: const Icon(Icons.password_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: hideNew ? 'Show password' : 'Hide password',
+                          onPressed: () =>
+                              setDialogState(() => hideNew = !hideNew),
+                          icon: Icon(
+                            hideNew
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => value == null || value.length < 8
+                          ? 'Use at least 8 characters'
+                          : null,
                     ),
-                    validator: (value) => value == null || value.length < 8
-                        ? 'Use at least 8 characters'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: confirmPassword,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm new password',
-                      prefixIcon: Icon(Icons.password_rounded),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: confirmPassword,
+                      obscureText: hideConfirm,
+                      autofillHints: const [AutofillHints.newPassword],
+                      decoration: InputDecoration(
+                        labelText: 'Confirm new password',
+                        prefixIcon: const Icon(Icons.password_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: hideConfirm
+                              ? 'Show password'
+                              : 'Hide password',
+                          onPressed: () => setDialogState(
+                            () => hideConfirm = !hideConfirm,
+                          ),
+                          icon: Icon(
+                            hideConfirm
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => value != newPassword.text
+                          ? 'New passwords do not match'
+                          : null,
                     ),
-                    validator: (value) => value != newPassword.text
-                        ? 'New passwords do not match'
-                        : null,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+                final error = await state.updatePassword(
+                  currentPassword: currentPassword.text,
+                  newPassword: newPassword.text,
+                );
+                if (!mounted || !dialogContext.mounted) return;
+                if (error == null) Navigator.pop(dialogContext);
+                _message(
+                  error ?? 'Password updated successfully.',
+                  error != null,
+                );
+              },
+              child: const Text('Update password'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final error = await state.updatePassword(
-                currentPassword: currentPassword.text,
-                newPassword: newPassword.text,
-              );
-              if (!mounted || !dialogContext.mounted) return;
-              if (error == null) Navigator.pop(dialogContext);
-              _message(
-                error ?? 'Password updated successfully.',
-                error != null,
-              );
-            },
-            child: const Text('Update password'),
-          ),
-        ],
       ),
     );
-    currentPassword.dispose();
-    newPassword.dispose();
-    confirmPassword.dispose();
   }
+
 }
 
 class _EditProfileSheet extends StatefulWidget {
@@ -772,6 +809,8 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
   static const int _budgetDivisions = 25;
 
   bool _seeded = false;
+  List<Property> _usableProperties = const [];
+  Map<Property, AreaData> _propertyAreas = const {};
 
   late double maximumBudget;
   late String selectedState;
@@ -806,6 +845,11 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     if (_seeded) return;
 
     final state = AppScope.of(context);
+    _usableProperties = _profileAdvisorProperties(state);
+    _propertyAreas = {
+      for (final property in _usableProperties)
+        property: _propertyAreas[property]!,
+    };
 
     final states = _availableStates(state: state, targetBudget: maximumBudget);
 
@@ -881,15 +925,15 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     required AppState state,
     required double targetBudget,
   }) {
-    final areaIdsWithProperties = _profileAdvisorProperties(state)
+    final areaIdsWithProperties = _usableProperties
         .where((property) {
           final price = _profileComparablePrice(property);
 
           return price != null &&
               price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
+              _propertyAreas[property] != null;
         })
-        .map((property) => state.matchedAreaFor(property)!.id)
+        .map((property) => _propertyAreas[property]!.id)
         .toSet();
 
     final states =
@@ -913,15 +957,15 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
       return const [];
     }
 
-    final areaIdsWithProperties = _profileAdvisorProperties(state)
+    final areaIdsWithProperties = _usableProperties
         .where((property) {
           final price = _profileComparablePrice(property);
 
           return price != null &&
               price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
+              _propertyAreas[property] != null;
         })
-        .map((property) => state.matchedAreaFor(property)!.id)
+        .map((property) => _propertyAreas[property]!.id)
         .toSet();
 
     final areas =
@@ -977,10 +1021,10 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     }
 
     final types =
-        _profileAdvisorProperties(state)
+        _usableProperties
             .where((property) {
               final price = _profileComparablePrice(property);
-              final area = state.matchedAreaFor(property);
+              final area = _propertyAreas[property];
 
               return price != null &&
                   price <= targetBudget &&
@@ -1314,24 +1358,20 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+              SizedBox(
+                height: 48,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: () {
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
                         final finalState = effectiveState;
                         final finalDistrict = effectiveDistrict;
                         final finalAreaId = _areaIdForSelection(
@@ -1357,11 +1397,15 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                             budget: maximumBudget,
                           ),
                         );
-                      },
-                      child: const Text('Save preferences'),
+                        },
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Save preferences'),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
