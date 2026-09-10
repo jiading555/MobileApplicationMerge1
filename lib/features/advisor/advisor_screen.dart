@@ -127,17 +127,108 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       final preferences = appState.preferences;
 
       goal = preferences.goal;
-      budget = preferences.budget;
-      areaId = preferences.preferredAreaId;
-      propertyType = preferences.propertyType;
 
-      selectedState = 'any';
-      if (areaId != 'any') {
+      // User Management stores a budget range.
+      // Smart Advisor uses the saved maximum budget as its default.
+      final savedMaximumBudget = preferences.maximumBudget > 0
+          ? preferences.maximumBudget
+          : preferences.budget;
+
+      budget = savedMaximumBudget
+          .clamp(350000.0, 1600000.0)
+          .toDouble();
+
+      // Start from the saved User Management property preferences.
+      selectedState = preferences.preferredState.trim().isEmpty
+          ? 'any'
+          : preferences.preferredState.trim();
+
+      areaId = 'any';
+      propertyType = 'Any';
+
+      // Validate the saved state against properties that can actually
+      // participate in the Advisor under the saved maximum budget.
+      final availableStates = _availableStates(
+        state: appState,
+        targetBudget: budget,
+      );
+
+      if (selectedState != 'any' &&
+          !availableStates.contains(selectedState)) {
+        selectedState = 'any';
+      }
+
+      // Convert the saved district name from User Management into the
+      // Advisor's areaId only when that area currently has usable data/property.
+      if (selectedState != 'any' &&
+          preferences.preferredDistrict.trim().isNotEmpty) {
+        final savedDistrict = preferences.preferredDistrict.trim();
+
         for (final area in appState.areas) {
-          if (area.id == areaId) {
-            selectedState = area.state;
+          final sameState =
+              _normaliseAdvisorLocation(area.state) ==
+                  _normaliseAdvisorLocation(selectedState);
+
+          final sameDistrict =
+              _normaliseAdvisorLocation(area.name) ==
+                  _normaliseAdvisorLocation(savedDistrict);
+
+          if (sameState &&
+              sameDistrict &&
+              _areaHasPropertyWithinBudget(
+                state: appState,
+                targetAreaId: area.id,
+                targetBudget: budget,
+              )) {
+            areaId = area.id;
             break;
           }
+        }
+      }
+
+      // Compatibility with older Advisor data that already stored
+      // preferredAreaId directly.
+      if (areaId == 'any' &&
+          preferences.preferredAreaId != 'any') {
+        for (final area in appState.areas) {
+          if (area.id != preferences.preferredAreaId) {
+            continue;
+          }
+
+          final stateMatches =
+              selectedState == 'any' ||
+                  _normaliseAdvisorLocation(area.state) ==
+                      _normaliseAdvisorLocation(selectedState);
+
+          if (stateMatches &&
+              _areaHasPropertyWithinBudget(
+                state: appState,
+                targetAreaId: area.id,
+                targetBudget: budget,
+              )) {
+            areaId = area.id;
+
+            if (selectedState == 'any') {
+              selectedState = area.state;
+            }
+
+            break;
+          }
+        }
+      }
+
+      // Property Type is pre-filled only when that type actually exists
+      // in the selected area. Otherwise the Advisor safely falls back to Any.
+      if (areaId != 'any') {
+        final availableTypes = _availablePropertyTypes(
+          state: appState,
+          targetBudget: budget,
+          targetAreaId: areaId,
+        );
+
+        if (preferences.propertyType == 'Any' ||
+            availableTypes.contains(preferences.propertyType)) {
+          propertyType = preferences.propertyType;
         }
       }
 
@@ -158,6 +249,12 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
       investmentAffordabilityPriority =
           preferences.investmentAffordabilityPriority;
+
+      // Prefill only. Do not generate results automatically.
+      showResults = false;
+      scoringLocked = false;
+      appliedWeights = [];
+      selectedComparisonIds.clear();
 
       seeded = true;
     }
@@ -769,12 +866,32 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       priorities,
     );
 
+    String currentDistrict = '';
+
+    if (effectiveAreaId != 'any') {
+      for (final area in state.areas) {
+        if (area.id == effectiveAreaId) {
+          currentDistrict = area.name;
+          break;
+        }
+      }
+    }
+
+    // Update only the current in-app recommendation session.
+    // This does NOT call saveAccountPreferences(), so the saved Supabase
+    // User Management preferences are not overwritten.
     state.updatePreferences(
       state.preferences.copyWith(
         goal: goal,
         budget: budget,
         preferredAreaId: effectiveAreaId,
         propertyType: effectivePropertyType,
+
+        // Keep RecommendationService aligned with the current Advisor
+        // State / Area selection instead of the old saved profile values.
+        preferredState:
+        selectedState == 'any' ? '' : selectedState,
+        preferredDistrict: currentDistrict,
 
         ownStaySafetyPriority:
         ownStaySafetyPriority,
