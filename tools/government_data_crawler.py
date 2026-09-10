@@ -304,8 +304,16 @@ def transport_counts(
             location_key(state, district)
         )
 
+    boundary_features = response.json().get("features", [])
+    print(json.dumps({
+        "boundary_features": len(boundary_features),
+        "boundary_sample_properties": (
+            (boundary_features[0].get("properties") or {})
+            if boundary_features else {}
+        ),
+    }), flush=True)
     boundaries = {}
-    for feature in response.json().get("features", []):
+    for feature in boundary_features:
         properties = feature.get("properties") or {}
         state = str(properties.get("state") or "")
         district = str(
@@ -324,8 +332,15 @@ def transport_counts(
         polygons = read_polygons(feature.get("geometry") or {})
         if polygons:
             boundaries[boundary_key] = polygons
+    print(json.dumps({
+        "target_districts": len(targets),
+        "matched_boundaries": len(boundaries),
+    }), flush=True)
     if not boundaries:
-        print("warning: no district boundaries matched; transport is unavailable")
+        print(
+            "warning: no district boundaries matched; transport is unavailable",
+            flush=True,
+        )
         return {}
 
     stops: dict[tuple[float, float], tuple[float, float]] = {}
@@ -351,8 +366,15 @@ def transport_counts(
             successful_feeds += 1
         except Exception as error:
             print(f"warning: GTFS feed skipped: {feed}: {error}")
+    print(json.dumps({
+        "successful_gtfs_feeds": successful_feeds,
+        "unique_gtfs_stops": len(stops),
+    }), flush=True)
     if successful_feeds == 0:
-        print("warning: all official GTFS feeds failed; transport is unavailable")
+        print(
+            "warning: all official GTFS feeds failed; transport is unavailable",
+            flush=True,
+        )
         return {}
 
     counts = {key: 0 for key in boundaries}
