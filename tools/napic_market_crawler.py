@@ -174,8 +174,8 @@ def discover_workbooks(session: requests.Session) -> tuple[str, dict[str, str]]:
             PUBLICATION_STATE_NAMES.get(state, state)
         )
         pattern = re.compile(
-            rf"\\bjadual transaksi harta tanah "
-            rf"{re.escape(publication_state)} q[1-4] \\d{{4}}\\b",
+            rf"\bjadual transaksi harta tanah "
+            rf"{re.escape(publication_state)} q[1-4] \d{{4}}\b",
         )
         url = next(
             (
