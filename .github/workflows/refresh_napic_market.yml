@@ -27,9 +27,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python tools/government_data_crawler.py
+        run: python -u tools/government_data_crawler.py
       - name: Crawl official NAPIC publications
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python tools/napic_market_crawler.py
+        run: python -u tools/napic_market_crawler.py
