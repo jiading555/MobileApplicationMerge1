@@ -232,6 +232,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    final compactLandscape =
+        ResponsiveLayout.isCompactLandscapePhone(context);
 
     // Ranking is intentionally deferred until Generate matches is pressed.
     // Re-running it during every slider tick or goal switch blocks the UI thread.
@@ -251,7 +253,12 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Smart property advisor'),
+        toolbarHeight: compactLandscape ? 44 : null,
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text('Smart property advisor'),
+        ),
         actions: [
           IconButton(
             tooltip: 'Saved Recommendations',
@@ -273,6 +280,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         ],
       ),
       body: SingleChildScrollView(
+        padding: EdgeInsets.only(bottom: compactLandscape ? 24 : 0),
         child: PageContainer(
           maxWidth: 1100,
           child: Column(
@@ -1218,31 +1226,9 @@ class _PreferencePanel extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            Row(
-              children: [
-                Text(
-                  'Maximum budget',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-
-                const Spacer(),
-
-                Text(
-                  formatRinggit(budget),
-                  style: const TextStyle(
-                    color: AppTheme.blue,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-
-            Slider(
-              min: 350000,
-              max: 1600000,
-              divisions: 25,
+            _AdvisorBudgetControl(
               value: budget,
-              onChanged: onBudgetChanged,
+              onChangeEnd: onBudgetChanged,
             ),
 
             const SizedBox(height: 10),
@@ -1438,6 +1424,69 @@ class _PreferencePanel extends StatelessWidget {
   }
 }
 
+class _AdvisorBudgetControl extends StatefulWidget {
+  const _AdvisorBudgetControl({
+    required this.value,
+    required this.onChangeEnd,
+  });
+
+  final double value;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  State<_AdvisorBudgetControl> createState() => _AdvisorBudgetControlState();
+}
+
+class _AdvisorBudgetControlState extends State<_AdvisorBudgetControl> {
+  late double _draftValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _draftValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdvisorBudgetControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _draftValue = widget.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Text(
+              'Maximum budget',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Spacer(),
+            Text(
+              formatRinggit(_draftValue),
+              style: const TextStyle(
+                color: AppTheme.blue,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          min: 350000,
+          max: 1600000,
+          divisions: 25,
+          value: _draftValue,
+          onChanged: (value) => setState(() => _draftValue = value),
+          onChangeEnd: widget.onChangeEnd,
+        ),
+      ],
+    );
+  }
+}
+
 class _PrioritySliders extends StatelessWidget {
   const _PrioritySliders({
     required this.goal,
@@ -1596,7 +1645,7 @@ class _PrioritySliders extends StatelessWidget {
   }
 }
 
-class _PrioritySlider extends StatelessWidget {
+class _PrioritySlider extends StatefulWidget {
   const _PrioritySlider({
     required this.label,
     required this.value,
@@ -1609,14 +1658,36 @@ class _PrioritySlider extends StatelessWidget {
   final double value;
   final double? appliedWeight;
   final bool locked;
-
   final ValueChanged<double> onChanged;
 
   @override
+  State<_PrioritySlider> createState() => _PrioritySliderState();
+}
+
+class _PrioritySliderState extends State<_PrioritySlider> {
+  late double _draftValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _draftValue = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PrioritySlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value ||
+        oldWidget.locked != widget.locked ||
+        oldWidget.appliedWeight != widget.appliedWeight) {
+      _draftValue = widget.value;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final displayValue = locked && appliedWeight != null
-        ? appliedWeight! * 100
-        : value;
+    final displayValue = widget.locked && widget.appliedWeight != null
+        ? widget.appliedWeight! * 100
+        : _draftValue;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -1630,42 +1701,45 @@ class _PrioritySlider extends StatelessWidget {
                 size: 18,
                 color: AppTheme.blue,
               ),
-
               const SizedBox(width: 8),
-
               Expanded(
                 child: Text(
-                  label,
+                  widget.label,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-
-              if (locked && appliedWeight != null)
+              if (widget.locked && widget.appliedWeight != null)
                 Text(
-                  '${(appliedWeight! * 100).toStringAsFixed(1)}%',
+                  '${(widget.appliedWeight! * 100).toStringAsFixed(1)}%',
                   style: const TextStyle(
                     color: AppTheme.blue,
                     fontWeight: FontWeight.w800,
                   ),
+                )
+              else
+                Text(
+                  _draftValue.round().toString(),
+                  style: const TextStyle(
+                    color: AppTheme.blue,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
             ],
           ),
-
           const SizedBox(height: 2),
-
           Slider(
             min: 0,
             max: 100,
             divisions: 100,
-
             value: displayValue.clamp(0.0, 100.0).toDouble(),
-
-            onChanged: locked ? null : onChanged,
+            onChanged: widget.locked
+                ? null
+                : (value) => setState(() => _draftValue = value),
+            onChangeEnd: widget.locked ? null : widget.onChanged,
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
@@ -1677,30 +1751,19 @@ class _PrioritySlider extends StatelessWidget {
                     style: TextStyle(color: AppTheme.muted, fontSize: 9),
                   ),
                 ),
-
                 Expanded(
-                  child: locked
-                      ? const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.lock_outline_rounded,
-                              size: 10,
-                              color: AppTheme.muted,
-                            ),
-                            SizedBox(width: 3),
-                            Text(
-                              'Locked',
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 9,
-                              ),
-                            ),
-                          ],
+                  child: widget.locked
+                      ? Text(
+                          '${displayValue.toStringAsFixed(1)}%',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppTheme.blue,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
                         )
-                      : const SizedBox(),
+                      : const SizedBox.shrink(),
                 ),
-
                 const Expanded(
                   child: Text(
                     'High',
