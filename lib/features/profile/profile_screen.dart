@@ -846,10 +846,16 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
 
     final state = AppScope.of(context);
     _usableProperties = _profileAdvisorProperties(state);
-    _propertyAreas = {
-      for (final property in _usableProperties)
-        property: _propertyAreas[property]!,
-    };
+    _propertyAreas = <Property, AreaData>{};
+    for (final property in _usableProperties) {
+      final area = state.matchedAreaFor(property);
+      if (area != null) {
+        _propertyAreas[property] = area;
+      }
+    }
+    _usableProperties = _usableProperties
+        .where(_propertyAreas.containsKey)
+        .toList(growable: false);
 
     final states = _availableStates(state: state, targetBudget: maximumBudget);
 
