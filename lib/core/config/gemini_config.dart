@@ -1,6 +1,6 @@
 class GeminiConfig {
   static const String apiKey =
-      '';
+      'AQ.Ab8RN6JBDakS2C0liTDlIdNxGI11aEgeToSH2nOMlvY0bU_3Eg';
 
   static const String model =
       'gemini-3.5-flash-lite';
