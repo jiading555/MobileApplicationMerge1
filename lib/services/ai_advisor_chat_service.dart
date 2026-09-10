@@ -1,9 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../core/config/gemini_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 
@@ -41,109 +37,31 @@ class AiAdvisorChatService {
       conversationHistory: conversationHistory,
     );
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/'
-          'v1beta/models/${GeminiConfig.model}:generateContent',
-    );
-
     try {
-      final response = await http
-          .post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': GeminiConfig.apiKey,
-        },
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {
-                  'text': prompt,
-                },
-              ],
-            },
-          ],
+      final response = await Supabase.instance.client.functions
+          .invoke(
+            'gemini-advisor',
+            body: {'prompt': prompt},
+          )
+          .timeout(const Duration(seconds: 90));
 
-          // Keep the advisor response focused and relatively short.
-          'generationConfig': {
-            'temperature': 0.25,
-            'maxOutputTokens': 500,
-          },
-        }),
-      )
-          .timeout(
-        const Duration(seconds: 90),
-      );
+      final data = response.data;
+      if (data is! Map) {
+        throw Exception('Gemini returned an invalid response.');
+      }
 
-      if (response.statusCode == 429) {
+      final error = data['error']?.toString().trim();
+      if (response.status != 200 || (error != null && error.isNotEmpty)) {
         throw Exception(
-          'AI request limit reached. Please try again later.',
+          error == null || error.isEmpty
+              ? 'Gemini API error: ${response.status}'
+              : 'Gemini API error: $error',
         );
       }
 
-      if (response.statusCode == 503) {
-        throw Exception(
-          'AI service is temporarily busy. Please try again later.',
-        );
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Gemini API error: ${response.statusCode}',
-        );
-      }
-
-      final data =
-      jsonDecode(response.body)
-      as Map<String, dynamic>;
-
-      final candidates =
-      data['candidates']
-      as List<dynamic>?;
-
-      if (candidates == null ||
-          candidates.isEmpty) {
-        throw Exception(
-          'Gemini returned no response.',
-        );
-      }
-
-      final firstCandidate =
-      candidates.first
-      as Map<String, dynamic>;
-
-      final content =
-      firstCandidate['content']
-      as Map<String, dynamic>?;
-
-      final parts =
-      content?['parts']
-      as List<dynamic>?;
-
-      if (parts == null ||
-          parts.isEmpty) {
-        throw Exception(
-          'Gemini returned empty content.',
-        );
-      }
-
-      final text = parts
-          .map((part) {
-        final item =
-        part as Map<String, dynamic>;
-
-        return item['text']
-            ?.toString() ??
-            '';
-      })
-          .join()
-          .trim();
-
+      final text = data['text']?.toString().trim() ?? '';
       if (text.isEmpty) {
-        throw Exception(
-          'Gemini returned an empty advisor response.',
-        );
+        throw Exception('Gemini returned an empty advisor response.');
       }
 
       return text;
