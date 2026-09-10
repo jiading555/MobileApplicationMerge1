@@ -30,6 +30,10 @@ class TransportDataService {
     'ktmb': 'https://api.data.gov.my/gtfs-static/ktmb',
     'rapid-bus-kl':
         'https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kl',
+    'rapid-bus-penang':
+        'https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-penang',
+    'rapid-bus-kuantan':
+        'https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kuantan',
     'rapid-bus-mrtfeeder':
         'https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-mrtfeeder',
     'rapid-rail-kl':
