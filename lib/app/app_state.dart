@@ -256,10 +256,14 @@ class AppState extends ChangeNotifier {
       final response = await Supabase.instance.client.auth.signUp(
         email: email.trim(),
         password: password,
+        emailRedirectTo: SupabaseConfig.emailRedirectTo,
         data: {'full_name': name.trim()},
       );
       final authUser = response.user;
       if (authUser == null) return 'Unable to create account.';
+      if (authUser.identities?.isEmpty ?? false) {
+        return 'An account with this email address already exists. Please sign in.';
+      }
       user = AppUser(
         id: authUser.id,
         name: name.trim(),
@@ -274,6 +278,9 @@ class AppState extends ChangeNotifier {
       }
       return null;
     } on AuthException catch (error) {
+      if (error.message.toLowerCase().contains('already registered')) {
+        return 'An account with this email address already exists. Please sign in.';
+      }
       return error.message;
     } catch (_) {
       return 'Unable to create account. Please try again.';
@@ -300,6 +307,7 @@ class AppState extends ChangeNotifier {
       await Supabase.instance.client.auth.resend(
         type: OtpType.signup,
         email: email.trim(),
+        emailRedirectTo: SupabaseConfig.emailRedirectTo,
       );
       return null;
     } on AuthException catch (error) {
@@ -434,13 +442,26 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> resetPassword(String email) async {
+    final emailError = AuthValidators.email(email);
+    if (emailError != null) return emailError;
+    if (!SupabaseConfig.isConfigured) {
+      return 'Supabase is not configured.';
+    }
+    isAccountBusy = true;
+    notifyListeners();
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email.trim(),
+        redirectTo: SupabaseConfig.emailRedirectTo,
+      );
       return null;
     } on AuthException catch (error) {
       return error.message;
     } catch (_) {
       return 'Unable to send reset email. Please try again.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
     }
   }
 

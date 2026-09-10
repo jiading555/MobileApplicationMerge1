@@ -5,7 +5,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/auth_validators.dart';
 import '../../core/widgets/advisor_brand.dart';
 import 'register_screen.dart';
-import 'reset_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -40,6 +39,24 @@ class _LoginScreenState extends State<LoginScreen> {
       context,
     ).login(emailController.text, passwordController.text);
     if (mounted) setState(() => error = result);
+  }
+
+  Future<void> sendPasswordReset() async {
+    final emailError = AuthValidators.email(emailController.text);
+    if (emailError != null) {
+      setState(() => error = 'Enter your email address to reset your password.');
+      return;
+    }
+
+    final result = await AppScope.of(context).resetPassword(emailController.text);
+    if (!mounted) return;
+    if (result != null) {
+      setState(() => error = result);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Password reset link sent. Check your email.')),
+    );
   }
 
   @override
@@ -125,12 +142,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) =>
-                                          const ResetPasswordScreen(),
-                                    ),
-                                  ),
+                                  onPressed: AppScope.of(context).isAccountBusy
+                                      ? null
+                                      : sendPasswordReset,
                                   child: const Text('Forgot password?'),
                                 ),
                               ),

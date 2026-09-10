@@ -204,10 +204,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final newPassword = TextEditingController();
     final confirmPassword = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    var obscureCurrentPassword = true;
+    var obscureNewPassword = true;
+    var obscureConfirmPassword = true;
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
         title: const Text('Change password'),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -219,11 +224,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   TextFormField(
                     controller: currentPassword,
-                    obscureText: true,
+                    obscureText: obscureCurrentPassword,
                     autofillHints: const [AutofillHints.password],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Current password',
-                      prefixIcon: Icon(Icons.lock_outline_rounded),
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: () => setDialogState(
+                          () => obscureCurrentPassword = !obscureCurrentPassword,
+                        ),
+                        icon: Icon(
+                          obscureCurrentPassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
                     ),
                     validator: (value) => value == null || value.isEmpty
                         ? 'Enter your current password'
@@ -232,11 +247,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: newPassword,
-                    obscureText: true,
+                    obscureText: obscureNewPassword,
                     autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'New password',
-                      prefixIcon: Icon(Icons.password_rounded),
+                      prefixIcon: const Icon(Icons.password_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: () => setDialogState(
+                          () => obscureNewPassword = !obscureNewPassword,
+                        ),
+                        icon: Icon(
+                          obscureNewPassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
                     ),
                     validator: (value) => value == null || value.length < 8
                         ? 'Use at least 8 characters'
@@ -245,11 +270,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: confirmPassword,
-                    obscureText: true,
+                    obscureText: obscureConfirmPassword,
                     autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Confirm new password',
-                      prefixIcon: Icon(Icons.password_rounded),
+                      prefixIcon: const Icon(Icons.password_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: () => setDialogState(
+                          () => obscureConfirmPassword = !obscureConfirmPassword,
+                        ),
+                        icon: Icon(
+                          obscureConfirmPassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
                     ),
                     validator: (value) => value != newPassword.text
                         ? 'New passwords do not match'
@@ -282,6 +317,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: const Text('Update password'),
           ),
         ],
+          );
+        },
       ),
     );
     currentPassword.dispose();
