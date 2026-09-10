@@ -217,7 +217,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _reloadVisibleData();
+      await _reloadVisibleData(allowMarketCacheFallback: true);
+      if (areas.isEmpty) {
+        throw StateError(
+          'Supabase returned no area profiles; keeping the previous data.',
+        );
+      }
       final years = _dataYears(areas);
       final yearSuffix = years.isEmpty
           ? ''
