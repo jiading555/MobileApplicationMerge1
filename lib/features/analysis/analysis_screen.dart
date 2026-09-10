@@ -1062,59 +1062,165 @@ class _DistrictComparison extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        Card(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('District')),
-                DataColumn(label: Text('Price indicator')),
-                DataColumn(label: Text('Price period')),
-                DataColumn(label: Text('Population')),
-                DataColumn(label: Text('Median income')),
-              ],
-              rows: ranked.map((area) {
-                final price = area.latestPriceFor(activeType);
-                final periods = area.pricePeriodsFor(activeType);
-                return DataRow(
-                  cells: [
-                    DataCell(
-                      Text(
-                        area.name,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+        if (ResponsiveLayout.isPhone(context) &&
+            !ResponsiveLayout.isLandscape(context))
+          ...ranked.map(
+            (area) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _DistrictComparisonCard(
+                area: area,
+                propertyType: activeType,
+              ),
+            ),
+          )
+        else
+          Card(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('District')),
+                  DataColumn(label: Text('Price indicator')),
+                  DataColumn(label: Text('Price period')),
+                  DataColumn(label: Text('Population')),
+                  DataColumn(label: Text('Median income')),
+                ],
+                rows: ranked.map((area) {
+                  final price = area.latestPriceFor(activeType);
+                  final periods = area.pricePeriodsFor(activeType);
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Text(
+                          area.name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
-                    ),
-                    DataCell(
-                      Text(
-                        price == null
-                            ? 'Unavailable'
-                            : formatRinggit(price.round()),
+                      DataCell(
+                        Text(
+                          price == null
+                              ? 'Unavailable'
+                              : formatRinggit(price.round()),
+                        ),
                       ),
-                    ),
-                    DataCell(
-                      Text(periods.isEmpty ? 'Unavailable' : periods.last),
-                    ),
-                    DataCell(
-                      Text(
-                        area.population == null
-                            ? 'Unavailable'
-                            : formatCount(area.population!),
+                      DataCell(
+                        Text(periods.isEmpty ? 'Unavailable' : periods.last),
                       ),
-                    ),
-                    DataCell(
-                      Text(
-                        area.medianIncome == null
-                            ? 'Unavailable'
-                            : formatRinggit(area.medianIncome!),
+                      DataCell(
+                        Text(
+                          area.population == null
+                              ? 'Unavailable'
+                              : formatCount(area.population!),
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }).toList(),
+                      DataCell(
+                        Text(
+                          area.medianIncome == null
+                              ? 'Unavailable'
+                              : formatRinggit(area.medianIncome!),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
             ),
           ),
-        ),
       ],
+    );
+  }
+}
+
+class _DistrictComparisonCard extends StatelessWidget {
+  const _DistrictComparisonCard({
+    required this.area,
+    required this.propertyType,
+  });
+
+  final AreaData area;
+  final String propertyType;
+
+  @override
+  Widget build(BuildContext context) {
+    final price = area.latestPriceFor(propertyType);
+    final periods = area.pricePeriodsFor(propertyType);
+    final values = [
+      (
+        label: 'Price indicator',
+        value: price == null ? 'Unavailable' : formatRinggit(price.round()),
+      ),
+      (
+        label: 'Price period',
+        value: periods.isEmpty ? 'Unavailable' : periods.last,
+      ),
+      (
+        label: 'Population',
+        value: area.population == null
+            ? 'Unavailable'
+            : formatCount(area.population!),
+      ),
+      (
+        label: 'Median income',
+        value: area.medianIncome == null
+            ? 'Unavailable'
+            : formatRinggit(area.medianIncome!),
+      ),
+    ];
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              area.name,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 14,
+                  children: [
+                    for (final item in values)
+                      SizedBox(
+                        width: itemWidth,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.label,
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              item.value,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
