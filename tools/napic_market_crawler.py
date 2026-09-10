@@ -170,12 +170,21 @@ def discover_workbooks(session: requests.Session) -> tuple[str, dict[str, str]]:
 
     transaction_urls: dict[str, str] = {}
     for state, _ in TARGETS:
-        publication_state = PUBLICATION_STATE_NAMES.get(state, state)
-        pattern = re.compile(
-            rf"Jadual Transaksi Harta Tanah {re.escape(publication_state)} Q[1-4] \d{{4}}",
-            re.IGNORECASE,
+        publication_state = normalise(
+            PUBLICATION_STATE_NAMES.get(state, state)
         )
-        url = next((url for text, url in links.items() if pattern.search(text)), None)
+        pattern = re.compile(
+            rf"\\bjadual transaksi harta tanah "
+            rf"{re.escape(publication_state)} q[1-4] \\d{{4}}\\b",
+        )
+        url = next(
+            (
+                url
+                for text, url in links.items()
+                if pattern.search(normalise(text))
+            ),
+            None,
+        )
         if url:
             transaction_urls[state] = url
     return price_url, transaction_urls
@@ -231,7 +240,7 @@ def _district_price_snapshot(ws, source_district: str):
         if type_sample_sums[property_type] > 0
     }
     aggregate = round(weighted_sum / sample_sum, 2)
-    return aggregate, prices_by_type
+    return aggregate, prices_by_type, sample_sum, type_sample_sums
 
 
 def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
@@ -245,21 +254,75 @@ def price_indicators(content: bytes, targets: Iterable[tuple[str, str]]):
         period = publication_period(ws)
         source_district = DISTRICT_ALIASES.get(display_district, display_district)
         overall = _district_price_snapshot(ws, source_district)
-        if overall is None:
-            continue
-        aggregate, prices_by_type = overall
         prices_by_market_area = {}
+        market_snapshots = []
         for market_area in MARKET_AREAS_BY_DISTRICT.get(
             (state, display_district), ()
         ):
             market_snapshot = _district_price_snapshot(ws, market_area)
             if market_snapshot is None:
                 continue
-            market_aggregate, market_types = market_snapshot
+            (
+                market_aggregate,
+                market_types,
+                market_sample_count,
+                market_type_samples,
+            ) = market_snapshot
             prices_by_market_area[market_area] = {
                 "All residential": market_aggregate,
                 **market_types,
             }
+            market_snapshots.append(
+                (
+                    market_aggregate,
+                    market_types,
+                    market_sample_count,
+                    market_type_samples,
+                )
+            )
+
+        if overall is not None:
+            aggregate, prices_by_type, _, _ = overall
+        elif market_snapshots:
+            total_samples = sum(
+                sample_count
+                for _, _, sample_count, _ in market_snapshots
+            )
+            aggregate = round(
+                sum(
+                    value * sample_count
+                    for value, _, sample_count, _ in market_snapshots
+                )
+                / total_samples,
+                2,
+            )
+            type_weighted_sums = {}
+            type_sample_sums = {}
+            for _, market_types, _, market_type_samples in market_snapshots:
+                for property_type, value in market_types.items():
+                    sample_count = market_type_samples.get(property_type, 0)
+                    if sample_count <= 0:
+                        continue
+                    type_weighted_sums[property_type] = (
+                        type_weighted_sums.get(property_type, 0.0)
+                        + value * sample_count
+                    )
+                    type_sample_sums[property_type] = (
+                        type_sample_sums.get(property_type, 0)
+                        + sample_count
+                    )
+            prices_by_type = {
+                property_type: round(
+                    weighted_sum / type_sample_sums[property_type],
+                    2,
+                )
+                for property_type, weighted_sum
+                in type_weighted_sums.items()
+                if type_sample_sums[property_type] > 0
+            }
+        else:
+            continue
+
         results[(state, display_district)] = (
             period,
             aggregate,
