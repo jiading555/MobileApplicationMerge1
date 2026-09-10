@@ -223,6 +223,7 @@ class AppState extends ChangeNotifier {
       if (authUser == null) return 'Unable to sign in.';
       await _loadAccount(authUser);
       isAuthenticated = true;
+      accountNotice = null;
       return null;
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -308,6 +309,7 @@ class AppState extends ChangeNotifier {
     }
 
     if (uri.host == 'reset-password') {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
       isPasswordRecovery = true;
       isAuthenticated = false;
       accountNotice = null;
