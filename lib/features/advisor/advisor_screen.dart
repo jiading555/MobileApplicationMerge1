@@ -233,13 +233,15 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    final advisorProperties = _advisorProperties(state);
-
-    final recommendations = const RecommendationService().rank(
-      properties: advisorProperties,
-      areas: state.areas,
-      preferences: state.preferences,
-    );
+    // Ranking is intentionally deferred until Generate matches is pressed.
+    // Re-running it during every slider tick or goal switch blocks the UI thread.
+    final recommendations = showResults
+        ? const RecommendationService().rank(
+            properties: _advisorProperties(state),
+            areas: state.areas,
+            preferences: state.preferences,
+          )
+        : const <PropertyRecommendation>[];
 
     final visibleRecommendations = recommendations.take(3).toList();
 
