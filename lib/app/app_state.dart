@@ -711,7 +711,10 @@ class AppState extends ChangeNotifier {
           'Supabase is not configured. Add the project URL and publishable key '
           'to load official property and area data.';
       if (preserveCurrentData) {
-        throw StateError(openDataLoadMessage);
+        throw StateError(
+          openDataLoadMessage ??
+              'Supabase is not configured to load official data.',
+        );
       }
       return;
     }
