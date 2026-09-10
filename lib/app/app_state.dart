@@ -33,7 +33,7 @@ class AppState extends ChangeNotifier {
   final RecommendationService _recommendationService;
   final UserAccountRepository _userAccountRepository;
   final MarketTrendCache _marketTrendCache;
-  final Set<String> _favouriteIds = {'p01', 'p03'};
+  final Set<String> _favouriteIds = <String>{};
 
   bool isLoading = true;
   String? loadError;
@@ -361,6 +361,7 @@ class AppState extends ChangeNotifier {
     }
     isAuthenticated = false;
     selectedIndex = 0;
+    _favouriteIds.clear();
     notifyListeners();
   }
 
@@ -395,13 +396,32 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleFavourite(String propertyId) {
-    if (_favouriteIds.contains(propertyId)) {
+  Future<void> toggleFavourite(String propertyId) async {
+    if (!isAuthenticated || user.id.isEmpty) return;
+
+    final wasFavourite = _favouriteIds.contains(propertyId);
+    if (wasFavourite) {
       _favouriteIds.remove(propertyId);
     } else {
       _favouriteIds.add(propertyId);
     }
     notifyListeners();
+
+    try {
+      await _userAccountRepository.setFavourite(
+        userId: user.id,
+        propertyId: propertyId,
+        isFavourite: !wasFavourite,
+      );
+    } catch (_) {
+      if (wasFavourite) {
+        _favouriteIds.add(propertyId);
+      } else {
+        _favouriteIds.remove(propertyId);
+      }
+      accountError = 'Unable to update favourite. Please try again.';
+      notifyListeners();
+    }
   }
 
   bool isFavourite(String propertyId) => _favouriteIds.contains(propertyId);
@@ -558,6 +578,11 @@ class AppState extends ChangeNotifier {
   Future<void> _loadAccount(User authUser) async {
     user = await _userAccountRepository.loadProfile(authUser);
     preferences = await _userAccountRepository.loadPreferences(authUser.id);
+    final favouriteIds =
+        await _userAccountRepository.loadFavouritePropertyIds(authUser.id);
+    _favouriteIds
+      ..clear()
+      ..addAll(favouriteIds);
   }
 
   Future<MarketTrendCacheEntry?> _loadMarketTrendCache() async {
