@@ -53,12 +53,12 @@ class RecommendationService {
       }
       final leftPrice =
           left.property.price ??
-          left.property.priceMin ??
-          left.property.priceMax;
+              left.property.priceMin ??
+              left.property.priceMax;
       final rightPrice =
           right.property.price ??
-          right.property.priceMin ??
-          right.property.priceMax;
+              right.property.priceMin ??
+              right.property.priceMax;
       return (leftPrice ?? 999999999).compareTo(rightPrice ?? 999999999);
     });
 
@@ -74,26 +74,58 @@ class RecommendationService {
   }) {
     final typeMatches =
         preferences.propertyType == 'Any' ||
-        PropertyFilterNormalizer.propertyTypeMatches(
-          property,
-          preferences.propertyType,
-        );
-    final areaMatches = PropertyAreaResolver.matchesSelectedArea(
+            PropertyFilterNormalizer.propertyTypeMatches(
+              property,
+              preferences.propertyType,
+            );
+
+    final budgetMatches = price <= _effectiveBudget(preferences);
+
+    // Search and Advisor use the property's real State/District values
+    // as the authoritative location filter.
+    //
+    // AreaData is used only for scoring signals. Do not compare
+    // preferences.preferredDistrict with area.name because an AreaData
+    // profile may represent a broader region than the property's district
+    // (for example: property district = Cheras while the resolved AreaData
+    // profile name = Kuala Lumpur).
+    final propertyState =
+    LocationNormalizer.nullableDisplayStateName(property.state);
+    final propertyDistrict =
+    LocationNormalizer.nullableDisplayDistrictName(property.district);
+
+    final preferredState = preferences.preferredState.trim();
+    final preferredDistrict = preferences.preferredDistrict.trim();
+
+    final stateMatches =
+        preferredState.isEmpty ||
+            (propertyState != null &&
+                LocationNormalizer.stateMatches(
+                  propertyState,
+                  preferredState,
+                ));
+
+    final districtMatches =
+        preferredDistrict.isEmpty ||
+            (propertyDistrict != null &&
+                LocationNormalizer.districtMatches(
+                  propertyDistrict,
+                  preferredDistrict,
+                  state: propertyState,
+                ));
+
+    // State + District are authoritative for the new Search-style location
+    // selection. preferredAreaId is kept only for legacy compatibility when
+    // no district preference is available.
+    final areaMatches =
+    preferredDistrict.isNotEmpty ||
+        preferences.preferredAreaId == 'any'
+        ? true
+        : PropertyAreaResolver.matchesSelectedArea(
       property: property,
       selectedAreaId: preferences.preferredAreaId,
       areas: areas,
     );
-    final budgetMatches = price <= _effectiveBudget(preferences);
-    final stateMatches =
-        preferences.preferredState.trim().isEmpty ||
-        LocationNormalizer.stateMatches(area.state, preferences.preferredState);
-    final districtMatches =
-        preferences.preferredDistrict.trim().isEmpty ||
-        LocationNormalizer.districtMatches(
-          area.name,
-          preferences.preferredDistrict,
-          state: area.state,
-        );
 
     return typeMatches &&
         areaMatches &&
@@ -112,20 +144,20 @@ class RecommendationService {
     final affordability = _affordability(price, _effectiveBudget(preferences));
     final factors = preferences.goal == PropertyGoal.ownStay
         ? _ownStayFactors(
-            area: area,
-            areas: areas,
-            affordability: affordability,
-            preferences: preferences,
-          )
+      area: area,
+      areas: areas,
+      affordability: affordability,
+      preferences: preferences,
+    )
         : _investmentFactors(
-            area: area,
-            areas: areas,
-            affordability: affordability,
-            preferences: preferences,
-          );
+      area: area,
+      areas: areas,
+      affordability: affordability,
+      preferences: preferences,
+    );
     final score = factors.fold<double>(
       0,
-      (sum, factor) => sum + factor.contribution,
+          (sum, factor) => sum + factor.contribution,
     );
 
     final reasons = _buildReasons(
@@ -283,10 +315,10 @@ class RecommendationService {
       return 50;
     }
     final minValue = values.reduce(
-      (left, right) => left < right ? left : right,
+          (left, right) => left < right ? left : right,
     );
     final maxValue = values.reduce(
-      (left, right) => left > right ? left : right,
+          (left, right) => left > right ? left : right,
     );
     if (maxValue == minValue) {
       return 50;

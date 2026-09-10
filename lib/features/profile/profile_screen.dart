@@ -11,44 +11,144 @@ import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
-import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../../models/user_preferences.dart';
 import '../search/property_detail_screen.dart';
 import '../settings/settings_screen.dart';
 
-bool _isUsableProfileProperty(AppState state, Property property) {
-  final area = state.matchedAreaFor(property);
-  if (area == null) {
-    return false;
-  }
-  final propertyState = property.state?.trim();
-  if (propertyState != null &&
-      propertyState.isNotEmpty &&
-      !LocationNormalizer.stateMatches(area.state, propertyState)) {
-    return false;
-  }
-  final district = property.district?.trim();
-  if (district != null &&
-      district.isNotEmpty &&
-      !LocationNormalizer.districtMatches(
-        area.name,
-        district,
-        state: area.state,
-      )) {
-    return false;
-  }
-  return true;
+
+String? _profileDisplayState(Property property) {
+  return LocationNormalizer.nullableDisplayStateName(property.state);
 }
 
-List<Property> _profileAdvisorProperties(AppState state) {
-  return state.properties
-      .where((property) => _isUsableProfileProperty(state, property))
-      .toList();
+String? _profileDisplayDistrict(Property property) {
+  return LocationNormalizer.nullableDisplayDistrictName(property.district);
+}
+
+String _profileLocalityAreaId(Property property) {
+  final displayState = _profileDisplayState(property);
+  final displayDistrict = _profileDisplayDistrict(property);
+
+  if (displayState == null || displayDistrict == null) {
+    return '';
+  }
+
+  return LocationNormalizer.canonicalAreaId(
+    displayState,
+    displayDistrict,
+  );
 }
 
 int? _profileComparablePrice(Property property) {
   return property.price ?? property.priceMin ?? property.priceMax;
+}
+
+List<String> _profileStateOptions(AppState state) {
+  final states = state.properties
+      .map(_profileDisplayState)
+      .whereType<String>()
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+
+  return states;
+}
+
+List<_ProfileAreaOption> _profileAreaOptions(
+    AppState state,
+    String selectedState,
+    ) {
+  if (selectedState.isEmpty) {
+    return const [];
+  }
+
+  final labelsById = <String, String>{};
+
+  for (final property in state.properties) {
+    final displayState = _profileDisplayState(property);
+    final displayDistrict = _profileDisplayDistrict(property);
+    final localityAreaId = _profileLocalityAreaId(property);
+
+    if (displayState == null ||
+        displayDistrict == null ||
+        localityAreaId.isEmpty ||
+        !LocationNormalizer.stateMatches(
+          displayState,
+          selectedState,
+        )) {
+      continue;
+    }
+
+    labelsById.putIfAbsent(
+      localityAreaId,
+          () => displayDistrict,
+    );
+  }
+
+  final options = labelsById.entries
+      .map(
+        (entry) => _ProfileAreaOption(
+      value: entry.key,
+      label: entry.value,
+    ),
+  )
+      .toList()
+    ..sort(
+          (left, right) => left.label.compareTo(right.label),
+    );
+
+  return options;
+}
+
+List<String> _profilePropertyTypes({
+  required AppState state,
+  required double targetBudget,
+  required String targetState,
+  required String targetAreaId,
+}) {
+  final types =
+  state.properties
+      .where((property) {
+    final price = _profileComparablePrice(property);
+
+    if (price == null || price > targetBudget) {
+      return false;
+    }
+
+    final displayState = _profileDisplayState(property);
+    final localityAreaId = _profileLocalityAreaId(property);
+
+    if (targetAreaId.isNotEmpty) {
+      return localityAreaId == targetAreaId;
+    }
+
+    if (targetState.isNotEmpty) {
+      return displayState != null &&
+          LocationNormalizer.stateMatches(
+            displayState,
+            targetState,
+          );
+    }
+
+    return true;
+  })
+      .expand((property) => property.normalizedPropertyTypes)
+      .toSet()
+      .toList()
+    ..sort();
+
+  return types;
+}
+
+class _ProfileAreaOption {
+  const _ProfileAreaOption({
+    required this.value,
+    required this.label,
+  });
+
+  final String value;
+  final String label;
 }
 
 class ProfileScreen extends StatefulWidget {
@@ -123,20 +223,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                       return ResponsiveLayout.isTablet(context)
                           ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: personal),
-                                const SizedBox(width: 14),
-                                Expanded(child: preferences),
-                              ],
-                            )
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: personal),
+                          const SizedBox(width: 14),
+                          Expanded(child: preferences),
+                        ],
+                      )
                           : Column(
-                              children: [
-                                personal,
-                                const SizedBox(height: 14),
-                                preferences,
-                              ],
-                            );
+                        children: [
+                          personal,
+                          const SizedBox(height: 14),
+                          preferences,
+                        ],
+                      );
                     },
                   ),
                   const SizedBox(height: 14),
@@ -144,7 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     properties: state.favouriteProperties,
                     showAll: _showAllFavourites,
                     onToggle: () => setState(
-                      () => _showAllFavourites = !_showAllFavourites,
+                          () => _showAllFavourites = !_showAllFavourites,
                     ),
                     onOpen: (propertyId) => Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -486,13 +586,13 @@ class _ProfileHeader extends StatelessWidget {
                     : NetworkImage(user.avatarUrl!),
                 child: user.avatarUrl == null
                     ? Text(
-                        initials,
-                        style: const TextStyle(
-                          color: AppTheme.blue,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      )
+                  initials,
+                  style: const TextStyle(
+                    color: AppTheme.blue,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                )
                     : null,
               ),
               Positioned(
@@ -597,7 +697,7 @@ class _FavouriteProperties extends StatelessWidget {
           )
         else
           ...visible.map(
-            (property) => Padding(
+                (property) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: PropertyCard(
                 property: property,
@@ -775,7 +875,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
 
   late double maximumBudget;
   late String selectedState;
-  late String selectedDistrict;
+  late String selectedAreaId;
   late String propertyType;
 
   @override
@@ -792,8 +892,8 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
         .clamp(_minimumBudget, _maximumBudget)
         .toDouble();
 
-    selectedState = initial.preferredState.trim();
-    selectedDistrict = initial.preferredDistrict.trim();
+    selectedState = '';
+    selectedAreaId = '';
     propertyType = initial.propertyType.trim().isEmpty
         ? 'Any'
         : initial.propertyType.trim();
@@ -806,244 +906,108 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     if (_seeded) return;
 
     final state = AppScope.of(context);
+    final states = _profileStateOptions(state);
 
-    final states = _availableStates(state: state, targetBudget: maximumBudget);
+    final savedState = LocationNormalizer.nullableDisplayStateName(
+      widget.initialValue.preferredState,
+    );
 
-    if (selectedState.isNotEmpty) {
-      String? canonicalState;
+    if (savedState != null && states.contains(savedState)) {
+      selectedState = savedState;
+    }
 
-      for (final value in states) {
-        if (LocationNormalizer.stateMatches(value, selectedState)) {
-          canonicalState = value;
-          break;
-        }
-      }
+    if (selectedState.isNotEmpty &&
+        widget.initialValue.preferredDistrict.trim().isNotEmpty) {
+      final areaOptions = _profileAreaOptions(
+        state,
+        selectedState,
+      );
 
-      if (canonicalState == null) {
-        selectedState = '';
-        selectedDistrict = '';
-        propertyType = 'Any';
-      } else {
-        selectedState = canonicalState;
+      final savedAreaId = LocationNormalizer.canonicalAreaId(
+        selectedState,
+        widget.initialValue.preferredDistrict.trim(),
+      );
+
+      if (areaOptions.any((option) => option.value == savedAreaId)) {
+        selectedAreaId = savedAreaId;
       }
     }
 
-    if (selectedState.isNotEmpty && selectedDistrict.isNotEmpty) {
-      final areas = _availableAreas(
-        state: state,
-        targetBudget: maximumBudget,
-        targetState: selectedState,
-      );
+    final availableTypes = _profilePropertyTypes(
+      state: state,
+      targetBudget: maximumBudget,
+      targetState: selectedState,
+      targetAreaId: selectedAreaId,
+    );
 
-      AreaData? canonicalArea;
-
-      for (final area in areas) {
-        if (LocationNormalizer.districtMatches(
-          area.name,
-          selectedDistrict,
-          state: area.state,
-        )) {
-          canonicalArea = area;
-          break;
-        }
-      }
-
-      if (canonicalArea == null) {
-        selectedDistrict = '';
-        propertyType = 'Any';
-      } else {
-        selectedDistrict = canonicalArea.name;
-      }
-    }
-
-    if (selectedDistrict.isNotEmpty && propertyType != 'Any') {
-      final selectedAreaId = _areaIdForSelection(
-        state: state,
-        targetState: selectedState,
-        targetDistrict: selectedDistrict,
-      );
-
-      final types = _availablePropertyTypes(
-        state: state,
-        targetBudget: maximumBudget,
-        targetAreaId: selectedAreaId,
-      );
-
-      if (!types.contains(propertyType)) {
-        propertyType = 'Any';
-      }
+    if (propertyType != 'Any' &&
+        !availableTypes.contains(propertyType)) {
+      propertyType = 'Any';
     }
 
     _seeded = true;
   }
 
-  List<String> _availableStates({
-    required AppState state,
-    required double targetBudget,
-  }) {
-    final areaIdsWithProperties = _profileAdvisorProperties(state)
-        .where((property) {
-          final price = _profileComparablePrice(property);
-
-          return price != null &&
-              price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
-        })
-        .map((property) => state.matchedAreaFor(property)!.id)
-        .toSet();
-
-    final states =
-        state.areas
-            .where((area) => areaIdsWithProperties.contains(area.id))
-            .map((area) => area.state.trim())
-            .where((value) => value.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort();
-
-    return states;
-  }
-
-  List<AreaData> _availableAreas({
-    required AppState state,
-    required double targetBudget,
-    required String targetState,
-  }) {
-    if (targetState.isEmpty) {
-      return const [];
-    }
-
-    final areaIdsWithProperties = _profileAdvisorProperties(state)
-        .where((property) {
-          final price = _profileComparablePrice(property);
-
-          return price != null &&
-              price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
-        })
-        .map((property) => state.matchedAreaFor(property)!.id)
-        .toSet();
-
-    final areas =
-        state.areas
-            .where(
-              (area) =>
-                  LocationNormalizer.stateMatches(area.state, targetState) &&
-                  areaIdsWithProperties.contains(area.id),
-            )
-            .toList()
-          ..sort(
-            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-          );
-
-    return areas;
-  }
-
-  String _areaIdForSelection({
-    required AppState state,
-    required String targetState,
-    required String targetDistrict,
-  }) {
-    if (targetState.isEmpty || targetDistrict.isEmpty) {
-      return 'any';
-    }
-
-    for (final area in state.areas) {
-      final sameState = LocationNormalizer.stateMatches(
-        area.state,
-        targetState,
-      );
-      final sameDistrict = LocationNormalizer.districtMatches(
-        area.name,
-        targetDistrict,
-        state: area.state,
-      );
-
-      if (sameState && sameDistrict) {
-        return area.id;
-      }
-    }
-
-    return 'any';
-  }
-
-  List<String> _availablePropertyTypes({
-    required AppState state,
-    required double targetBudget,
-    required String targetAreaId,
-  }) {
-    if (targetAreaId == 'any') {
-      return const [];
-    }
-
-    final types =
-        _profileAdvisorProperties(state)
-            .where((property) {
-              final price = _profileComparablePrice(property);
-              final area = state.matchedAreaFor(property);
-
-              return price != null &&
-                  price <= targetBudget &&
-                  area != null &&
-                  LocationNormalizer.areaIdMatches(area.id, targetAreaId);
-            })
-            .expand((property) => property.normalizedPropertyTypes)
-            .toSet()
-            .toList()
-          ..sort();
-
-    return types;
-  }
-
-  void _changeBudget(AppState state, double value) {
+  void _changeBudget(
+      AppState state,
+      double value,
+      ) {
     setState(() {
       maximumBudget = value;
 
-      final states = _availableStates(state: state, targetBudget: value);
+      final availableTypes = _profilePropertyTypes(
+        state: state,
+        targetBudget: maximumBudget,
+        targetState: selectedState,
+        targetAreaId: selectedAreaId,
+      );
 
-      if (selectedState.isNotEmpty && !states.contains(selectedState)) {
-        selectedState = '';
-        selectedDistrict = '';
+      if (propertyType != 'Any' &&
+          !availableTypes.contains(propertyType)) {
         propertyType = 'Any';
-        return;
       }
+    });
+  }
 
-      if (selectedState.isNotEmpty && selectedDistrict.isNotEmpty) {
-        final areas = _availableAreas(
-          state: state,
-          targetBudget: value,
-          targetState: selectedState,
-        );
+  void _changeState(
+      AppState state,
+      String value,
+      ) {
+    setState(() {
+      selectedState = value;
+      selectedAreaId = '';
 
-        final areaExists = areas.any(
-          (area) => LocationNormalizer.districtMatches(
-            area.name,
-            selectedDistrict,
-            state: area.state,
-          ),
-        );
+      final availableTypes = _profilePropertyTypes(
+        state: state,
+        targetBudget: maximumBudget,
+        targetState: selectedState,
+        targetAreaId: selectedAreaId,
+      );
 
-        if (!areaExists) {
-          selectedDistrict = '';
-          propertyType = 'Any';
-          return;
-        }
+      if (propertyType != 'Any' &&
+          !availableTypes.contains(propertyType)) {
+        propertyType = 'Any';
+      }
+    });
+  }
 
-        final areaId = _areaIdForSelection(
-          state: state,
-          targetState: selectedState,
-          targetDistrict: selectedDistrict,
-        );
+  void _changeArea(
+      AppState state,
+      String value,
+      ) {
+    setState(() {
+      selectedAreaId = value;
 
-        final types = _availablePropertyTypes(
-          state: state,
-          targetBudget: value,
-          targetAreaId: areaId,
-        );
+      final availableTypes = _profilePropertyTypes(
+        state: state,
+        targetBudget: maximumBudget,
+        targetState: selectedState,
+        targetAreaId: selectedAreaId,
+      );
 
-        if (propertyType != 'Any' && !types.contains(propertyType)) {
-          propertyType = 'Any';
-        }
+      if (propertyType != 'Any' &&
+          !availableTypes.contains(propertyType)) {
+        propertyType = 'Any';
       }
     });
   }
@@ -1052,59 +1016,53 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    final availableStates = _availableStates(
-      state: state,
-      targetBudget: maximumBudget,
+    // Use the exact same source as Property Search:
+    // State = property.state
+    // Area = property.district
+    final availableStates = _profileStateOptions(state);
+
+    final effectiveState =
+    selectedState.isEmpty || availableStates.contains(selectedState)
+        ? selectedState
+        : '';
+
+    final availableAreas = _profileAreaOptions(
+      state,
+      effectiveState,
     );
 
-    String effectiveState = '';
+    final availableAreaIds =
+    availableAreas.map((option) => option.value).toSet();
 
-    if (selectedState.isNotEmpty) {
-      for (final value in availableStates) {
-        if (LocationNormalizer.stateMatches(value, selectedState)) {
-          effectiveState = value;
-          break;
-        }
-      }
-    }
+    final effectiveAreaId =
+    selectedAreaId.isNotEmpty &&
+        availableAreaIds.contains(selectedAreaId)
+        ? selectedAreaId
+        : '';
 
-    final availableAreas = _availableAreas(
+    final availablePropertyTypes = _profilePropertyTypes(
       state: state,
       targetBudget: maximumBudget,
       targetState: effectiveState,
-    );
-
-    String effectiveDistrict = '';
-
-    if (selectedDistrict.isNotEmpty) {
-      for (final area in availableAreas) {
-        if (LocationNormalizer.districtMatches(
-          area.name,
-          selectedDistrict,
-          state: area.state,
-        )) {
-          effectiveDistrict = area.name;
-          break;
-        }
-      }
-    }
-
-    final selectedAreaId = _areaIdForSelection(
-      state: state,
-      targetState: effectiveState,
-      targetDistrict: effectiveDistrict,
-    );
-
-    final availablePropertyTypes = _availablePropertyTypes(
-      state: state,
-      targetBudget: maximumBudget,
-      targetAreaId: selectedAreaId,
+      targetAreaId: effectiveAreaId,
     );
 
     final effectivePropertyType =
-        propertyType == 'Any' || availablePropertyTypes.contains(propertyType)
+    propertyType == 'Any' ||
+        availablePropertyTypes.contains(propertyType)
         ? propertyType
         : 'Any';
+
+    String effectiveDistrict = '';
+
+    if (effectiveAreaId.isNotEmpty) {
+      for (final option in availableAreas) {
+        if (option.value == effectiveAreaId) {
+          effectiveDistrict = option.label;
+          break;
+        }
+      }
+    }
 
     return FractionallySizedBox(
       heightFactor: 0.9,
@@ -1157,7 +1115,10 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                         max: _maximumBudget,
                         divisions: _budgetDivisions,
                         value: maximumBudget,
-                        onChanged: (value) => _changeBudget(state, value),
+                        onChanged: (value) => _changeBudget(
+                          state,
+                          value,
+                        ),
                       ),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 4),
@@ -1182,13 +1143,14 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                         ),
                       ),
                       const SizedBox(height: 18),
+
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               key: ValueKey(
-                                'profile-state-$effectiveState-${maximumBudget.round()}',
+                                'profile-state-$effectiveState',
                               ),
                               initialValue: effectiveState,
                               isExpanded: true,
@@ -1205,7 +1167,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                                   ),
                                 ),
                                 ...availableStates.map(
-                                  (value) => DropdownMenuItem(
+                                      (value) => DropdownMenuItem(
                                     value: value,
                                     child: Text(
                                       value,
@@ -1216,11 +1178,10 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                                 ),
                               ],
                               onChanged: (value) {
-                                setState(() {
-                                  selectedState = value ?? '';
-                                  selectedDistrict = '';
-                                  propertyType = 'Any';
-                                });
+                                _changeState(
+                                  state,
+                                  value ?? '',
+                                );
                               },
                             ),
                           ),
@@ -1228,9 +1189,9 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               key: ValueKey(
-                                'profile-area-$effectiveDistrict-$effectiveState-${maximumBudget.round()}',
+                                'profile-area-$effectiveAreaId-$effectiveState',
                               ),
-                              initialValue: effectiveDistrict,
+                              initialValue: effectiveAreaId,
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Area',
@@ -1240,17 +1201,17 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                                   value: '',
                                   child: Text(
                                     effectiveState.isEmpty
-                                        ? 'Select state first'
-                                        : 'Select area',
+                                        ? 'Any area'
+                                        : 'Any area',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 ...availableAreas.map(
-                                  (area) => DropdownMenuItem<String>(
-                                    value: area.name,
+                                      (area) => DropdownMenuItem<String>(
+                                    value: area.value,
                                     child: Text(
-                                      area.name,
+                                      area.label,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -1260,19 +1221,23 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                               onChanged: effectiveState.isEmpty
                                   ? null
                                   : (value) {
-                                      setState(() {
-                                        selectedDistrict = value ?? '';
-                                        propertyType = 'Any';
-                                      });
-                                    },
+                                _changeArea(
+                                  state,
+                                  value ?? '',
+                                );
+                              },
                             ),
                           ),
                         ],
                       ),
+
                       const SizedBox(height: 12),
+
                       DropdownButtonFormField<String>(
                         key: ValueKey(
-                          'profile-type-$effectivePropertyType-$selectedAreaId-${maximumBudget.round()}',
+                          'profile-type-$effectivePropertyType-'
+                              '$effectiveAreaId-$effectiveState-'
+                              '${maximumBudget.round()}',
                         ),
                         initialValue: effectivePropertyType,
                         isExpanded: true,
@@ -1280,18 +1245,16 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                           labelText: 'Property type',
                         ),
                         items: [
-                          DropdownMenuItem(
+                          const DropdownMenuItem(
                             value: 'Any',
                             child: Text(
-                              selectedAreaId == 'any'
-                                  ? 'Select area first'
-                                  : 'Any',
+                              'Any property type',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           ...availablePropertyTypes.map(
-                            (value) => DropdownMenuItem<String>(
+                                (value) => DropdownMenuItem<String>(
                               value: value,
                               child: Text(
                                 value,
@@ -1301,19 +1264,20 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                             ),
                           ),
                         ],
-                        onChanged: selectedAreaId == 'any'
+                        onChanged: availablePropertyTypes.isEmpty
                             ? null
                             : (value) {
-                                setState(() {
-                                  propertyType = value ?? 'Any';
-                                });
-                              },
+                          setState(() {
+                            propertyType = value ?? 'Any';
+                          });
+                        },
                       ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 16),
+
               Row(
                 children: [
                   Expanded(
@@ -1332,14 +1296,6 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: () {
-                        final finalState = effectiveState;
-                        final finalDistrict = effectiveDistrict;
-                        final finalAreaId = _areaIdForSelection(
-                          state: state,
-                          targetState: finalState,
-                          targetDistrict: finalDistrict,
-                        );
-
                         final hiddenMinimumBudget = widget
                             .initialValue
                             .minimumBudget
@@ -1348,9 +1304,14 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
 
                         Navigator.of(context).pop(
                           widget.initialValue.copyWith(
-                            preferredState: finalState,
-                            preferredDistrict: finalDistrict,
-                            preferredAreaId: finalAreaId,
+                            preferredState: effectiveState,
+                            preferredDistrict: effectiveDistrict,
+
+                            // Search-style locality IDs are not guaranteed
+                            // to equal AreaData.id, so State + District are
+                            // the authoritative saved location values.
+                            preferredAreaId: 'any',
+
                             propertyType: effectivePropertyType,
                             minimumBudget: hiddenMinimumBudget,
                             maximumBudget: maximumBudget,

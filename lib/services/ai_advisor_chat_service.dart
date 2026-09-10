@@ -16,7 +16,9 @@ class AiAdvisorChatService {
     List<Map<String, String>> conversationHistory = const [],
   }) async {
     if (question.trim().isEmpty) {
-      throw Exception('Question cannot be empty.');
+      throw Exception(
+        'Question cannot be empty.',
+      );
     }
 
     if (recommendations.isEmpty) {
@@ -34,18 +36,29 @@ class AiAdvisorChatService {
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke(GeminiConfig.edgeFunctionName, body: {'prompt': prompt})
-          .timeout(const Duration(seconds: 90));
+          .invoke(
+        GeminiConfig.edgeFunctionName,
+        body: {
+          'prompt': prompt,
+        },
+      )
+          .timeout(
+        const Duration(seconds: 90),
+      );
 
       final data = response.data;
 
       if (data is! Map) {
-        throw Exception('Gemini returned an invalid response.');
+        throw Exception(
+          'Gemini returned an invalid response.',
+        );
       }
 
-      final error = data['error']?.toString().trim();
+      final error =
+      data['error']?.toString().trim();
 
-      if (response.status != 200 || (error != null && error.isNotEmpty)) {
+      if (response.status != 200 ||
+          (error != null && error.isNotEmpty)) {
         throw Exception(
           error == null || error.isEmpty
               ? 'Gemini API error: ${response.status}'
@@ -53,106 +66,233 @@ class AiAdvisorChatService {
         );
       }
 
-      final text = data['text']?.toString().trim() ?? '';
+      final text =
+          data['text']?.toString().trim() ?? '';
 
       if (text.isEmpty) {
-        throw Exception('Gemini returned an empty advisor response.');
+        throw Exception(
+          'Gemini returned an empty advisor response.',
+        );
       }
 
       return text;
     } on TimeoutException {
       throw Exception(
         'The AI advisor is taking longer than expected. '
-        'Please check your internet connection and try again.',
+            'Please check your internet connection and try again.',
       );
     } catch (error) {
       final message = error.toString();
 
-      // Avoid wrapping our own friendly errors repeatedly.
-      if (message.contains('AI request limit reached') ||
-          message.contains('AI service is temporarily busy') ||
-          message.contains('Gemini API error') ||
-          message.contains('Gemini returned')) {
+      if (message.contains(
+        'AI request limit reached',
+      ) ||
+          message.contains(
+            'AI service is temporarily busy',
+          ) ||
+          message.contains(
+            'Gemini API error',
+          ) ||
+          message.contains(
+            'Gemini returned',
+          )) {
         rethrow;
       }
 
       throw Exception(
         'Failed to get AI advisor response. '
-        'Please try again.',
+            'Please try again.',
       );
     }
   }
 
   String buildPrompt({
     required String question,
-    required List<PropertyRecommendation> recommendations,
+    required List<PropertyRecommendation>
+    recommendations,
     required UserPreferences preferences,
-    List<Map<String, String>> conversationHistory = const [],
+    List<Map<String, String>>
+    conversationHistory = const [],
   }) {
-    final topRecommendations = recommendations.take(3).toList();
+    final topRecommendations =
+    recommendations.take(3).toList();
 
-    final recommendationContext = topRecommendations
+    final recommendationContext =
+    topRecommendations
         .asMap()
         .entries
         .map((entry) {
-          final index = entry.key + 1;
+      final index = entry.key + 1;
 
-          final recommendation = entry.value;
+      final recommendation =
+          entry.value;
 
-          final property = recommendation.property;
+      final property =
+          recommendation.property;
 
-          final sortedFactors = List<ScoreFactor>.from(recommendation.factors)
-            ..sort((a, b) => b.weight.compareTo(a.weight));
+      // -------------------------------------------------------
+      // SCORING FACTORS
+      // -------------------------------------------------------
 
-          final factors = sortedFactors
-              .map(
-                (factor) =>
-                    '- ${factor.label}: '
-                    '${factor.score.toStringAsFixed(1)}/100, '
-                    'applied weight '
-                    '${(factor.weight * 100).toStringAsFixed(1)}%, '
-                    'contribution '
-                    '${factor.contribution.toStringAsFixed(1)} points',
-              )
-              .join('\n');
+      final sortedFactors =
+      List<ScoreFactor>.from(
+        recommendation.factors,
+      )..sort(
+            (a, b) =>
+            b.weight.compareTo(
+              a.weight,
+            ),
+      );
 
-          final advantages = recommendation.reasons.isEmpty
-              ? 'None supplied'
-              : recommendation.reasons.map((item) => '- $item').join('\n');
+      final factors =
+      sortedFactors.isEmpty
+          ? 'None supplied'
+          : sortedFactors
+          .map(
+            (factor) =>
+        '- ${factor.label}: '
+            '${factor.score.toStringAsFixed(1)}/100, '
+            'applied weight '
+            '${(factor.weight * 100).toStringAsFixed(1)}%, '
+            'contribution '
+            '${factor.contribution.toStringAsFixed(1)} points',
+      )
+          .join('\n');
 
-          final cautions = recommendation.cautions.isEmpty
-              ? 'None supplied'
-              : recommendation.cautions.map((item) => '- $item').join('\n');
+      // -------------------------------------------------------
+      // RECOMMENDATION REASONS
+      // -------------------------------------------------------
 
-          final price = _priceText(
-            property.price,
-            property.priceMin,
-            property.priceMax,
-          );
+      final advantages =
+      recommendation.reasons.isEmpty
+          ? 'None supplied'
+          : recommendation.reasons
+          .map(
+            (item) => '- $item',
+      )
+          .join('\n');
 
-          final normalizedTypes = property.normalizedPropertyTypes;
+      final cautions =
+      recommendation.cautions.isEmpty
+          ? 'None supplied'
+          : recommendation.cautions
+          .map(
+            (item) => '- $item',
+      )
+          .join('\n');
 
-          final propertyType = normalizedTypes.isEmpty
-              ? 'Unavailable'
-              : normalizedTypes.join(', ');
+      // -------------------------------------------------------
+      // PROPERTY BASIC DATA
+      // -------------------------------------------------------
 
-          return '''
+      final price = _priceText(
+        property.price,
+        property.priceMin,
+        property.priceMax,
+      );
+
+      final normalizedTypes =
+          property.normalizedPropertyTypes;
+
+      final propertyType =
+      normalizedTypes.isEmpty
+          ? 'Unavailable'
+          : normalizedTypes.join(', ');
+
+      final rawUnitTypes =
+      property.unitTypes.isEmpty
+          ? 'Unavailable'
+          : property.unitTypes.join(', ');
+
+      final state = _textOrUnavailable(
+        property.state,
+      );
+
+      final district = _textOrUnavailable(
+        property.district,
+      );
+
+      final scheme = _textOrUnavailable(
+        property.scheme,
+      );
+
+      final projectStatus =
+      _textOrUnavailable(
+        property.projectStatus,
+      );
+
+      final developer =
+      _textOrUnavailable(
+        property.developerName,
+      );
+
+      final tenure = _validTenure(
+        property.tenure,
+      );
+
+      final totalUnits =
+      property.totalUnits == null
+          ? 'Unavailable'
+          : property.totalUnits.toString();
+
+      final availableUnits =
+      property.availableUnits == null
+          ? 'Unavailable'
+          : property.availableUnits.toString();
+
+      final bedrooms =
+      property.bedrooms == null
+          ? 'Unavailable'
+          : property.bedrooms.toString();
+
+      final bathrooms =
+      property.bathrooms == null
+          ? 'Unavailable'
+          : property.bathrooms.toString();
+
+      final sizeSqft =
+      property.sizeSqft == null
+          ? 'Unavailable'
+          : '${property.sizeSqft} sq ft';
+
+      // -------------------------------------------------------
+      // UNIT OPTIONS
+      //
+      // Important:
+      // unitOptions.length = number of listed configurations.
+      // It is NOT the total available-unit inventory.
+      // -------------------------------------------------------
+
+      final unitOptionCount =
+          property.unitOptions.length;
+
+      final unitOptions =
+      _unitOptionsText(
+        property.unitOptions,
+      );
+
+      // -------------------------------------------------------
+      // FACILITIES
+      // -------------------------------------------------------
+
+      final facilities =
+      property.facilities.isEmpty
+          ? 'Unavailable'
+          : property.facilities
+          .map(
+            (item) => '- $item',
+      )
+          .join('\n');
+
+      return '''
+============================================================
 PROPERTY $index
+============================================================
+
+RECOMMENDATION INFORMATION
 
 Recommendation rank:
 #$index
-
-Name:
-${property.name}
-
-Location:
-${property.address}
-
-Property type:
-$propertyType
-
-Price:
-$price
 
 Overall suitability score:
 ${recommendation.score.toStringAsFixed(1)}/100
@@ -165,41 +305,137 @@ $advantages
 
 Cautions identified by the deterministic recommendation system:
 $cautions
-''';
-        })
-        .join('\n-----------------------------\n');
 
-    final historyText = conversationHistory.isEmpty
+
+PROPERTY FACTUAL INFORMATION
+
+Property name:
+${property.name}
+
+Address:
+${property.address}
+
+State:
+$state
+
+District:
+$district
+
+Normalized property type:
+$propertyType
+
+Original unit types:
+$rawUnitTypes
+
+Housing scheme:
+$scheme
+
+Project status:
+$projectStatus
+
+Developer:
+$developer
+
+Tenure:
+$tenure
+
+Property/project price:
+$price
+
+Bedrooms:
+$bedrooms
+
+Bathrooms:
+$bathrooms
+
+Property size:
+$sizeSqft
+
+
+UNIT AVAILABILITY INFORMATION
+
+Total project units:
+$totalUnits
+
+Available unit count:
+$availableUnits
+
+Number of listed unit options/configurations:
+$unitOptionCount
+
+IMPORTANT:
+"Available unit count" and "Number of listed unit options/configurations"
+are different values.
+
+The number of listed unit options MUST NOT be treated as the number of
+available units.
+
+Listed unit options:
+$unitOptions
+
+
+FACILITIES SUPPLIED BY THE SYSTEM
+
+$facilities
+''';
+    }).join(
+      '\n\n',
+    );
+
+    // ---------------------------------------------------------
+    // PREVIOUS CHAT
+    // ---------------------------------------------------------
+
+    final historyText =
+    conversationHistory.isEmpty
         ? 'No previous conversation.'
         : conversationHistory
-              .map((message) {
-                final role = message['role'] ?? 'unknown';
+        .map((message) {
+      final role =
+          message['role'] ??
+              'unknown';
 
-                final text = message['text'] ?? '';
+      final text =
+          message['text'] ?? '';
 
-                return '$role: $text';
-              })
-              .join('\n');
+      return '$role: $text';
+    }).join('\n');
 
-    final goal = preferences.goal == PropertyGoal.ownStay
+    // ---------------------------------------------------------
+    // USER PREFERENCES
+    // ---------------------------------------------------------
+
+    final goal =
+    preferences.goal ==
+        PropertyGoal.ownStay
         ? 'Own Stay'
         : 'Investment';
 
-    final preferredArea = preferences.preferredAreaId == 'any'
+    final preferredArea =
+    preferences.preferredAreaId ==
+        'any'
         ? 'Any area'
         : preferences.preferredAreaId;
+
+    // ---------------------------------------------------------
+    // COMPLETE GEMINI PROMPT
+    // ---------------------------------------------------------
 
     return '''
 You are an AI Property Advisor for a Malaysian smart property recommendation application.
 
-Your role is to explain and help the user understand recommendation results that have already been calculated by the application.
+Your role is to explain and help the user understand the CURRENT recommendation results and the factual property information supplied by the application.
 
-The application uses a deterministic weighted scoring algorithm.
+The application has already retrieved the property data and calculated the recommendation ranking.
 
 You do NOT calculate the recommendation ranking.
-You do NOT replace the application's scoring algorithm.
+You do NOT replace the application's recommendation algorithm.
+You do NOT independently search for other properties.
 
-STRICT SCORING RULES:
+
+============================================================
+STRICT SCORING RULES
+============================================================
 
 1. Do NOT recalculate any suitability score.
 
@@ -215,180 +451,273 @@ STRICT SCORING RULES:
 
 7. Give more explanatory importance to criteria with higher applied weights.
 
-8. Do not describe a lower-weighted criterion as the user's main priority.
+8. Do NOT describe a lower-weighted criterion as the user's main priority.
 
-9. If two or more properties have the same score for a factor, clearly state that none of them gains an advantage on that factor.
+9. If two or more properties have the same factor score, clearly state that none gains an advantage on that factor.
 
 10. If overall suitability scores are tied, do not invent a winner.
 
 
-STRICT DATA RULES:
+============================================================
+PROPERTY FACTUAL DATA RULES
+============================================================
 
-11. Use only information explicitly supplied in this prompt.
+11. PROPERTY FACTUAL INFORMATION comes from property data already loaded by the application.
 
-12. Do NOT invent property information.
+12. You may use supplied factual information such as:
+- property name
+- address
+- state
+- district
+- property type
+- housing scheme
+- project status
+- developer
+- tenure
+- project price
+- total units
+- available unit count
+- unit types
+- unit options
+- unit size
+- unit starting price
+- facilities
 
-13. Do NOT invent crime, income, transportation, education, market, rental, investment, developer or location information.
+13. Only use a factual field when it is explicitly supplied.
 
-14. Do NOT claim that information exists if it has not been supplied.
+14. If a field says "Unavailable", treat the information as unavailable.
 
-15. Do NOT infer missing property attributes from general knowledge.
+15. Do NOT invent missing property information.
 
-16. Do NOT make guaranteed financial or investment predictions.
+16. Do NOT infer missing values from general knowledge.
 
-17. If the available information is insufficient, clearly state that the system does not currently have enough data to answer confidently.
+17. Do NOT invent crime, income, transportation, education, market, rental, investment, developer or location facts.
+
+18. Do NOT make guaranteed financial or investment predictions.
+
+19. If the required information is unavailable, clearly say that the current system data does not provide it.
 
 
-IMPORTANT PROPERTY DATA RESTRICTIONS:
+============================================================
+AVAILABLE UNIT RULES
+============================================================
 
-18. Never state or assume a property's tenure unless an actual tenure value such as Freehold or Leasehold is explicitly supplied.
+20. "Available unit count" means the explicitly supplied availableUnits value.
 
-19. Do NOT interpret PPAM, PR1MA, SPNB, Residensi Wilayah, Rumah Mesra Rakyat or another housing scheme as property tenure.
+21. "Number of listed unit options/configurations" means the number of different unit options supplied to you.
 
-20. Never state or assume property condition unless an actual property-condition value is explicitly supplied.
+22. These are NOT the same thing.
 
-21. Never state or assume financing requirements unless actual financing information is explicitly supplied.
+23. NEVER use the number of listed unit options as the total available-unit inventory.
 
-22. Never state or assume facilities, nearby amenities, rental performance, future appreciation, market outlook or development potential unless that information is explicitly supplied.
+24. Example:
+If Available unit count = Unavailable
+and Number of listed unit options = 3,
+do NOT say:
+"There are 3 available units."
 
-23. Even if a generic caution mentions tenure, financing or property condition, do not repeat it as a property-specific fact unless supporting concrete data is supplied.
+Instead say:
+"The total available-unit count is not provided, but the system lists 3 unit options."
 
-24. Do not use phrases such as:
+25. If Available unit count is explicitly supplied, you may state that number.
+
+26. If the user asks:
+"How many available units are there?"
+use Available unit count, not unitOptions.length.
+
+27. If the user asks:
+"What unit choices are available?"
+describe the supplied listed unit options.
+
+28. If the user asks:
+"How many unit options are there?"
+you may use Number of listed unit options/configurations.
+
+29. If the user asks which supplied unit option is cheapest, compare only the supplied unit-option starting prices.
+
+30. Do not assume that a lower starting price means that every unit of that type is available at that exact price.
+
+
+============================================================
+IMPORTANT PROPERTY RESTRICTIONS
+============================================================
+
+31. Never state or assume property tenure unless a real tenure value such as Freehold or Leasehold is explicitly supplied.
+
+32. Do NOT interpret PPAM, PR1MA, SPNB, Residensi Wilayah, Rumah Mesra Rakyat or another housing scheme as property tenure.
+
+33. A housing scheme and property tenure are different concepts.
+
+34. Never state or assume property condition unless actual property-condition information is supplied.
+
+35. Never state or assume financing requirements unless actual financing information is supplied.
+
+36. Never state or assume rental performance, future appreciation, market outlook or development potential unless that information is explicitly supplied.
+
+37. Facilities may only be discussed if they appear under FACILITIES SUPPLIED BY THE SYSTEM.
+
+38. Do not use phrases such as:
 "fully meets",
 "guaranteed",
 "completely safe",
 "best investment",
 "certain return",
-or other absolute claims unless explicitly supported by supplied data.
+or similar absolute claims unless explicitly supported.
 
 
-MULTIPLE PROPERTY RULES:
+============================================================
+MULTIPLE PROPERTY RULES
+============================================================
 
-25. There are ${topRecommendations.length} recommendation result(s) supplied in this prompt.
+39. There are ${topRecommendations.length} current recommendation result(s).
 
-26. If more than one recommendation is supplied, do NOT say that no other property data is available.
+40. Be aware of all supplied current recommendations.
 
-27. If the user asks about only one property, focus on that property, but remain aware that other recommendations may also be available.
+41. If the user asks about Property #1, Property #2 or Property #3, use the matching numbered property.
 
-28. Only compare properties when the user's question requires a comparison.
+42. If the user asks about only one property, focus on that property.
 
-29. When comparing properties, respect the applied scoring weights and supplied scores.
+43. Only compare multiple properties when the user's question requires comparison.
 
-30. If properties have equal overall scores, explain the tie rather than inventing a winner.
+44. When comparing properties, respect the supplied scores, weights and ranks.
 
-31. Practical supplied differences such as price may be discussed, but they must not replace the calculated ranking.
+45. Practical factual differences such as:
+- price
+- unit option
+- unit size
+- developer
+- scheme
+- available unit count
+may be discussed when explicitly supplied.
+
+46. These factual differences must not be used to secretly recalculate or replace the recommendation ranking.
+
+47. If properties have equal overall scores, explain the tie instead of inventing a winner.
 
 
-STRICT CURRENT RECOMMENDATION SCOPE:
+============================================================
+STRICT CURRENT RECOMMENDATION SCOPE
+============================================================
 
-32. The CURRENT SMART RECOMMENDATION RESULTS section is the only authoritative property recommendation context for this conversation.
+48. CURRENT SMART RECOMMENDATION RESULTS is the only authoritative property recommendation set for this conversation.
 
-33. You may only recommend, discuss, compare or describe properties that are explicitly listed in CURRENT SMART RECOMMENDATION RESULTS.
+49. You may only recommend, discuss, compare or describe properties explicitly listed in CURRENT SMART RECOMMENDATION RESULTS.
 
-34. Never recommend, name, introduce or suggest another property that is not included in the current recommendation results.
+50. Never recommend, name, introduce or suggest another property that is not included in the current recommendation results.
 
-35. Do NOT use general Malaysian property-market knowledge to suggest additional properties.
+51. Do NOT use general Malaysian property-market knowledge to create additional property recommendations.
 
-36. Do NOT use general knowledge about Kajang, Kuala Lumpur, Selangor, Johor, Penang or any other location to create new property recommendations.
+52. Do NOT use general knowledge about Kajang, Kuala Lumpur, Selangor, Johor, Penang or any other location to suggest properties outside the current results.
 
-37. Do NOT use previous recommendation sessions to suggest properties.
+53. Do NOT use previous recommendation sessions to generate additional properties.
 
-38. If the user asks:
-- "What other properties are suitable?"
-- "What else can you recommend?"
-- "What properties are suitable in Kajang?"
-- "Can you recommend something outside these results?"
-- "Are there other properties under another budget?"
+54. If the user asks:
+"What other properties are suitable?"
+"What else can you recommend?"
+"What properties are suitable in Kajang?"
+"Can you recommend another project?"
+"Are there other properties under another budget?"
 or another similar question outside the current recommendation set,
-do NOT provide property suggestions.
+do NOT provide new property names or suggestions.
 
-39. Instead, tell the user to update the relevant State, Area, Property Type or Maximum Budget preferences in the Smart Property Advisor and generate new matches.
+55. Instead, tell the user to update the relevant:
+- State
+- Area
+- Property Type
+- Maximum Budget
+in the Smart Property Advisor and generate a new recommendation set.
 
-40. If the user asks about another state, district, area, property type, project or price range that is not represented in CURRENT SMART RECOMMENDATION RESULTS, do not generate property recommendations for that request.
+56. The AI advisor does not search the complete property database.
 
-41. The AI advisor does not search the complete property database.
+57. The AI advisor does not independently query property portals.
 
-42. The AI advisor does not have permission to create additional recommendation results.
-
-43. Only the application's deterministic recommendation system can generate a new recommendation set.
-
-44. If the user wants a different recommendation set, clearly direct them back to the Smart Property Advisor.
-
-
-PREVIOUS CHAT RESTRICTIONS:
-
-45. PREVIOUS CHAT is provided only to maintain conversational continuity.
-
-46. PREVIOUS CHAT is NOT an authoritative property-data source.
-
-47. Property information from PREVIOUS CHAT must never override CURRENT SMART RECOMMENDATION RESULTS.
-
-48. If PREVIOUS CHAT contains a property that is not present in CURRENT SMART RECOMMENDATION RESULTS, do not use that property as part of the current answer.
-
-49. If PREVIOUS CHAT contains an old score, old ranking, old budget, old property type or old location that conflicts with the current context, ignore the old value.
-
-50. Never reuse property recommendations from an earlier recommendation session.
-
-51. Never say that an old recommendation is still suitable unless it is also present in CURRENT SMART RECOMMENDATION RESULTS.
-
-52. The current recommendation context always has priority over PREVIOUS CHAT.
-
-53. If the user refers to an old property that is no longer part of the current recommendation results, explain that it is not part of the current recommendation set.
+58. Only the application's recommendation system can create a new recommendation set.
 
 
-OUT-OF-SCOPE QUESTION RULES:
+============================================================
+PREVIOUS CHAT RULES
+============================================================
 
-54. If the question cannot be answered using the supplied recommendation data, say that the current system data is insufficient.
+59. PREVIOUS CHAT exists only for conversational continuity.
 
-55. Do NOT guess an answer simply to be helpful.
+60. PREVIOUS CHAT is NOT an authoritative property-data source.
 
-56. Do NOT perform external property searches.
+61. CURRENT SMART RECOMMENDATION RESULTS always override PREVIOUS CHAT.
 
-57. Do NOT pretend to access real-time property listings.
+62. If PREVIOUS CHAT contains an old property that does not exist in the current results, do not treat it as a current recommendation.
 
-58. Do NOT pretend to access Google Maps, property portals, developer websites or live market databases.
+63. If PREVIOUS CHAT contains an old score, rank, price, budget, area or property type that conflicts with current data, ignore the old value.
 
-59. Do NOT state that you checked external sources.
+64. Never reuse property recommendations from an earlier recommendation session.
 
-60. If the user wants information outside the current recommendation context, explain what information is missing or tell them to regenerate recommendations using the appropriate preferences.
+65. If the user refers to an old property that is no longer part of the current recommendation results, explain that it is not part of the current recommendation set.
 
 
-ANSWER STYLE RULES:
+============================================================
+OUT-OF-SCOPE RULES
+============================================================
 
-61. Keep the answer practical, concise and easy for a normal property buyer to understand.
+66. If a question cannot be answered using the supplied current data, state that the information is unavailable.
 
-62. Prefer approximately 100 to 180 words unless the user specifically asks for more detail.
+67. Do NOT guess simply to provide an answer.
 
-63. Explain the user's highest-weighted criterion first when answering why a property is recommended.
+68. Do NOT perform external property searches.
 
-64. Clearly distinguish between:
+69. Do NOT pretend to access real-time property listings.
+
+70. Do NOT pretend to access Google Maps, property portals, developer websites or live market databases.
+
+71. Do NOT claim that you checked external sources.
+
+72. If the user needs another property or location, direct them back to the Smart Property Advisor to regenerate recommendations.
+
+
+============================================================
+ANSWER STYLE
+============================================================
+
+73. Keep answers practical, concise and easy for a normal property buyer to understand.
+
+74. Prefer approximately 80 to 180 words unless the user asks for more detail.
+
+75. For simple factual questions, answer directly and briefly.
+
+Example:
+
+User:
+"How many available units does Property #1 have?"
+
+If Available unit count = 18:
+
+Good answer:
+"Property #1 has 18 available units according to the current property data."
+
+Do not unnecessarily explain the scoring algorithm.
+
+76. For recommendation questions, explain the highest-weighted criterion first.
+
+77. Clearly distinguish:
 - user priority
 - factor score
 - applied weight
-- contribution to overall score
+- contribution
 
-65. Do not describe an affordability score as the highest priority when another factor has a higher applied weight.
+78. Do not describe affordability as the user's highest priority when another criterion has a higher applied weight.
 
-66. When referring to properties, prefer using recommendation labels such as:
-Property #1,
-Property #2,
-Property #3,
-together with the supplied property name when useful.
+79. Return plain text only.
 
-67. If the user asks a short question, answer directly without unnecessary explanation.
+80. Do NOT use Markdown formatting.
 
-68. Return plain text only.
+81. Do NOT use asterisks for bold text.
 
-69. Do NOT use Markdown formatting.
+82. Do NOT use Markdown headings.
 
-70. Do NOT use asterisks for bold text.
-
-71. Do NOT use Markdown headings such as #, ## or ###.
-
-72. Simple numbered points are allowed when useful.
+83. Simple numbered points are allowed when useful.
 
 
+============================================================
 USER PREFERENCES
+============================================================
 
 Goal:
 $goal
@@ -409,45 +738,180 @@ Preferred property type:
 ${preferences.propertyType}
 
 
+============================================================
 CURRENT SMART RECOMMENDATION RESULTS
+============================================================
 
 $recommendationContext
 
 
+============================================================
 PREVIOUS CHAT
+============================================================
 
 $historyText
 
 
+============================================================
 CURRENT USER QUESTION
+============================================================
 
 $question
 
 
-Answer the user's question as a property decision-support advisor.
+Answer the current user question as a property decision-support advisor.
 
 Remember:
 
-- The system has already calculated the scores and ranking.
+- The system already calculated the scores and ranking.
+- The property factual information has already been retrieved by the application.
 - Explain the supplied results rather than recalculating them.
-- Prioritise higher-weighted criteria in the explanation.
-- Use only supplied information.
-- Do not invent missing property information.
+- Use only current supplied property data.
+- Available unit count and listed unit-option count are different.
+- Never infer available-unit inventory from the number of unit options.
 - Only discuss properties in CURRENT SMART RECOMMENDATION RESULTS.
-- Never recommend properties outside the current recommendation results.
-- Do not reuse property information from previous recommendation sessions.
-- PREVIOUS CHAT is only for conversational continuity.
-- CURRENT SMART RECOMMENDATION RESULTS always override PREVIOUS CHAT.
-- If the user wants another location, budget, property type or other properties, tell them to update the Smart Property Advisor preferences and generate new matches.
+- Never introduce another property.
+- Never use old recommendation data as current data.
+- If the user wants another property/location, tell them to update the Smart Property Advisor preferences and generate new matches.
 - Return plain text only.
 ''';
   }
 
-  String _priceText(int? price, int? priceMin, int? priceMax) {
-    if (priceMin != null && priceMax != null && priceMin != priceMax) {
+  // ===========================================================
+  // UNIT OPTION CONTEXT
+  // ===========================================================
+
+  String _unitOptionsText(
+      List<dynamic> options,
+      ) {
+    if (options.isEmpty) {
+      return 'No unit options supplied.';
+    }
+
+    // Prevent the prompt becoming unnecessarily large.
+    const maximumOptions = 12;
+
+    final visibleOptions =
+    options.take(maximumOptions).toList();
+
+    final rows = <String>[];
+
+    for (int i = 0;
+    i < visibleOptions.length;
+    i++) {
+      final option =
+      visibleOptions[i];
+
+      final unitType =
+      _textOrUnavailable(
+        option.unitType,
+      );
+
+      final size = option.sizeSqft != null
+          ? '${option.sizeSqft} sq ft'
+          : _textOrUnavailable(
+        option.sizeText,
+      );
+
+      final startingPrice =
+      option.priceStart != null
+          ? 'RM ${option.priceStart}'
+          : _textOrUnavailable(
+        option.priceFromText,
+      );
+
+      rows.add(
+        '''
+Unit option ${i + 1}:
+- Unit type: $unitType
+- Size: $size
+- Starting price: $startingPrice
+''',
+      );
+    }
+
+    if (options.length >
+        maximumOptions) {
+      rows.add(
+        'Additional unit options exist but were omitted from the AI context.',
+      );
+    }
+
+    return rows.join('\n');
+  }
+
+  // ===========================================================
+  // PRICE
+  // ===========================================================
+
+  String _priceText(
+      int? price,
+      int? priceMin,
+      int? priceMax,
+      ) {
+    if (priceMin != null &&
+        priceMax != null &&
+        priceMin != priceMax) {
       return 'RM $priceMin - RM $priceMax';
     }
-    final displayPrice = price ?? priceMin ?? priceMax;
-    return displayPrice == null ? 'Unavailable' : 'RM $displayPrice';
+
+    final displayPrice =
+        price ?? priceMin ?? priceMax;
+
+    return displayPrice == null
+        ? 'Unavailable'
+        : 'RM $displayPrice';
+  }
+
+  // ===========================================================
+  // NULLABLE TEXT
+  // ===========================================================
+
+  String _textOrUnavailable(
+      String? value,
+      ) {
+    final text = value?.trim();
+
+    if (text == null ||
+        text.isEmpty) {
+      return 'Unavailable';
+    }
+
+    return text;
+  }
+
+  // ===========================================================
+  // TENURE
+  // ===========================================================
+
+  String _validTenure(
+      String value,
+      ) {
+    final text = value.trim();
+
+    if (text.isEmpty) {
+      return 'Unavailable';
+    }
+
+    final normalized =
+    text.toLowerCase();
+
+    const unavailableValues = {
+      'not available',
+      'unavailable',
+      'tenure not available',
+      'tenure unavailable',
+      'n/a',
+      'na',
+      'unknown',
+    };
+
+    if (unavailableValues.contains(
+      normalized,
+    )) {
+      return 'Unavailable';
+    }
+
+    return text;
   }
 }

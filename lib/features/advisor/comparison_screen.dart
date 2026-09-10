@@ -47,16 +47,16 @@ class ComparisonScreen extends StatelessWidget {
                     children: recommendations
                         .map(
                           (item) => SizedBox(
-                            width: 300,
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 14),
-                              child: _ComparisonColumn(
-                                recommendation: item,
-                                goal: goal,
-                              ),
-                            ),
+                        width: 300,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 14),
+                          child: _ComparisonColumn(
+                            recommendation: item,
+                            goal: goal,
                           ),
-                        )
+                        ),
+                      ),
+                    )
                         .toList(),
                   ),
                 ),
@@ -87,6 +87,13 @@ class _ComparisonColumn extends StatelessWidget {
       property.priceMax,
     );
     final pricePerSqft = property.pricePerSqft;
+
+    final normalizedTypes = property.normalizedPropertyTypes;
+    final propertyTypeText = normalizedTypes.isEmpty
+        ? null
+        : normalizedTypes.join(' / ');
+
+    final tenureText = _validTenure(property.tenure);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -162,36 +169,49 @@ class _ComparisonColumn extends StatelessWidget {
                   highlight: true,
                 ),
 
-                _Row(
-                  label: 'Price psf',
-                  value: pricePerSqft == null
-                      ? 'Unavailable'
-                      : formatRinggit(pricePerSqft.round()),
-                ),
+                if (pricePerSqft != null)
+                  _Row(
+                    label: 'Price psf',
+                    value: formatRinggit(pricePerSqft.round()),
+                  ),
 
-                _Row(label: 'Property type', value: property.type),
+                if (propertyTypeText != null)
+                  _Row(
+                    label: 'Property type',
+                    value: propertyTypeText,
+                  ),
 
-                _Row(label: 'Tenure', value: property.tenure),
+                if (tenureText != null)
+                  _Row(
+                    label: 'Tenure',
+                    value: tenureText,
+                  ),
 
-                _Row(
-                  label: 'Area safety',
-                  value: _scoreText(area?.safetyScore),
-                ),
+                if (area?.safetyScore != null)
+                  _Row(
+                    label: 'Area safety',
+                    value: '${area!.safetyScore!.round()}/100',
+                  ),
 
-                _Row(
-                  label: 'Infrastructure',
-                  value: _scoreText(area?.infrastructureScore),
-                ),
+                if (area?.infrastructureScore != null)
+                  _Row(
+                    label: 'Infrastructure',
+                    value: '${area!.infrastructureScore!.round()}/100',
+                  ),
 
-                _Row(
-                  label: 'Price growth',
-                  value: _percentText(area?.priceGrowth),
-                ),
+                if (area?.priceGrowth != null)
+                  _Row(
+                    label: 'Price growth',
+                    value:
+                    '${area!.priceGrowth! >= 0 ? '+' : ''}'
+                        '${area.priceGrowth!.toStringAsFixed(1)}%',
+                  ),
 
-                _Row(
-                  label: 'Rental yield',
-                  value: _percentText(area?.rentalYield),
-                ),
+                if (area?.rentalYield != null)
+                  _Row(
+                    label: 'Rental yield',
+                    value: '${area!.rentalYield!.toStringAsFixed(1)}%',
+                  ),
 
                 const SizedBox(height: 16),
 
@@ -205,7 +225,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 8),
 
                 ...recommendation.factors.map(
-                  (factor) => _Row(
+                      (factor) => _Row(
                     label: factor.label,
                     value: '${factor.score.round()}/100',
                   ),
@@ -232,7 +252,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 12),
 
                 ...recommendation.factors.map(
-                  (factor) => _FactorBreakdown(factor: factor),
+                      (factor) => _FactorBreakdown(factor: factor),
                 ),
 
                 const SizedBox(height: 10),
@@ -272,7 +292,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 7),
 
                 ...recommendation.reasons.map(
-                  (item) => _BulletItem(text: item, positive: true),
+                      (item) => _BulletItem(text: item, positive: true),
                 ),
 
                 const SizedBox(height: 14),
@@ -285,7 +305,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 7),
 
                 ...recommendation.cautions.map(
-                  (item) => _BulletItem(text: item, positive: false),
+                      (item) => _BulletItem(text: item, positive: false),
                 ),
 
                 if (property.source.isNotEmpty) ...[
@@ -330,15 +350,30 @@ String _priceText(int? price, int? priceMin, int? priceMax) {
       : formatRinggit(displayPrice);
 }
 
-String _scoreText(double? value) {
-  return value == null ? 'Unavailable' : '${value.round()}/100';
-}
+String? _validTenure(String value) {
+  final text = value.trim();
 
-String _percentText(double? value) {
-  if (value == null) {
-    return 'Unavailable';
+  if (text.isEmpty) {
+    return null;
   }
-  return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+
+  final normalized = text.toLowerCase();
+
+  const unavailableValues = {
+    'not available',
+    'unavailable',
+    'tenure not available',
+    'tenure unavailable',
+    'n/a',
+    'na',
+    'unknown',
+  };
+
+  if (unavailableValues.contains(normalized)) {
+    return null;
+  }
+
+  return text;
 }
 
 class _FactorBreakdown extends StatelessWidget {
@@ -371,7 +406,7 @@ class _FactorBreakdown extends StatelessWidget {
 
               Text(
                 '${factor.score.round()} x '
-                '${weightPercent.round()}%',
+                    '${weightPercent.round()}%',
                 style: const TextStyle(color: AppTheme.muted, fontSize: 10),
               ),
             ],
@@ -391,7 +426,7 @@ class _FactorBreakdown extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               'Contribution: '
-              '${contribution.toStringAsFixed(1)} pts',
+                  '${contribution.toStringAsFixed(1)} pts',
               style: const TextStyle(color: AppTheme.muted, fontSize: 9),
             ),
           ),

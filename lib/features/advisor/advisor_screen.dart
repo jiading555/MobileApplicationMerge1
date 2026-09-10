@@ -11,33 +11,17 @@ import '../../models/property.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 import '../../services/recommendation_service.dart';
+import '../../services/saved_recommendation_service.dart';
 import '../search/property_detail_screen.dart';
 import 'ai_advisor_chat_screen.dart';
 import 'comparison_screen.dart';
 import 'saved_recommendations_screen.dart';
 
 bool _isUsableAdvisorProperty(AppState state, Property property) {
+
   final area = state.matchedAreaFor(property);
-  if (area == null) {
-    return false;
-  }
-  final propertyState = property.state?.trim();
-  if (propertyState != null &&
-      propertyState.isNotEmpty &&
-      !LocationNormalizer.stateMatches(area.state, propertyState)) {
-    return false;
-  }
-  final district = property.district?.trim();
-  if (district != null &&
-      district.isNotEmpty &&
-      !LocationNormalizer.districtMatches(
-        area.name,
-        district,
-        state: area.state,
-      )) {
-    return false;
-  }
-  return true;
+
+  return area != null;
 }
 
 List<Property> _advisorProperties(AppState state) {
@@ -48,6 +32,129 @@ List<Property> _advisorProperties(AppState state) {
 
 int? _advisorComparablePrice(Property property) {
   return property.price ?? property.priceMin ?? property.priceMax;
+}
+
+String? _advisorDisplayState(Property property) {
+  return LocationNormalizer.nullableDisplayStateName(property.state);
+}
+
+String? _advisorDisplayDistrict(Property property) {
+  return LocationNormalizer.nullableDisplayDistrictName(property.district);
+}
+
+String _advisorLocalityAreaId(Property property) {
+  final displayState = _advisorDisplayState(property);
+  final displayDistrict = _advisorDisplayDistrict(property);
+
+  if (displayState == null || displayDistrict == null) {
+    return '';
+  }
+
+  return LocationNormalizer.canonicalAreaId(
+    displayState,
+    displayDistrict,
+  );
+}
+
+List<String> _advisorStateOptions(AppState state) {
+  final states = state.properties
+      .map(_advisorDisplayState)
+      .whereType<String>()
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+
+  return states;
+}
+
+List<Property> _advisorPropertiesForPreferences(
+    AppState state,
+    UserPreferences preferences,
+    ) {
+  return _advisorProperties(state).where((property) {
+    final displayState = _advisorDisplayState(property);
+    final displayDistrict = _advisorDisplayDistrict(property);
+
+    if (preferences.preferredState.isNotEmpty) {
+      if (displayState == null ||
+          !LocationNormalizer.stateMatches(
+            displayState,
+            preferences.preferredState,
+          )) {
+        return false;
+      }
+    }
+
+    if (preferences.preferredDistrict.isNotEmpty) {
+      if (displayDistrict == null ||
+          !LocationNormalizer.districtMatches(
+            displayDistrict,
+            preferences.preferredDistrict,
+            state: displayState,
+          )) {
+        return false;
+      }
+    }
+
+    return true;
+  }).toList();
+}
+
+List<_AdvisorAreaOption> _advisorAreaOptions(
+    AppState state,
+    String selectedState,
+    ) {
+  if (selectedState == 'any') {
+    return const [];
+  }
+
+  final labelsById = <String, String>{};
+
+  for (final property in state.properties) {
+    final displayState = _advisorDisplayState(property);
+    final displayDistrict = _advisorDisplayDistrict(property);
+    final localityAreaId = _advisorLocalityAreaId(property);
+
+    if (displayState == null ||
+        displayDistrict == null ||
+        localityAreaId.isEmpty ||
+        !LocationNormalizer.stateMatches(
+          displayState,
+          selectedState,
+        )) {
+      continue;
+    }
+
+    labelsById.putIfAbsent(
+      localityAreaId,
+          () => displayDistrict,
+    );
+  }
+
+  final options = labelsById.entries
+      .map(
+        (entry) => _AdvisorAreaOption(
+      value: entry.key,
+      label: entry.value,
+    ),
+  )
+      .toList()
+    ..sort(
+          (left, right) => left.label.compareTo(right.label),
+    );
+
+  return options;
+}
+
+class _AdvisorAreaOption {
+  const _AdvisorAreaOption({
+    required this.value,
+    required this.label,
+  });
+
+  final String value;
+  final String label;
 }
 
 class AdvisorScreen extends StatefulWidget {
@@ -80,6 +187,12 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
   final Set<String> selectedComparisonIds = {};
 
+  final SavedRecommendationService _savedRecommendationService =
+  const SavedRecommendationService();
+
+  bool _isSavingRecommendation = false;
+  bool _recommendationSaved = false;
+
   final PageController _recommendationPageController = PageController(
     viewportFraction: 0.90,
   );
@@ -110,58 +223,46 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
       budget = savedMaximumBudget.clamp(350000.0, 1600000.0).toDouble();
 
-      // Start from the saved User Management property preferences.
-      selectedState = preferences.preferredState.trim().isEmpty
-          ? 'any'
-          : preferences.preferredState.trim();
+      // Use the same state source and display normalization as Property Search:
+      // raw property.state values -> LocationNormalizer display state names.
+      final availableStates = _advisorStateOptions(appState);
+      final savedState = LocationNormalizer.nullableDisplayStateName(
+        preferences.preferredState,
+      );
+
+      selectedState =
+      savedState != null && availableStates.contains(savedState)
+          ? savedState
+          : 'any';
 
       areaId = 'any';
       propertyType = 'Any';
 
-      // Validate the saved state against properties that can actually
-      // participate in the Advisor under the saved maximum budget.
-      final availableStates = _availableStates(
-        state: appState,
-        targetBudget: budget,
-      );
-
-      if (selectedState != 'any' && !availableStates.contains(selectedState)) {
-        selectedState = 'any';
-      }
-
-      // Convert the saved district name from User Management into the
-      // Advisor's areaId only when that area currently has usable data/property.
+      // Use the same Area identity as Property Search:
+      // canonicalAreaId(displayState, displayDistrict).
       if (selectedState != 'any' &&
           preferences.preferredDistrict.trim().isNotEmpty) {
-        final savedDistrict = preferences.preferredDistrict.trim();
+        final areaOptions = _advisorAreaOptions(
+          appState,
+          selectedState,
+        );
 
-        for (final area in appState.areas) {
-          final sameState = LocationNormalizer.stateMatches(
-            area.state,
-            selectedState,
-          );
-          final sameDistrict = LocationNormalizer.districtMatches(
-            area.name,
-            savedDistrict,
-            state: area.state,
-          );
+        final savedAreaId = LocationNormalizer.canonicalAreaId(
+          selectedState,
+          preferences.preferredDistrict.trim(),
+        );
 
-          if (sameState &&
-              sameDistrict &&
-              _areaHasPropertyWithinBudget(
-                state: appState,
-                targetAreaId: area.id,
-                targetBudget: budget,
-              )) {
-            areaId = area.id;
-            break;
-          }
+        if (areaOptions.any((option) => option.value == savedAreaId)) {
+          areaId = savedAreaId;
         }
       }
 
-      // Compatibility with older Advisor data that already stored
-      // preferredAreaId directly.
-      if (areaId == 'any' && preferences.preferredAreaId != 'any') {
+      // Compatibility with older Advisor data.
+      // If preferredDistrict was not available, try to map a legacy AreaData
+      // id to the Search-style canonical locality id.
+      if (areaId == 'any' &&
+          selectedState != 'any' &&
+          preferences.preferredAreaId != 'any') {
         for (final area in appState.areas) {
           if (!LocationNormalizer.areaIdMatches(
             area.id,
@@ -170,52 +271,46 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
             continue;
           }
 
-          final stateMatches =
-              selectedState == 'any' ||
-              LocationNormalizer.stateMatches(area.state, selectedState);
+          final legacyAreaId = LocationNormalizer.canonicalAreaId(
+            selectedState,
+            area.name,
+          );
 
-          if (stateMatches &&
-              _areaHasPropertyWithinBudget(
-                state: appState,
-                targetAreaId: area.id,
-                targetBudget: budget,
-              )) {
-            areaId = area.id;
+          final areaOptions = _advisorAreaOptions(
+            appState,
+            selectedState,
+          );
 
-            if (selectedState == 'any') {
-              selectedState = area.state;
-            }
-
-            break;
+          if (areaOptions.any((option) => option.value == legacyAreaId)) {
+            areaId = legacyAreaId;
           }
+
+          break;
         }
       }
 
-      // Property Type is pre-filled only when that type actually exists
-      // in the selected area. Otherwise the Advisor safely falls back to Any.
-      if (areaId != 'any') {
-        final availableTypes = _availablePropertyTypes(
-          state: appState,
-          targetBudget: budget,
-          targetAreaId: areaId,
-        );
+      // Property Type can be selected independently:
+      // Any State -> nationwide
+      // selected State + Any Area -> whole state
+      // selected Area -> that district only
+      final initialAvailableTypes = _availablePropertyTypes(
+        state: appState,
+        targetBudget: budget,
+        targetState: selectedState,
+        targetAreaId: areaId,
+      );
 
-        if (preferences.propertyType == 'Any' ||
-            availableTypes.contains(preferences.propertyType)) {
-          propertyType = preferences.propertyType;
-        }
+      if (preferences.propertyType == 'Any' ||
+          initialAvailableTypes.contains(preferences.propertyType)) {
+        propertyType = preferences.propertyType;
       }
 
       ownStaySafetyPriority = preferences.ownStaySafetyPriority;
-
       ownStayEducationPriority = preferences.ownStayEducationPriority;
-
       ownStayTransportPriority = preferences.ownStayTransportPriority;
 
       investmentIncomePriority = preferences.investmentIncomePriority;
-
       investmentTransportPriority = preferences.investmentTransportPriority;
-
       investmentAffordabilityPriority =
           preferences.investmentAffordabilityPriority;
 
@@ -229,11 +324,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    final advisorProperties = _advisorProperties(state);
+    // Location filtering is applied from the raw Property state/district
+    // values, exactly like Property Search. RecommendationService still
+    // performs budget/type filtering and deterministic scoring.
+    final advisorProperties = _advisorPropertiesForPreferences(
+      state,
+      state.preferences,
+    );
 
     final recommendations = const RecommendationService().rank(
       properties: advisorProperties,
@@ -302,7 +404,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 investmentTransportPriority: investmentTransportPriority,
 
                 investmentAffordabilityPriority:
-                    investmentAffordabilityPriority,
+                investmentAffordabilityPriority,
 
                 onGoalChanged: _changeGoal,
 
@@ -312,37 +414,16 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   setState(() {
                     budget = value;
 
-                    final availableStates = _availableStates(
+                    final availableTypes = _availablePropertyTypes(
                       state: appState,
                       targetBudget: value,
+                      targetState: selectedState,
+                      targetAreaId: areaId,
                     );
 
-                    if (selectedState != 'any' &&
-                        !availableStates.contains(selectedState)) {
-                      selectedState = 'any';
-                      areaId = 'any';
+                    if (propertyType != 'Any' &&
+                        !availableTypes.contains(propertyType)) {
                       propertyType = 'Any';
-                    } else if (selectedState != 'any') {
-                      if (areaId != 'any' &&
-                          !_areaHasPropertyWithinBudget(
-                            state: appState,
-                            targetAreaId: areaId,
-                            targetBudget: value,
-                          )) {
-                        areaId = 'any';
-                        propertyType = 'Any';
-                      } else if (areaId != 'any') {
-                        final availableTypes = _availablePropertyTypes(
-                          state: appState,
-                          targetBudget: value,
-                          targetAreaId: areaId,
-                        );
-
-                        if (propertyType != 'Any' &&
-                            !availableTypes.contains(propertyType)) {
-                          propertyType = 'Any';
-                        }
-                      }
                     }
 
                     _resetScoringAfterPreferenceChange();
@@ -350,10 +431,23 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 },
 
                 onStateChanged: (value) {
+                  final appState = AppScope.of(context);
+
                   setState(() {
                     selectedState = value;
                     areaId = 'any';
-                    propertyType = 'Any';
+
+                    final availableTypes = _availablePropertyTypes(
+                      state: appState,
+                      targetBudget: budget,
+                      targetState: selectedState,
+                      targetAreaId: areaId,
+                    );
+
+                    if (propertyType != 'Any' &&
+                        !availableTypes.contains(propertyType)) {
+                      propertyType = 'Any';
+                    }
 
                     _resetScoringAfterPreferenceChange();
                   });
@@ -365,19 +459,16 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   setState(() {
                     areaId = value;
 
-                    if (areaId == 'any') {
-                      propertyType = 'Any';
-                    } else {
-                      final availableTypes = _availablePropertyTypes(
-                        state: appState,
-                        targetBudget: budget,
-                        targetAreaId: areaId,
-                      );
+                    final availableTypes = _availablePropertyTypes(
+                      state: appState,
+                      targetBudget: budget,
+                      targetState: selectedState,
+                      targetAreaId: areaId,
+                    );
 
-                      if (propertyType != 'Any' &&
-                          !availableTypes.contains(propertyType)) {
-                        propertyType = 'Any';
-                      }
+                    if (propertyType != 'Any' &&
+                        !availableTypes.contains(propertyType)) {
+                      propertyType = 'Any';
                     }
 
                     _resetScoringAfterPreferenceChange();
@@ -467,13 +558,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                 if (recommendations.isEmpty)
                   const _NoMatches()
                 else ...[
-                  _ComparisonSelectionBar(
+                  _RecommendationActionBar(
+                    recommendationCount: visibleRecommendations.length,
                     selectedCount: selectedComparisonIds.length,
-
+                    isSaving: _isSavingRecommendation,
+                    isSaved: _recommendationSaved,
                     canCompare:
-                        selectedRecommendations.length >= 2 &&
+                    selectedRecommendations.length >= 2 &&
                         selectedRecommendations.length <= 3,
-
+                    onSave: () => _saveCurrentRecommendationSession(
+                      recommendations: visibleRecommendations,
+                      preferences: state.preferences,
+                    ),
                     onCompare: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -536,8 +632,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(visibleRecommendations.length, (
-                      index,
-                    ) {
+                        index,
+                        ) {
                       final active = index == _recommendationPageIndex;
 
                       return AnimatedContainer(
@@ -574,9 +670,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   ),
                 ],
 
-                const SizedBox(height: 10),
-
-                const _DecisionNotice(),
               ],
             ],
           ),
@@ -592,6 +685,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       scoringLocked = false;
       appliedWeights = [];
       selectedComparisonIds.clear();
+      _recommendationSaved = false;
 
       showResults = false;
 
@@ -623,6 +717,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     appliedWeights = [];
     scoringLocked = false;
     selectedComparisonIds.clear();
+    _recommendationSaved = false;
     showResults = false;
   }
 
@@ -633,87 +728,57 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   }) {
     return _advisorProperties(state).any((property) {
       final price = _advisorComparablePrice(property);
-      final area = state.matchedAreaFor(property);
-      if (price == null) {
+
+      if (price == null || price > targetBudget) {
         return false;
       }
 
-      if (area == null) {
-        return false;
-      }
-
-      return LocationNormalizer.areaIdMatches(area.id, targetAreaId) &&
-          price <= targetBudget;
+      return _advisorLocalityAreaId(property) == targetAreaId;
     });
-  }
-
-  List<String> _availableStates({
-    required AppState state,
-    required double targetBudget,
-  }) {
-    final areaIdsWithProperties = _advisorProperties(state)
-        .where((property) {
-          final price = _advisorComparablePrice(property);
-          return price != null &&
-              price <= targetBudget &&
-              state.matchedAreaFor(property) != null;
-        })
-        .map((property) => state.matchedAreaFor(property)!.id)
-        .toSet();
-
-    final states =
-        state.areas
-            .where((area) => areaIdsWithProperties.contains(area.id))
-            .map((area) => area.state.trim())
-            .where((stateName) => stateName.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort();
-
-    return states;
   }
 
   List<String> _availablePropertyTypes({
     required AppState state,
     required double targetBudget,
+    required String targetState,
     required String targetAreaId,
   }) {
-    if (targetAreaId == 'any') {
-      return const [];
-    }
-
     final types =
-        _advisorProperties(state)
-            .where((property) {
-              final price = _advisorComparablePrice(property);
-              final area = state.matchedAreaFor(property);
+    _advisorProperties(state)
+        .where((property) {
+      final price = _advisorComparablePrice(property);
 
-              if (price == null || price > targetBudget) {
-                return false;
-              }
+      if (price == null || price > targetBudget) {
+        return false;
+      }
 
-              return area != null &&
-                  LocationNormalizer.areaIdMatches(area.id, targetAreaId);
-            })
-            .expand((property) => property.normalizedPropertyTypes)
-            .toSet()
-            .toList()
-          ..sort();
+      final displayState = _advisorDisplayState(property);
+      final localityAreaId = _advisorLocalityAreaId(property);
+
+      if (targetAreaId != 'any') {
+        return localityAreaId == targetAreaId;
+      }
+
+      if (targetState != 'any') {
+        return displayState != null &&
+            LocationNormalizer.stateMatches(
+              displayState,
+              targetState,
+            );
+      }
+
+      return true;
+    })
+        .expand((property) => property.normalizedPropertyTypes)
+        .toSet()
+        .toList()
+      ..sort();
 
     return types;
   }
 
   void _generate() {
     final state = AppScope.of(context);
-
-    if (selectedState != 'any' && areaId == 'any') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select an area after choosing a state.'),
-        ),
-      );
-      return;
-    }
 
     if (areaId != 'any' &&
         !_areaHasPropertyWithinBudget(
@@ -734,12 +799,12 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     final availableTypes = _availablePropertyTypes(
       state: state,
       targetBudget: budget,
+      targetState: selectedState,
       targetAreaId: areaId,
     );
 
-    final effectivePropertyType = areaId == 'any'
-        ? 'Any'
-        : propertyType == 'Any' || availableTypes.contains(propertyType)
+    final effectivePropertyType =
+    propertyType == 'Any' || availableTypes.contains(propertyType)
         ? propertyType
         : 'Any';
 
@@ -747,19 +812,19 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
     final priorities = goal == PropertyGoal.ownStay
         ? [
-            ownStaySafetyPriority,
-            ownStayEducationPriority,
-            ownStayTransportPriority,
-          ]
+      ownStaySafetyPriority,
+      ownStayEducationPriority,
+      ownStayTransportPriority,
+    ]
         : [
-            investmentIncomePriority,
-            investmentTransportPriority,
-            investmentAffordabilityPriority,
-          ];
+      investmentIncomePriority,
+      investmentTransportPriority,
+      investmentAffordabilityPriority,
+    ];
 
     final totalPriority = priorities.fold<double>(
       0,
-      (sum, value) => sum + value,
+          (sum, value) => sum + value,
     );
 
     if (totalPriority <= 0) {
@@ -776,10 +841,15 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
     String currentDistrict = '';
 
-    if (effectiveAreaId != 'any') {
-      for (final area in state.areas) {
-        if (LocationNormalizer.areaIdMatches(area.id, effectiveAreaId)) {
-          currentDistrict = area.name;
+    if (effectiveAreaId != 'any' && selectedState != 'any') {
+      final areaOptions = _advisorAreaOptions(
+        state,
+        selectedState,
+      );
+
+      for (final option in areaOptions) {
+        if (option.value == effectiveAreaId) {
+          currentDistrict = option.label;
           break;
         }
       }
@@ -788,15 +858,19 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     // Update only the current in-app recommendation session.
     // This does NOT call saveAccountPreferences(), so the saved Supabase
     // User Management preferences are not overwritten.
+    //
+    // preferredAreaId is intentionally kept as "any" here because Advisor's
+    // Area dropdown now uses the same Search-style canonical locality id
+    // (State + District), which is not necessarily the same as AreaData.id.
+    // The actual location filter is carried by preferredState and
+    // preferredDistrict and is also applied before RecommendationService.
     state.updatePreferences(
       state.preferences.copyWith(
         goal: goal,
         budget: budget,
-        preferredAreaId: effectiveAreaId,
+        preferredAreaId: 'any',
         propertyType: effectivePropertyType,
 
-        // Keep RecommendationService aligned with the current Advisor
-        // State / Area selection instead of the old saved profile values.
         preferredState: selectedState == 'any' ? '' : selectedState,
         preferredDistrict: currentDistrict,
 
@@ -820,6 +894,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       appliedWeights = normalisedWeights;
       scoringLocked = true;
       selectedComparisonIds.clear();
+      _recommendationSaved = false;
       showResults = true;
       _recommendationPageIndex = 0;
     });
@@ -834,7 +909,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
   List<double> _normalisePriorities(List<double> priorities) {
     final total = priorities.fold<double>(
       0,
-      (sum, value) => sum + value.clamp(0, 100),
+          (sum, value) => sum + value.clamp(0, 100),
     );
 
     if (total <= 0) {
@@ -861,8 +936,71 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       appliedWeights = [];
       scoringLocked = false;
       selectedComparisonIds.clear();
+      _recommendationSaved = false;
       showResults = false;
     });
+  }
+
+  Future<void> _saveCurrentRecommendationSession({
+    required List<PropertyRecommendation> recommendations,
+    required UserPreferences preferences,
+  }) async {
+    if (_isSavingRecommendation ||
+        _recommendationSaved ||
+        recommendations.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSavingRecommendation = true;
+    });
+
+    try {
+      await _savedRecommendationService.saveRecommendationSession(
+        recommendations: recommendations,
+        preferences: preferences,
+        appliedWeights: appliedWeights,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _recommendationSaved = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Recommendation session saved successfully.',
+          ),
+          backgroundColor: AppTheme.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      final message = error
+          .toString()
+          .replaceFirst('Exception: ', '')
+          .trim();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message.isEmpty
+                ? 'Could not save the recommendation session.'
+                : message,
+          ),
+          backgroundColor: const Color(0xFFB42318),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingRecommendation = false;
+        });
+      }
+    }
   }
 
   void _toggleComparison(PropertyRecommendation recommendation) {
@@ -893,59 +1031,394 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => const Padding(
-        padding: EdgeInsets.fromLTRB(24, 4, 24, 28),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Transparent recommendation method',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.90,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Transparent recommendation method',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'The system uses property data and area-level government '
+                        'data to calculate a weighted recommendation score.',
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  const _MethodSectionTitle(
+                    icon: Icons.home_rounded,
+                    title: 'Own Stay',
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  const _MethodDataItem(
+                    icon: Icons.shield_outlined,
+                    title: 'Safety',
+                    dataUsed: 'District crime statistics',
+                    explanation:
+                    'Crime data is converted into the area safety score '
+                        'before recommendation scoring. A lower crime level '
+                        'represents a stronger safety result.',
+                  ),
+
+                  const _MethodDataItem(
+                    icon: Icons.school_outlined,
+                    title: 'Education facilities',
+                    dataUsed: 'Number of schools / education institutions',
+                    explanation:
+                    'The number of education facilities in the matched '
+                        'area is compared with other available areas and '
+                        'normalised into a 0–100 education score.',
+                  ),
+
+                  const _MethodDataItem(
+                    icon: Icons.directions_transit_outlined,
+                    title: 'Transportation',
+                    dataUsed: 'Area transportation accessibility data',
+                    explanation:
+                    'The recommendation uses the transport score from the '
+                        'matched area profile. A higher score represents '
+                        'stronger transportation accessibility.',
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  const _MethodSectionTitle(
+                    icon: Icons.trending_up_rounded,
+                    title: 'Investment',
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  const _MethodDataItem(
+                    icon: Icons.payments_outlined,
+                    title: 'Income / Economic indicator',
+                    dataUsed: 'Median household income',
+                    explanation:
+                    'Median household income is compared with other '
+                        'available areas and normalised into a 0–100 '
+                        'economic indicator score.',
+                  ),
+
+                  const _MethodDataItem(
+                    icon: Icons.directions_transit_outlined,
+                    title: 'Transportation',
+                    dataUsed: 'Area transportation accessibility data',
+                    explanation:
+                    'The same matched-area transportation score is used '
+                        'to represent accessibility for investment analysis.',
+                  ),
+
+                  const _MethodDataItem(
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Property affordability',
+                    dataUsed: 'Property price + selected maximum budget',
+                    explanation:
+                    'The property price is compared with the user\'s '
+                        'selected maximum budget. A property that uses a '
+                        'smaller portion of the budget receives a higher '
+                        'affordability score.',
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  const Divider(),
+
+                  const SizedBox(height: 14),
+
+                  const Text(
+                    'How the weighted score works',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+
+                  const SizedBox(height: 9),
+
+                  const _MethodStep(
+                    number: '1',
+                    text:
+                    'The user adjusts the three priority sliders for the '
+                        'selected goal.',
+                  ),
+
+                  const _MethodStep(
+                    number: '2',
+                    text:
+                    'When Generate Matches is pressed, the priority values '
+                        'are normalised into percentages that total 100%.',
+                  ),
+
+                  const _MethodStep(
+                    number: '3',
+                    text:
+                    'Each available data score is multiplied by its '
+                        'applied weight and the contributions are combined '
+                        'into the final recommendation score.',
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: AppTheme.blue.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: AppTheme.blue,
+                          size: 19,
+                        ),
+                        SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            'Safety uses the processed area safety score in '
+                                'the recommendation algorithm; the underlying '
+                                'source is district-level crime data.',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 10,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: AppTheme.green.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.psychology_alt_outlined,
+                          color: AppTheme.green,
+                          size: 19,
+                        ),
+                        SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            'AI does not calculate, change or reorder the '
+                                'scores. It only explains the recommendation '
+                                'results already produced by the scoring system.',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 10,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-              SizedBox(height: 16),
+}
 
-              Text('Own Stay', style: TextStyle(fontWeight: FontWeight.w800)),
+class _MethodSectionTitle extends StatelessWidget {
+  const _MethodSectionTitle({
+    required this.icon,
+    required this.title,
+  });
 
-              SizedBox(height: 6),
+  final IconData icon;
+  final String title;
 
-              Text('Safety • Education Facilities • Transportation'),
-
-              SizedBox(height: 16),
-
-              Text('Investment', style: TextStyle(fontWeight: FontWeight.w800)),
-
-              SizedBox(height: 6),
-
-              Text(
-                'Income / Economic Indicator • Transportation • Property Affordability',
-              ),
-
-              SizedBox(height: 16),
-
-              Text(
-                'Before generating, the sliders represent priority levels rather than percentages. After Generate Matches is pressed, the priorities are normalised into percentages that total 100%. The sliders are then locked until Reset to default is selected.',
-                style: TextStyle(color: AppTheme.muted),
-              ),
-
-              SizedBox(height: 12),
-
-              Text(
-                'Switching between Own Stay and Investment starts that goal again using its default editable priorities.',
-                style: TextStyle(color: AppTheme.muted),
-              ),
-
-              SizedBox(height: 12),
-
-              Text(
-                'AI only explains the calculated recommendation and does not determine or modify the suitability score.',
-                style: TextStyle(color: AppTheme.muted),
-              ),
-            ],
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 19,
+          color: AppTheme.blue,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _MethodDataItem extends StatelessWidget {
+  const _MethodDataItem({
+    required this.icon,
+    required this.title,
+    required this.dataUsed,
+    required this.explanation,
+  });
+
+  final IconData icon;
+  final String title;
+  final String dataUsed;
+  final String explanation;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.blue.withValues(alpha: 0.035),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppTheme.blue.withValues(alpha: 0.10),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppTheme.blue.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 19,
+              color: AppTheme.blue,
+            ),
+          ),
+
+          const SizedBox(width: 11),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+
+                const SizedBox(height: 3),
+
+                Text(
+                  'Data used: $dataUsed',
+                  style: const TextStyle(
+                    color: AppTheme.blue,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  explanation,
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: 10,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MethodStep extends StatelessWidget {
+  const _MethodStep({
+    required this.number,
+    required this.text,
+  });
+
+  final String number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppTheme.blue.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              number,
+              style: const TextStyle(
+                color: AppTheme.blue,
+                fontWeight: FontWeight.w900,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1099,88 +1572,71 @@ class _PreferencePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    // Only properties with a valid Advisor area, valid price and
-    // price within the selected budget participate in the location cascade.
-    final areaIdsWithProperties = _advisorProperties(state)
-        .where((property) {
-          final price = _advisorComparablePrice(property);
-
-          return price != null &&
-              price <= budget &&
-              state.matchedAreaFor(property) != null;
-        })
-        .map((property) => state.matchedAreaFor(property)!.id)
-        .toSet();
-
-    // Level 1: State.
-    // Only states that contain at least one usable area/property are shown.
-    final availableStates =
-        state.areas
-            .where((area) => areaIdsWithProperties.contains(area.id))
-            .map((area) => area.state.trim())
-            .where((stateName) => stateName.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort();
+    // Match Property Search exactly:
+    // State values come from raw Property.state values after display
+    // normalization, and Area values come from raw Property.district values
+    // using canonicalAreaId(state, district).
+    final availableStates = _advisorStateOptions(state);
 
     final effectiveSelectedState =
-        selectedState == 'any' || availableStates.contains(selectedState)
+    selectedState == 'any' || availableStates.contains(selectedState)
         ? selectedState
         : 'any';
 
-    // Level 2: Area.
-    // The long area list is hidden until a state has been selected.
-    final availableAreas =
-        effectiveSelectedState == 'any'
-              ? <dynamic>[]
-              : state.areas
-                    .where(
-                      (area) =>
-                          LocationNormalizer.stateMatches(
-                            area.state,
-                            effectiveSelectedState,
-                          ) &&
-                          areaIdsWithProperties.contains(area.id),
-                    )
-                    .toList()
-          ..sort(
-            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-          );
+    final availableAreas = _advisorAreaOptions(
+      state,
+      effectiveSelectedState,
+    );
 
-    final availableAreaIds = availableAreas.map((area) => area.id).toSet();
+    final availableAreaIds = availableAreas
+        .map((option) => option.value)
+        .toSet();
 
-    final effectiveAreaId = areaId != 'any' && availableAreaIds.contains(areaId)
+    final effectiveAreaId =
+    areaId != 'any' && availableAreaIds.contains(areaId)
         ? areaId
         : 'any';
 
-    // Level 3: Property Type.
-    // Types are derived only from the selected area, so an unavailable
-    // type such as Semi-D is never offered for an area that has none.
+    // Property Type remains dynamic by current budget/location scope.
+    // Any State -> nationwide
+    // selected State + Any Area -> whole state
+    // selected Area -> that district only
     final availablePropertyTypes =
-        effectiveAreaId == 'any'
-              ? <String>[]
-              : _advisorProperties(state)
-                    .where((property) {
-                      final price = _advisorComparablePrice(property);
-                      final area = state.matchedAreaFor(property);
+    _advisorProperties(state)
+        .where((property) {
+      final price = _advisorComparablePrice(property);
 
-                      return price != null &&
-                          price <= budget &&
-                          area != null &&
-                          LocationNormalizer.areaIdMatches(
-                            area.id,
-                            effectiveAreaId,
-                          );
-                    })
-                    .expand((property) => property.normalizedPropertyTypes)
-                    .toSet()
-                    .toList()
-          ..sort();
+      if (price == null || price > budget) {
+        return false;
+      }
+
+      final displayState = _advisorDisplayState(property);
+      final localityAreaId = _advisorLocalityAreaId(property);
+
+      if (effectiveAreaId != 'any') {
+        return localityAreaId == effectiveAreaId;
+      }
+
+      if (effectiveSelectedState != 'any') {
+        return displayState != null &&
+            LocationNormalizer.stateMatches(
+              displayState,
+              effectiveSelectedState,
+            );
+      }
+
+      return true;
+    })
+        .expand((property) => property.normalizedPropertyTypes)
+        .toSet()
+        .toList()
+      ..sort();
 
     final effectivePropertyType =
-        propertyType == 'Any' || availablePropertyTypes.contains(propertyType)
+    propertyType == 'Any' || availablePropertyTypes.contains(propertyType)
         ? propertyType
         : 'Any';
+
 
     return Card(
       child: Padding(
@@ -1266,7 +1722,7 @@ class _PreferencePanel extends StatelessWidget {
                         ),
                       ),
                       ...availableStates.map(
-                        (stateName) => DropdownMenuItem(
+                            (stateName) => DropdownMenuItem(
                           value: stateName,
                           child: Text(
                             stateName,
@@ -1296,16 +1752,16 @@ class _PreferencePanel extends StatelessWidget {
                         child: Text(
                           effectiveSelectedState == 'any'
                               ? 'Select state first'
-                              : 'Select area',
+                              : 'Any area',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       ...availableAreas.map(
-                        (item) => DropdownMenuItem<String>(
-                          value: item.id,
+                            (item) => DropdownMenuItem<String>(
+                          value: item.value,
                           child: Text(
-                            item.name,
+                            item.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1315,8 +1771,8 @@ class _PreferencePanel extends StatelessWidget {
                     onChanged: effectiveSelectedState == 'any'
                         ? null
                         : (value) {
-                            onAreaChanged(value ?? 'any');
-                          },
+                      onAreaChanged(value ?? 'any');
+                    },
                   ),
                 ),
               ],
@@ -1326,22 +1782,23 @@ class _PreferencePanel extends StatelessWidget {
 
             DropdownButtonFormField<String>(
               key: ValueKey(
-                'type-$effectivePropertyType-$effectiveAreaId-${budget.round()}',
+                'type-$effectivePropertyType-$effectiveAreaId-'
+                    '$effectiveSelectedState-${budget.round()}',
               ),
               initialValue: effectivePropertyType,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Property type'),
               items: [
-                DropdownMenuItem(
+                const DropdownMenuItem(
                   value: 'Any',
                   child: Text(
-                    effectiveAreaId == 'any' ? 'Select area first' : 'Any',
+                    'Any property type',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 ...availablePropertyTypes.map(
-                  (item) => DropdownMenuItem<String>(
+                      (item) => DropdownMenuItem<String>(
                     value: item,
                     child: Text(
                       item,
@@ -1351,11 +1808,11 @@ class _PreferencePanel extends StatelessWidget {
                   ),
                 ),
               ],
-              onChanged: effectiveAreaId == 'any'
+              onChanged: availablePropertyTypes.isEmpty
                   ? null
                   : (value) {
-                      onTypeChanged(value ?? 'Any');
-                    },
+                onTypeChanged(value ?? 'Any');
+              },
             ),
 
             const SizedBox(height: 24),
@@ -1406,7 +1863,7 @@ class _PreferencePanel extends StatelessWidget {
               onInvestmentTransportChanged: onInvestmentTransportChanged,
 
               onInvestmentAffordabilityChanged:
-                  onInvestmentAffordabilityChanged,
+              onInvestmentAffordabilityChanged,
 
               onResetWeights: onResetWeights,
             ),
@@ -1679,23 +2136,23 @@ class _PrioritySlider extends StatelessWidget {
                 Expanded(
                   child: locked
                       ? const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.lock_outline_rounded,
-                              size: 10,
-                              color: AppTheme.muted,
-                            ),
-                            SizedBox(width: 3),
-                            Text(
-                              'Locked',
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 9,
-                              ),
-                            ),
-                          ],
-                        )
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.lock_outline_rounded,
+                        size: 10,
+                        color: AppTheme.muted,
+                      ),
+                      SizedBox(width: 3),
+                      Text(
+                        'Locked',
+                        style: TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ],
+                  )
                       : const SizedBox(),
                 ),
 
@@ -1799,15 +2256,23 @@ class _AiAdvisorEntryCard extends StatelessWidget {
   }
 }
 
-class _ComparisonSelectionBar extends StatelessWidget {
-  const _ComparisonSelectionBar({
+class _RecommendationActionBar extends StatelessWidget {
+  const _RecommendationActionBar({
+    required this.recommendationCount,
     required this.selectedCount,
+    required this.isSaving,
+    required this.isSaved,
     required this.canCompare,
+    required this.onSave,
     required this.onCompare,
   });
 
+  final int recommendationCount;
   final int selectedCount;
+  final bool isSaving;
+  final bool isSaved;
   final bool canCompare;
+  final VoidCallback onSave;
   final VoidCallback onCompare;
 
   @override
@@ -1817,37 +2282,94 @@ class _ComparisonSelectionBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.blue.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.blue.withValues(alpha: 0.18)),
+        border: Border.all(
+          color: AppTheme.blue.withValues(alpha: 0.18),
+        ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.compare_arrows_rounded, color: AppTheme.blue),
-
-          const SizedBox(width: 10),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Select 2–3 properties to compare',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppTheme.blue.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-
-                const SizedBox(height: 2),
-
-                Text(
-                  '$selectedCount selected',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppTheme.blue,
+                  size: 20,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Top $recommendationCount ready',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$selectedCount selected for comparison',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-
-          FilledButton.icon(
-            onPressed: canCompare ? onCompare : null,
-            icon: const Icon(Icons.compare_rounded, size: 18),
-            label: const Text('Compare'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: isSaving || isSaved ? null : onSave,
+                  icon: isSaving
+                      ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                      : Icon(
+                    isSaved
+                        ? Icons.check_rounded
+                        : Icons.bookmark_add_outlined,
+                    size: 18,
+                  ),
+                  label: Text(
+                    isSaving
+                        ? 'Saving'
+                        : isSaved
+                        ? 'Saved'
+                        : 'Save',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: canCompare ? onCompare : null,
+                  icon: const Icon(
+                    Icons.compare_arrows_rounded,
+                    size: 18,
+                  ),
+                  label: const Text('Compare'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1976,28 +2498,28 @@ class _RecommendationSwipeCard extends StatelessWidget {
                       .take(2)
                       .map(
                         (reason) => Padding(
-                          padding: const EdgeInsets.only(bottom: 5),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(
-                                Icons.check_circle_outline_rounded,
-                                size: 16,
-                                color: AppTheme.green,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  reason,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 10),
-                                ),
-                              ),
-                            ],
+                      padding: const EdgeInsets.only(bottom: 5),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 16,
+                            color: AppTheme.green,
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              reason,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                  ),
                   const Spacer(),
                   SizedBox(
                     width: double.infinity,
@@ -2099,35 +2621,6 @@ class _NoMatches extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _DecisionNotice extends StatelessWidget {
-  const _DecisionNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7E6),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFF4D89A)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.fact_check_outlined, color: Color(0xFF9B6A08)),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Decision support only. Scores are calculated using user-selected priority levels, normalised weighted criteria and available data, not a professional property valuation.',
-              style: TextStyle(color: Color(0xFF70500C), fontSize: 12),
-            ),
-          ),
-        ],
       ),
     );
   }
