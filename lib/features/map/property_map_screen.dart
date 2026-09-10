@@ -125,8 +125,10 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       properties: _mappableProperties,
       selectedPropertyId: selected?.id,
     );
+    final compactHeight = ResponsiveLayout.isCompactLandscapePhone(context);
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: compactHeight ? 48 : null,
         title: const Text('Map & nearby facilities'),
         actions: [
           IconButton(
@@ -139,6 +141,8 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = ResponsiveLayout.isTablet(context);
+          final compactLandscapePhone =
+              ResponsiveLayout.isCompactLandscapePhone(context);
           final map = _OpenStreetMapPropertyMap(
             controller: _mapController,
             properties: _mappableProperties,
@@ -152,11 +156,16 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
             onZoomOut: () => _zoomBy(-1),
             onMyLocation: _locateUser,
           );
-          final panel = _LocationPanel(property: selected);
+          final panel = _LocationPanel(
+            property: selected,
+            compact: compactLandscapePhone,
+          );
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                padding: compactLandscapePhone
+                    ? const EdgeInsets.fromLTRB(12, 4, 12, 8)
+                    : const EdgeInsets.fromLTRB(18, 4, 18, 12),
                 child: DropdownButtonFormField<String>(
                   initialValue: selectedAreaId,
                   decoration: const InputDecoration(
@@ -188,6 +197,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                         map: map,
                         panel: panel,
                         hasSelection: selected != null,
+                        overlaySelection: compactLandscapePhone,
                       ),
               ),
             ],
@@ -644,11 +654,13 @@ class _PhoneMapLayout extends StatelessWidget {
     required this.map,
     required this.panel,
     required this.hasSelection,
+    required this.overlaySelection,
   });
 
   final Widget map;
   final Widget panel;
   final bool hasSelection;
+  final bool overlaySelection;
 
   @override
   Widget build(BuildContext context) {
@@ -656,6 +668,22 @@ class _PhoneMapLayout extends StatelessWidget {
       builder: (context, constraints) {
         if (!hasSelection) {
           return map;
+        }
+        if (overlaySelection) {
+          return Stack(
+            children: [
+              Positioned.fill(child: map),
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 112),
+                  child: panel,
+                ),
+              ),
+            ],
+          );
         }
         final compactHeight = constraints.maxHeight < 520;
         final panelHeight = compactHeight
@@ -673,9 +701,10 @@ class _PhoneMapLayout extends StatelessWidget {
 }
 
 class _LocationPanel extends StatelessWidget {
-  const _LocationPanel({required this.property});
+  const _LocationPanel({required this.property, this.compact = false});
 
   final Property? property;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -687,6 +716,70 @@ class _LocationPanel extends StatelessWidget {
     }
     final state = AppScope.of(context);
     final area = state.matchedAreaFor(property!);
+    if (compact) {
+      return Material(
+        key: const ValueKey('property-map-compact-preview'),
+        color: Colors.white,
+        elevation: 10,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      property!.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      property!.address,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _priceText(property!),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.green,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 38,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          PropertyDetailScreen(propertyId: property!.id),
+                    ),
+                  ),
+                  child: const Text('View Details'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Material(
       color: Colors.white,
       elevation: 10,
@@ -865,6 +958,7 @@ class _TestMapPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final center = cameraTarget.center ?? malaysiaMapCenter;
     return ColoredBox(
+      key: const ValueKey('property-map-content'),
       color: const Color(0xFFEAF2E8),
       child: Center(
         child: _MapEmptyState(

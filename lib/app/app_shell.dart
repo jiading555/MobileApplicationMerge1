@@ -55,28 +55,31 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTablet = ResponsiveLayout.isTablet(context);
+        final useSideNavigation = ResponsiveLayout.usesSideNavigation(context);
+        final compactRail = ResponsiveLayout.isCompactLandscapePhone(context);
+        final extendedRail =
+            ResponsiveLayout.isDesktop(context) && !compactRail;
         final content = AppNavigationScope(
           selectDestination: _selectDestinationCallback,
           child: IndexedStack(index: selectedIndex, children: screens),
         );
-        if (isTablet) {
+        if (useSideNavigation) {
           return Scaffold(
             body: SafeArea(
               child: Row(
                 children: [
                   NavigationRail(
-                    extended: ResponsiveLayout.isDesktop(context),
+                    extended: extendedRail,
                     selectedIndex: selectedIndex,
                     onDestinationSelected: selectDestination,
-                    labelType: ResponsiveLayout.isDesktop(context)
+                    labelType: compactRail || extendedRail
                         ? NavigationRailLabelType.none
                         : NavigationRailLabelType.all,
                     leading: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
-                      child: AdvisorBrand(
-                        compact: !ResponsiveLayout.isDesktop(context),
-                      ),
+                      padding: compactRail
+                          ? const EdgeInsets.fromLTRB(8, 8, 8, 10)
+                          : const EdgeInsets.fromLTRB(8, 12, 8, 24),
+                      child: AdvisorBrand(compact: !extendedRail),
                     ),
                     destinations: destinations
                         .map(

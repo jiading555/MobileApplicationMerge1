@@ -177,6 +177,45 @@ void main() {
     );
   });
 
+  testWidgets('landscape phone keeps map as the primary content area', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(844, 390));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      AppScope(
+        notifier: _mapState(),
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: const MediaQueryData(size: Size(844, 390)),
+            child: child!,
+          ),
+          home: PropertyMapScreen(
+            useLiveMap: false,
+            locationClient: _FakeLocationClient.throwing(),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.textContaining('OpenStreetMap test placeholder - 2 markers'),
+      findsOneWidget,
+    );
+
+    final mapBox = tester.getSize(
+      find.byKey(const ValueKey('property-map-content')),
+    );
+    final previewBox = tester.getSize(
+      find.byKey(const ValueKey('property-map-compact-preview')),
+    );
+
+    expect(mapBox.height, greaterThan(previewBox.height * 2));
+  });
+
   for (final scenario in [
     _LocationScenario(
       name: 'location services disabled',

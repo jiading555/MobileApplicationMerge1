@@ -21,6 +21,8 @@ void main() {
     expect(ResponsiveLayout.isPhone(context), isTrue);
     expect(ResponsiveLayout.isTablet(context), isFalse);
     expect(ResponsiveLayout.isDesktop(context), isFalse);
+    expect(ResponsiveLayout.isCompactLandscapePhone(context), isTrue);
+    expect(ResponsiveLayout.usesSideNavigation(context), isTrue);
   });
 
   testWidgets('classifies tablet as tablet but not desktop', (tester) async {
@@ -31,6 +33,7 @@ void main() {
     expect(ResponsiveLayout.isPhone(context), isFalse);
     expect(ResponsiveLayout.isTablet(context), isTrue);
     expect(ResponsiveLayout.isDesktop(context), isFalse);
+    expect(ResponsiveLayout.usesSideNavigation(context), isTrue);
   });
 
   testWidgets('classifies large viewport as desktop', (tester) async {

@@ -614,6 +614,97 @@ void main() {
     expect(find.text('Any Programme'), findsOneWidget);
   });
 
+  testWidgets('portrait search filters stay in one horizontal scroll row', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'scroll_filters',
+        name: 'Residensi Scroll Filters',
+        state: 'Terengganu',
+        district: 'Kuala Terengganu',
+        scheme: 'Perumahan Penjawat Awam Malaysia (PPAM)',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    final filterRow = find.byKey(const ValueKey('property-filter-scroll-row'));
+    final scrollWidget = tester.widget<SingleChildScrollView>(filterRow);
+
+    expect(scrollWidget.scrollDirection, Axis.horizontal);
+    expect(
+      find.descendant(of: filterRow, matching: find.byType(Wrap)),
+      findsNothing,
+    );
+
+    final stateButton = find.byKey(
+      const ValueKey('property-filter-state-button'),
+    );
+    final areaButton = find.byKey(
+      const ValueKey('property-filter-area-button'),
+    );
+    final typeButton = find.byKey(
+      const ValueKey('property-filter-type-button'),
+    );
+    final programmeButton = find.byKey(
+      const ValueKey('property-filter-programme-button'),
+    );
+    final rowTop = tester.getTopLeft(stateButton).dy;
+
+    expect(tester.getTopLeft(areaButton).dy, rowTop);
+    expect(tester.getTopLeft(typeButton).dy, rowTop);
+    expect(tester.getTopLeft(programmeButton).dy, rowTop);
+    expect(
+      tester.getTopRight(programmeButton).dx,
+      greaterThan(tester.getTopRight(filterRow).dx),
+    );
+  });
+
+  testWidgets('landscape search keeps property results visible', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(844, 390);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      for (var index = 0; index < 6; index += 1)
+        _teduhProperty(
+          id: 'landscape_$index',
+          name: 'Residensi Landscape $index',
+          state: 'Selangor',
+          district: 'Petaling',
+          scheme: 'Rumah Selangorku',
+          price: 300000 + index,
+          unitTypes: const ['APARTMEN'],
+        ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ListView), findsOneWidget);
+    expect(find.text('6 properties found'), findsOneWidget);
+    expect(find.text('Residensi Landscape 0'), findsOneWidget);
+  });
+
   testWidgets('Property search cards do not use excessive tablet grid height', (
     tester,
   ) async {

@@ -87,8 +87,10 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     final sourceLabel = state.isUsingCloudProperties
         ? 'Source: Supabase / TEDUH'
         : 'Source: official data unavailable';
+    final compactHeight = ResponsiveLayout.isCompactLandscapePhone(context);
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: compactHeight ? 48 : null,
         title: const Text('Property search'),
         actions: [
           IconButton(
@@ -100,6 +102,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
         ],
       ),
       body: PageContainer(
+        padding: compactHeight
+            ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
+            : const EdgeInsets.fromLTRB(20, 18, 20, 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -123,74 +128,74 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final twoColumn = constraints.maxWidth < 560;
-                final itemWidth = twoColumn
-                    ? (constraints.maxWidth - 10) / 2
-                    : (constraints.maxWidth - 30) / 4;
-                return Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _FilterDropdown(
-                      label: selectedState == 'Any'
-                          ? 'Any State'
-                          : selectedState,
-                      options: stateValues
-                          .map(
-                            (value) => _FilterOption(
-                              value,
-                              value == 'Any' ? 'Any State' : value,
-                            ),
-                          )
-                          .toList(),
-                      value: selectedState,
-                      width: itemWidth,
-                      selected: selectedState != 'Any',
-                      onChanged: (value) => setState(() {
-                        selectedState = value;
-                        selectedAreaId = 'Any';
-                      }),
+            SizedBox(height: compactHeight ? 10 : 14),
+            SingleChildScrollView(
+              key: const ValueKey('property-filter-scroll-row'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _FilterDropdown(
+                    buttonKey: const ValueKey('property-filter-state-button'),
+                    label: selectedState == 'Any' ? 'Any State' : selectedState,
+                    options: stateValues
+                        .map(
+                          (value) => _FilterOption(
+                            value,
+                            value == 'Any' ? 'Any State' : value,
+                          ),
+                        )
+                        .toList(),
+                    value: selectedState,
+                    width: 168,
+                    selected: selectedState != 'Any',
+                    onChanged: (value) => setState(() {
+                      selectedState = value;
+                      selectedAreaId = 'Any';
+                    }),
+                  ),
+                  const SizedBox(width: 10),
+                  _FilterDropdown(
+                    buttonKey: const ValueKey('property-filter-area-button'),
+                    label: selectedAreaLabel,
+                    options: areaValues,
+                    value: selectedAreaId,
+                    width: 168,
+                    enabled: selectedState != 'Any',
+                    selected: selectedAreaId != 'Any',
+                    onChanged: (value) =>
+                        setState(() => selectedAreaId = value),
+                  ),
+                  const SizedBox(width: 10),
+                  _FilterDropdown(
+                    buttonKey: const ValueKey('property-filter-type-button'),
+                    label: selectedType,
+                    options: typeValues
+                        .map((value) => _FilterOption(value, value))
+                        .toList(),
+                    value: selectedType,
+                    width: 178,
+                    selected: selectedType != PropertyTypeNormalizer.anyType,
+                    onChanged: (value) => setState(() => selectedType = value),
+                  ),
+                  const SizedBox(width: 10),
+                  _FilterDropdown(
+                    buttonKey: const ValueKey(
+                      'property-filter-programme-button',
                     ),
-                    _FilterDropdown(
-                      label: selectedAreaLabel,
-                      options: areaValues,
-                      value: selectedAreaId,
-                      width: itemWidth,
-                      enabled: selectedState != 'Any',
-                      selected: selectedAreaId != 'Any',
-                      onChanged: (value) =>
-                          setState(() => selectedAreaId = value),
-                    ),
-                    _FilterDropdown(
-                      label: selectedType,
-                      options: typeValues
-                          .map((value) => _FilterOption(value, value))
-                          .toList(),
-                      value: selectedType,
-                      width: itemWidth,
-                      selected: selectedType != PropertyTypeNormalizer.anyType,
-                      onChanged: (value) =>
-                          setState(() => selectedType = value),
-                    ),
-                    _FilterDropdown(
-                      label: selectedScheme,
-                      options: schemeValues
-                          .map((value) => _FilterOption(value, value))
-                          .toList(),
-                      value: selectedScheme,
-                      width: itemWidth,
-                      selected: selectedScheme != SchemeNormalizer.anyScheme,
-                      onChanged: (value) =>
-                          setState(() => selectedScheme = value),
-                    ),
-                  ],
-                );
-              },
+                    label: selectedScheme,
+                    options: schemeValues
+                        .map((value) => _FilterOption(value, value))
+                        .toList(),
+                    value: selectedScheme,
+                    width: 202,
+                    selected: selectedScheme != SchemeNormalizer.anyScheme,
+                    onChanged: (value) =>
+                        setState(() => selectedScheme = value),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 18),
+            SizedBox(height: compactHeight ? 10 : 18),
             Row(
               children: [
                 Expanded(
@@ -218,7 +223,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: compactHeight ? 8 : 12),
             Expanded(
               child: results.isEmpty
                   ? const _NoResults()
@@ -511,6 +516,7 @@ class _FilterOption {
 
 class _FilterDropdown extends StatelessWidget {
   const _FilterDropdown({
+    required this.buttonKey,
     required this.label,
     required this.options,
     required this.value,
@@ -520,6 +526,7 @@ class _FilterDropdown extends StatelessWidget {
     this.selected = false,
   });
 
+  final Key buttonKey;
   final String label;
   final List<_FilterOption> options;
   final String value;
@@ -548,6 +555,7 @@ class _FilterDropdown extends StatelessWidget {
           )
           .toList(),
       child: _FilterButton(
+        key: buttonKey,
         label: label,
         enabled: enabled,
         selected: selected,
@@ -563,6 +571,7 @@ class _FilterButton extends StatelessWidget {
     required this.width,
     required this.enabled,
     required this.selected,
+    super.key,
   });
 
   final String label;
