@@ -587,7 +587,6 @@ void main() {
         hospitalBeds: 0,
         hospitalYear: 2025,
         transportScore: 100,
-        connectivityScore: 100,
         transportYear: 2025,
       );
 
