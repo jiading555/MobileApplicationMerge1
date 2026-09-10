@@ -16,7 +16,6 @@ class AreaData {
     this.populationGrowth,
     this.medianIncome,
     this.safetyScore,
-    this.connectivityScore,
     this.transportScore,
     this.schools,
     this.hospitals,
@@ -60,7 +59,6 @@ class AreaData {
   final double? populationGrowth;
   final int? medianIncome;
   final double? safetyScore;
-  final double? connectivityScore;
   final double? transportScore;
   final int? schools;
   final int? hospitals;
@@ -265,7 +263,6 @@ class AreaData {
     'populationGrowth': populationGrowth,
     'medianIncome': medianIncome,
     'safetyScore': safetyScore,
-    'connectivityScore': connectivityScore,
     'transportScore': transportScore,
     'schools': schools,
     'hospitals': hospitals,
@@ -311,7 +308,6 @@ class AreaData {
       populationGrowth: _doubleFromJson(json['populationGrowth']),
       medianIncome: _intFromJson(json['medianIncome']),
       safetyScore: _doubleFromJson(json['safetyScore']),
-      connectivityScore: _doubleFromJson(json['connectivityScore']),
       transportScore: _doubleFromJson(json['transportScore']),
       schools: _intFromJson(json['schools']),
       hospitals: _intFromJson(json['hospitals']),
@@ -368,7 +364,6 @@ class AreaData {
       populationGrowth: _doubleFromJson(json['populationGrowth']),
       medianIncome: _intFromJson(json['medianIncome']),
       safetyScore: _doubleFromJson(json['safetyScore']),
-      connectivityScore: _doubleFromJson(json['connectivityScore']),
       transportScore: _doubleFromJson(json['transportScore']),
       schools: _intFromJson(json['schools']),
       hospitals: _intFromJson(json['hospitals']),
@@ -424,7 +419,6 @@ class AreaData {
       populationGrowth: null,
       medianIncome: canonicalProfile.medianHouseholdIncome?.round(),
       safetyScore: safetyScore,
-      connectivityScore: transportScore,
       transportScore: transportScore,
       schools: canonicalProfile.educationInstitutionCount,
       hospitals: null,
