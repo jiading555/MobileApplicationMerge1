@@ -1117,7 +1117,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
   }
 
   void _changeBudget(double value) {
-    setState(() => maximumBudget = value);
+    maximumBudget = value;
   }
 
   @override
