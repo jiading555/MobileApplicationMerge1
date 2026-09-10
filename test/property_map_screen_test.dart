@@ -178,7 +178,7 @@ void main() {
     );
   });
 
-  testWidgets('landscape phone keeps map as the primary content area', (
+  testWidgets('landscape phone overlays area selector on primary map area', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(844, 390));
@@ -193,6 +193,75 @@ void main() {
             child: child!,
           ),
           home: PropertyMapScreen(
+            locationClient: _FakeLocationClient.throwing(),
+            tileLayerBuilder: (_) =>
+                const SizedBox.expand(key: ValueKey('test-tile-layer')),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final selector = find.byKey(const ValueKey('property-map-area-selector'));
+    final map = find.byType(FlutterMap);
+    final preview = find.byKey(const ValueKey('property-map-compact-preview'));
+    final viewDetails = find.widgetWithText(FilledButton, 'View Details');
+    final zoomIn = find.widgetWithIcon(IconButton, Icons.add_rounded);
+    final zoomOut = find.widgetWithIcon(IconButton, Icons.remove_rounded);
+    final myLocation = find.widgetWithIcon(
+      IconButton,
+      Icons.my_location_rounded,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(selector, findsOneWidget);
+    expect(map, findsOneWidget);
+    expect(preview, findsOneWidget);
+    expect(viewDetails, findsOneWidget);
+    expect(zoomIn, findsOneWidget);
+    expect(zoomOut, findsOneWidget);
+    expect(myLocation, findsOneWidget);
+
+    final appBarRect = tester.getRect(find.byType(AppBar));
+    final mapRect = tester.getRect(map);
+    final selectorRect = tester.getRect(selector);
+    final previewRect = tester.getRect(preview);
+    final viewDetailsRect = tester.getRect(viewDetails);
+    final zoomInRect = tester.getRect(zoomIn);
+    final zoomOutRect = tester.getRect(zoomOut);
+    final myLocationRect = tester.getRect(myLocation);
+
+    expect(mapRect.top, appBarRect.bottom);
+    expect(selectorRect.top, greaterThan(mapRect.top));
+    expect(selectorRect.left, greaterThan(mapRect.left));
+    expect(selectorRect.right, lessThan(zoomInRect.left));
+    expect(selectorRect.width, lessThanOrEqualTo(300));
+    expect(previewRect.bottom, lessThanOrEqualTo(390));
+    expect(previewRect.top, greaterThan(selectorRect.bottom));
+    expect(viewDetailsRect.bottom, lessThanOrEqualTo(previewRect.bottom));
+    expect(zoomInRect.right, lessThanOrEqualTo(mapRect.right));
+    expect(zoomOutRect.right, lessThanOrEqualTo(mapRect.right));
+    expect(myLocationRect.right, lessThanOrEqualTo(mapRect.right));
+
+    await tester.tap(viewDetails);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PropertyDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('portrait phone keeps Explore area above map', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      AppScope(
+        notifier: _mapState(),
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: const MediaQueryData(size: Size(390, 844)),
+            child: child!,
+          ),
+          home: PropertyMapScreen(
             useLiveMap: false,
             locationClient: _FakeLocationClient.throwing(),
           ),
@@ -201,20 +270,16 @@ void main() {
     );
     await tester.pump();
 
-    expect(tester.takeException(), isNull);
-    expect(
-      find.textContaining('OpenStreetMap test placeholder - 2 markers'),
-      findsOneWidget,
+    final selectorRect = tester.getRect(
+      find.byKey(const ValueKey('property-map-area-selector')),
     );
-
-    final mapBox = tester.getSize(
+    final mapRect = tester.getRect(
       find.byKey(const ValueKey('property-map-content')),
     );
-    final previewBox = tester.getSize(
-      find.byKey(const ValueKey('property-map-compact-preview')),
-    );
 
-    expect(mapBox.height, greaterThan(previewBox.height * 2));
+    expect(tester.takeException(), isNull);
+    expect(selectorRect.bottom, lessThanOrEqualTo(mapRect.top));
+    expect(selectorRect.width, greaterThan(350));
   });
 
   for (final size in [const Size(780, 360), const Size(844, 390)]) {

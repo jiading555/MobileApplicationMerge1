@@ -8,7 +8,6 @@ import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
-import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
@@ -19,37 +18,8 @@ import 'ai_advisor_chat_screen.dart';
 import 'comparison_screen.dart';
 import 'saved_recommendations_screen.dart';
 
-bool _isUsableAdvisorProperty(AppState state, Property property) {
-  final area = state.matchedAreaFor(property);
-  if (area == null) {
-    return false;
-  }
-
-  final propertyState = property.state?.trim();
-  if (propertyState != null &&
-      propertyState.isNotEmpty &&
-      !LocationNormalizer.stateMatches(area.state, propertyState)) {
-    return false;
-  }
-
-  final district = property.district?.trim();
-  if (district != null &&
-      district.isNotEmpty &&
-      !LocationNormalizer.districtMatches(
-        area.name,
-        district,
-        state: area.state,
-      )) {
-    return false;
-  }
-
-  return true;
-}
-
 List<Property> _advisorProperties(AppState state) {
-  return state.properties
-      .where((property) => _isUsableAdvisorProperty(state, property))
-      .toList();
+  return state.properties.toList();
 }
 
 int? _advisorComparablePrice(Property property) {
@@ -192,7 +162,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
   List<double> appliedWeights = [];
   List<Property> _cachedAdvisorProperties = const [];
-  Map<Property, AreaData> _cachedPropertyAreas = const {};
 
   final Set<String> selectedComparisonIds = {};
 
@@ -222,16 +191,6 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       final appState = AppScope.of(context);
       final preferences = appState.preferences;
       _cachedAdvisorProperties = _advisorProperties(appState);
-      _cachedPropertyAreas = <Property, AreaData>{};
-      for (final property in _cachedAdvisorProperties) {
-        final area = appState.matchedAreaFor(property);
-        if (area != null) {
-          _cachedPropertyAreas[property] = area;
-        }
-      }
-      _cachedAdvisorProperties = _cachedAdvisorProperties
-          .where(_cachedPropertyAreas.containsKey)
-          .toList(growable: false);
 
       goal = preferences.goal;
 
