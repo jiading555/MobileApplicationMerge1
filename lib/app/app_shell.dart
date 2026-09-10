@@ -69,14 +69,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _buildContent() {
+    final screen = _screenCache[selectedIndex] ??= _buildScreen(selectedIndex);
     return AppNavigationScope(
       selectDestination: _selectDestinationCallback,
-      child: IndexedStack(
-        index: selectedIndex,
-        children: [
-          for (final screen in _screenCache)
-            screen ?? const SizedBox.shrink(),
-        ],
+      child: KeyedSubtree(
+        key: ValueKey(selectedIndex),
+        child: screen,
       ),
     );
   }
