@@ -1,7 +1,12 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/auth/login_screen.dart';
+import '../features/auth/reset_password_screen.dart';
 import 'app_scope.dart';
 import 'app_shell.dart';
 import 'app_state.dart';
@@ -16,15 +21,52 @@ class SmartPropertyAdvisorApp extends StatefulWidget {
 
 class _SmartPropertyAdvisorAppState extends State<SmartPropertyAdvisorApp> {
   final AppState appState = AppState();
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  late final AppLinks appLinks;
+  StreamSubscription<Uri>? linkSubscription;
 
   @override
   void initState() {
     super.initState();
+    appLinks = AppLinks();
     appState.initialise();
+    _listenForAuthLinks();
+  }
+
+  Future<void> _listenForAuthLinks() async {
+    if (kIsWeb) return;
+
+    try {
+      final initialLink = await appLinks.getInitialLink();
+      if (initialLink != null) {
+        await _handleAuthLink(initialLink);
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Unable to read initial auth link: $error');
+      }
+    }
+
+    linkSubscription = appLinks.uriLinkStream.listen(
+      _handleAuthLink,
+      onError: (Object error) {
+        if (kDebugMode) {
+          debugPrint('Unable to handle auth link: $error');
+        }
+      },
+    );
+  }
+
+  Future<void> _handleAuthLink(Uri uri) async {
+    await appState.handleAuthDeepLink(uri);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    });
   }
 
   @override
   void dispose() {
+    linkSubscription?.cancel();
     appState.dispose();
     super.dispose();
   }
@@ -34,6 +76,7 @@ class _SmartPropertyAdvisorAppState extends State<SmartPropertyAdvisorApp> {
     return AppScope(
       notifier: appState,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'Smart Property Advisor',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
@@ -54,6 +97,12 @@ class _AppRoot extends StatelessWidget {
     }
     if (state.loadError != null) {
       return _LoadError(message: state.loadError!);
+    }
+    if (state.isPasswordRecovery) {
+      return const ResetPasswordScreen(
+        key: ValueKey('password-recovery'),
+        recoveryMode: true,
+      );
     }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 280),
