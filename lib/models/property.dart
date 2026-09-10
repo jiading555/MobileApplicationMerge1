@@ -190,7 +190,7 @@ class Property {
         'Public housing';
 
     return Property(
-      id: 'teduh_$sourceId',
+      id: _nullableStringFromJson(json['id']) ?? 'teduh_$sourceId',
       name: projectName,
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
