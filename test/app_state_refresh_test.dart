@@ -205,7 +205,7 @@ class _FakePropertyRepository extends PropertyRepository {
         state: 'Selangor',
         district: 'Gombak',
         price: 300000,
-        summary: 'Public housing/project record from TEDUH.',
+        summary: 'Official housing project information sourced from TEDUH.',
         facilities: ['Selangor'],
         palette: 1,
         source: 'TEDUH - Jabatan Perumahan Negara, KPKT',

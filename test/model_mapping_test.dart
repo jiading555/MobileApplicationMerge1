@@ -31,6 +31,7 @@ void main() {
     expect(supabaseJson.containsKey('price_min'), isTrue);
     expect(supabaseJson.containsKey('available_units'), isTrue);
     expect(supabaseJson.containsKey('raw_location'), isTrue);
+    expect(supabaseJson.containsKey('unit_options'), isTrue);
   });
 
   test('area profile mapping keeps stable Supabase keys', () {
@@ -70,7 +71,7 @@ void main() {
       PropertyFilterNormalizer.normalizeType('Rumah Pangsa'),
       'Apartment / Flat',
     );
-    expect(PropertyFilterNormalizer.normalizeType('Freehold'), 'Other');
+    expect(PropertyFilterNormalizer.normalizeType('Freehold'), 'Others');
 
     expect(PropertyFilterNormalizer.normalizeTenure('FREEHOLD'), 'Freehold');
     expect(PropertyFilterNormalizer.normalizeTenure('Free Hold'), 'Freehold');
@@ -107,7 +108,16 @@ void main() {
                   'district': 'Gombak',
                   'scheme_name': 'Residensi Wilayah',
                   'units': [
-                    {'house_type': 'Apartment', 'price_start': 250000},
+                    {
+                      'id': 'unit-1',
+                      'house_type': 'Apartment',
+                      'unit_type': 'Apartment A',
+                      'price_start': 250000,
+                      'price_from_text': 'RM 250,000.00',
+                      'base_area': 900,
+                      'size_text': '900 kps',
+                      'img_url': '/images/project/unit-a.jpg',
+                    },
                   ],
                   'latitude': 3.1,
                   'longitude': 101.7,
@@ -141,71 +151,91 @@ void main() {
     expect(projects, hasLength(1));
     expect(projects.first.name, 'Residensi JSON');
     expect(projects.first.sourceId, 'teduh-123');
-  });
-
-  test('TEDUH PR1MA-like mapping keeps unit type separate from property_type', () async {
-    final client = MockClient((request) {
-      final uri = request.url;
-      if (uri.path == '/api/portal/projects/filters') {
-        return Future.value(
-          http.Response(
-            jsonEncode({
-              'states': [
-                {'name': 'Kedah'},
-              ],
-            }),
-            200,
-          ),
-        );
-      }
-      if (uri.path == '/api/portal/projects') {
-        return Future.value(
-          http.Response(
-            jsonEncode({
-              'data': [
-                {
-                  'id': 'PR1MA_109',
-                  'name': 'RESIDENSI UTAMA',
-                  'total_unit': 1349,
-                  'baki_unit': '-',
-                  'location': 'SUNGAI PETANI, KEDAH',
-                  'scheme_logo_url':
-                      'https://teduh.kpkt.gov.my/images/project/pr1ma.jpg',
-                  'price_text': 'RM 118,888',
-                  'developer': {'name': 'PR1MA CORPORATION MALAYSIA'},
-                  'units': [
-                    {
-                      'id': 'PR1MA_109',
-                      'house_type': 'RUMAH TERES',
-                      'unit_type': '-',
-                      'price_start': '118888.00',
-                    },
-                  ],
-                },
-              ],
-              'last_page': 1,
-            }),
-            200,
-          ),
-        );
-      }
-      return Future.value(http.Response('not found', 404));
+    expect(
+      projects.first.sourceUrl,
+      'https://teduh.kpkt.gov.my/api/portal/projects',
+    );
+    expect(projects.first.sourceUrl, isNot(contains('Perumahan+Awam')));
+    expect(projects.first.unitOptions, hasLength(1));
+    expect(projects.first.unitOptions.single.toJson(), {
+      'source_unit_id': 'unit-1',
+      'unit_type': 'Apartment A',
+      'price_start': 250000,
+      'price_from_text': 'RM 250,000.00',
+      'size_sqft': 900,
+      'size_text': '900 kps',
+      'image_url': 'https://teduh.kpkt.gov.my/images/project/unit-a.jpg',
     });
-
-    final property = (await TeduhService(client: client).fetchProjects()).single;
-    final supabaseJson = property.toSupabaseJson();
-
-    expect(property.scheme, 'PR1MA Homes');
-    expect(property.district, 'Sungai Petani');
-    expect(property.priceMin, 118888);
-    expect(property.totalUnits, 1349);
-    expect(property.developerName, 'PR1MA CORPORATION MALAYSIA');
-    expect(property.unitTypes, ['RUMAH TERES']);
-    expect(property.verifiedPropertyType, isNull);
-    expect(property.type, 'Public housing');
-    expect(supabaseJson['property_type'], isNull);
-    expect(supabaseJson['unit_types'], ['RUMAH TERES']);
   });
+
+  test(
+    'TEDUH PR1MA-like mapping keeps unit type separate from property_type',
+    () async {
+      final client = MockClient((request) {
+        final uri = request.url;
+        if (uri.path == '/api/portal/projects/filters') {
+          return Future.value(
+            http.Response(
+              jsonEncode({
+                'states': [
+                  {'name': 'Kedah'},
+                ],
+              }),
+              200,
+            ),
+          );
+        }
+        if (uri.path == '/api/portal/projects') {
+          return Future.value(
+            http.Response(
+              jsonEncode({
+                'data': [
+                  {
+                    'id': 'PR1MA_109',
+                    'name': 'RESIDENSI UTAMA',
+                    'total_unit': 1349,
+                    'baki_unit': '-',
+                    'location': 'SUNGAI PETANI, KEDAH',
+                    'scheme_logo_url':
+                        'https://teduh.kpkt.gov.my/images/project/pr1ma.jpg',
+                    'price_text': 'RM 118,888',
+                    'developer': {'name': 'PR1MA CORPORATION MALAYSIA'},
+                    'units': [
+                      {
+                        'id': 'PR1MA_109',
+                        'house_type': 'RUMAH TERES',
+                        'unit_type': '-',
+                        'price_start': '118888.00',
+                      },
+                    ],
+                  },
+                ],
+                'last_page': 1,
+              }),
+              200,
+            ),
+          );
+        }
+        return Future.value(http.Response('not found', 404));
+      });
+
+      final property = (await TeduhService(
+        client: client,
+      ).fetchProjects()).single;
+      final supabaseJson = property.toSupabaseJson();
+
+      expect(property.scheme, 'PR1MA Homes');
+      expect(property.district, 'Sungai Petani');
+      expect(property.priceMin, 118888);
+      expect(property.totalUnits, 1349);
+      expect(property.developerName, 'PR1MA CORPORATION MALAYSIA');
+      expect(property.unitTypes, ['RUMAH TERES']);
+      expect(property.verifiedPropertyType, isNull);
+      expect(property.type, isEmpty);
+      expect(supabaseJson['property_type'], isNull);
+      expect(supabaseJson['unit_types'], ['RUMAH TERES']);
+    },
+  );
 
   test('TEDUH PPAM-like mapping deduplicates multiple house types', () async {
     final property = await _singleTeduhProject({
@@ -246,46 +276,53 @@ void main() {
     expect(property.availableUnits, 25);
     expect(property.verifiedPropertyType, isNull);
     expect(property.toSupabaseJson()['property_type'], isNull);
-  });
-
-  test('TEDUH SPNB-like mapping falls back from blank house_type to unit_type', () async {
-    final property = await _singleTeduhProject({
-      'id': 'SPNB_7',
-      'name': 'Taman Kelubi Idaman, Jasin',
-      'total_unit': 0,
-      'baki_unit': '-',
-      'location': 'MELAKA',
-      'scheme_logo_url': 'https://teduh.kpkt.gov.my/images/project/spnb.jpg',
-      'price_text': 'RM 128,000',
-      'developer': {
-        'name': 'Syarikat Perumahan Negara Berhad (SPNB)',
-      },
-      'units': [
-        {
-          'id': 'SPNB_701',
-          'house_type': '-',
-          'unit_type': 'Rumah Bandar',
-          'price_start': '128000.00',
-        },
-        {
-          'id': 'SPNB_702',
-          'house_type': '-',
-          'unit_type': 'Rumah Teres 2 Tingkat (Jenis A)',
-          'price_start': '208000.00',
-        },
-      ],
+    expect(property.unitOptions, hasLength(3));
+    expect(property.unitOptions[0].toJson(), {
+      'source_unit_id': 'PPAM_2307',
+      'unit_type': 'RUMAH TERES 1 TINGKAT JENIS B',
+      'price_start': 189440,
     });
-
-    expect(property.scheme, 'Syarikat Perumahan Negara Berhad (SPNB)');
-    expect(property.state, 'Melaka');
-    expect(property.district, isNull);
-    expect(property.unitTypes, [
-      'Rumah Bandar',
-      'Rumah Teres 2 Tingkat (Jenis A)',
-    ]);
-    expect(property.verifiedPropertyType, isNull);
-    expect(property.toSupabaseJson()['property_type'], isNull);
   });
+
+  test(
+    'TEDUH SPNB-like mapping falls back from blank house_type to unit_type',
+    () async {
+      final property = await _singleTeduhProject({
+        'id': 'SPNB_7',
+        'name': 'Taman Kelubi Idaman, Jasin',
+        'total_unit': 0,
+        'baki_unit': '-',
+        'location': 'MELAKA',
+        'scheme_logo_url': 'https://teduh.kpkt.gov.my/images/project/spnb.jpg',
+        'price_text': 'RM 128,000',
+        'developer': {'name': 'Syarikat Perumahan Negara Berhad (SPNB)'},
+        'units': [
+          {
+            'id': 'SPNB_701',
+            'house_type': '-',
+            'unit_type': 'Rumah Bandar',
+            'price_start': '128000.00',
+          },
+          {
+            'id': 'SPNB_702',
+            'house_type': '-',
+            'unit_type': 'Rumah Teres 2 Tingkat (Jenis A)',
+            'price_start': '208000.00',
+          },
+        ],
+      });
+
+      expect(property.scheme, 'Syarikat Perumahan Negara Berhad (SPNB)');
+      expect(property.state, 'Melaka');
+      expect(property.district, isNull);
+      expect(property.unitTypes, [
+        'Rumah Bandar',
+        'Rumah Teres 2 Tingkat (Jenis A)',
+      ]);
+      expect(property.verifiedPropertyType, isNull);
+      expect(property.toSupabaseJson()['property_type'], isNull);
+    },
+  );
 
   test('TEDUH pagination follows last_page without artificial cap', () async {
     final requestedPages = <String>[];

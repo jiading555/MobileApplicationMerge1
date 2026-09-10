@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
@@ -52,7 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onPassword: () => _changePassword(context),
                     onAbout: () => _showAbout(context),
                   );
-                  return constraints.maxWidth >= 760
+                  return ResponsiveLayout.isTablet(context)
                       ? Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

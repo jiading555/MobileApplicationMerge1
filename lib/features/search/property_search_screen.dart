@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/location_normalizer.dart';
@@ -143,19 +142,6 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             tooltip: 'Reset filters',
             icon: const Icon(Icons.restart_alt_rounded),
           ),
-          IconButton(
-            onPressed: state.isRefreshingGovernmentData
-                ? null
-                : () => _refreshGovernmentData(state),
-            tooltip: 'Reload latest data',
-            icon: state.isRefreshingGovernmentData
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_sync_outlined),
-          ),
           const SizedBox(width: 8),
         ],
       ),
@@ -178,23 +164,6 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         },
                         icon: const Icon(Icons.close_rounded),
                       ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: state.isRefreshingGovernmentData
-                    ? null
-                    : () => _refreshGovernmentData(state),
-                icon: state.isRefreshingGovernmentData
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cloud_sync_outlined),
-                label: const Text('Reload Latest Data'),
               ),
             ),
             const SizedBox(height: 14),
@@ -226,7 +195,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   ),
                   const SizedBox(width: 9),
                   _DropdownFilter(
-                    title: 'Housing Scheme',
+                    title: 'Housing Programme',
                     label: selectedScheme,
                     values: schemeValues,
                     value: selectedScheme,
@@ -331,20 +300,6 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       selectedType = PropertyTypeNormalizer.anyType;
       selectedScheme = SchemeNormalizer.anyScheme;
     });
-  }
-
-  Future<void> _refreshGovernmentData(AppState state) async {
-    await state.refreshGovernmentData();
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          state.governmentDataRefreshMessage ?? 'Latest data reload done.',
-        ),
-      ),
-    );
   }
 
   Future<void> _showPriceSheet() async {

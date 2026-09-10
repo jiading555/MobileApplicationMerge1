@@ -59,7 +59,7 @@ void main() {
         'Any Type',
         'Apartment / Flat',
         'Terrace House',
-        'Shop / Office',
+        'Shop Apartment',
       ]);
       expect(options, isNot(contains('APARTMEN')));
       expect(options, isNot(contains('RUMAH TERES 2 TINGKAT')));
@@ -90,22 +90,17 @@ void main() {
         unitTypes: ['RUMAH TERES', 'RUMAH BERKEMBAR'],
       );
 
+      expect(PropertyFilterNormalizer.availablePropertyTypes([property]), [
+        'Any Type',
+        'Terrace House',
+        'Semi-Detached',
+      ]);
       expect(
-        PropertyFilterNormalizer.availablePropertyTypes([property]),
-        ['Any Type', 'Terrace House', 'Semi-Detached'],
-      );
-      expect(
-        PropertyFilterNormalizer.propertyTypeMatches(
-          property,
-          'Terrace House',
-        ),
+        PropertyFilterNormalizer.propertyTypeMatches(property, 'Terrace House'),
         true,
       );
       expect(
-        PropertyFilterNormalizer.propertyTypeMatches(
-          property,
-          'Semi-Detached',
-        ),
+        PropertyFilterNormalizer.propertyTypeMatches(property, 'Semi-Detached'),
         true,
       );
       expect(
@@ -131,12 +126,94 @@ void main() {
       );
 
       expect(property.verifiedPropertyType, isNull);
-      expect(property.type, 'Public housing');
+      expect(property.type, isEmpty);
       expect(
         PropertyFilterNormalizer.propertyTypeMatches(property, 'Townhouse'),
         true,
       );
       expect(property.toSupabaseJson()['property_type'], isNull);
+    });
+
+    test(
+      'null property_type falls back to normalized unit_types for UI only',
+      () {
+        final properties = [
+          _teduhProperty('apartment', ['APARTMEN']),
+          _teduhProperty('terrace', ['RUMAH TERES']),
+          _teduhProperty('semi_d', ['RUMAH BERKEMBAR']),
+          _teduhProperty('townhouse', ['RUMAH BANDAR']),
+          _teduhProperty('cluster', ['RUMAH KLUSTER 2 TINGKAT']),
+        ];
+
+        expect(PropertyFilterNormalizer.availablePropertyTypes(properties), [
+          'Any Type',
+          'Apartment / Flat',
+          'Terrace House',
+          'Semi-Detached',
+          'Townhouse',
+          'Cluster House',
+        ]);
+        expect(
+          PropertyFilterNormalizer.propertyTypeMatches(
+            properties[0],
+            'Apartment / Flat',
+          ),
+          true,
+        );
+        expect(
+          PropertyFilterNormalizer.propertyTypeMatches(
+            properties[1],
+            'Terrace House',
+          ),
+          true,
+        );
+        expect(
+          PropertyFilterNormalizer.propertyTypeMatches(
+            properties[2],
+            'Semi-Detached',
+          ),
+          true,
+        );
+        expect(
+          properties.map(
+            (property) => property.toSupabaseJson()['property_type'],
+          ),
+          everyElement(isNull),
+        );
+      },
+    );
+
+    test('verified property_type takes precedence over unit_types', () {
+      const property = Property(
+        id: 'teduh_3',
+        name: 'Verified Apartment Homes',
+        areaId: 'selangor_klang',
+        address: 'Klang, Selangor',
+        type: 'Apartment',
+        tenure: 'Tenure not available',
+        verifiedPropertyType: 'APARTMEN',
+        summary: '',
+        facilities: [],
+        palette: 0,
+        unitTypes: ['RUMAH TERES'],
+      );
+
+      expect(PropertyFilterNormalizer.availablePropertyTypes([property]), [
+        'Any Type',
+        'Apartment / Flat',
+      ]);
+      expect(
+        PropertyFilterNormalizer.propertyTypeMatches(
+          property,
+          'Apartment / Flat',
+        ),
+        true,
+      );
+      expect(
+        PropertyFilterNormalizer.propertyTypeMatches(property, 'Terrace House'),
+        false,
+      );
+      expect(property.toSupabaseJson()['property_type'], 'APARTMEN');
     });
 
     test('available property types falls back to verified property_type', () {
@@ -153,10 +230,10 @@ void main() {
         palette: 0,
       );
 
-      expect(
-        PropertyFilterNormalizer.availablePropertyTypes([property]),
-        ['Any Type', 'Apartment / Flat'],
-      );
+      expect(PropertyFilterNormalizer.availablePropertyTypes([property]), [
+        'Any Type',
+        'Apartment / Flat',
+      ]);
     });
 
     test('property type normalization handles common TEDUH values', () {
@@ -178,7 +255,11 @@ void main() {
       );
       expect(
         PropertyFilterNormalizer.normalizeType('Kedai Pejabat'),
-        'Shop / Office',
+        'Shop Apartment',
+      );
+      expect(
+        PropertyFilterNormalizer.normalizeType('Tenure unknown'),
+        'Others',
       );
     });
 
@@ -269,4 +350,19 @@ void main() {
       expect(property.price, null);
     });
   });
+}
+
+Property _teduhProperty(String id, List<String> unitTypes) {
+  return Property.fromTeduhJson(
+    {
+      'source_id': id,
+      'project_name': 'Project $id',
+      'state': 'Selangor',
+      'district': 'Klang',
+      'property_type': null,
+      'unit_types': unitTypes,
+    },
+    areaId: 'selangor_klang',
+    palette: 0,
+  );
 }

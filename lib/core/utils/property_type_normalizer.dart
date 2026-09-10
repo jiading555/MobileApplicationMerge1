@@ -8,8 +8,8 @@ class PropertyTypeNormalizer {
   static const bungalowDetached = 'Bungalow / Detached';
   static const townhouse = 'Townhouse';
   static const clusterHouse = 'Cluster House';
-  static const shopOffice = 'Shop / Office';
-  static const other = 'Other';
+  static const shopApartment = 'Shop Apartment';
+  static const other = 'Others';
 
   static const orderedCategories = [
     apartmentFlat,
@@ -18,7 +18,7 @@ class PropertyTypeNormalizer {
     bungalowDetached,
     townhouse,
     clusterHouse,
-    shopOffice,
+    shopApartment,
     other,
   ];
 
@@ -137,6 +137,9 @@ class PropertyTypeNormalizer {
     }
     if (_containsAny(normalized, const [
       'kedai pejabat',
+      'pangsapuri kedai',
+      'apartmen kedai',
+      'shop apartment',
       'rumah kedai',
       'kedai',
       'pejabat',
@@ -144,7 +147,7 @@ class PropertyTypeNormalizer {
       'shop',
       'office',
     ])) {
-      return shopOffice;
+      return shopApartment;
     }
     return null;
   }

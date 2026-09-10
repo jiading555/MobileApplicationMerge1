@@ -118,18 +118,18 @@ class PropertyFilterNormalizer {
   }
 
   static Iterable<String> _propertyTypeCandidates(Property property) {
-    if (property.unitTypes.isNotEmpty) {
-      return property.unitTypes;
-    }
     if (_clean(property.verifiedPropertyType).isNotEmpty) {
       return [property.verifiedPropertyType!];
     }
-    if (property.isGovernmentRecord && property.type == 'Public housing') {
+    if (property.unitTypes.isNotEmpty) {
+      return property.unitTypes;
+    }
+    final rawType = _clean(property.type).toLowerCase();
+    if (property.isGovernmentRecord &&
+        (rawType == 'public housing' || rawType == 'public')) {
       return const [];
     }
-    return [
-      property.type,
-    ].where((type) => _clean(type).isNotEmpty);
+    return [property.type].where((type) => _clean(type).isNotEmpty);
   }
 
   static String _titleCase(String value) {

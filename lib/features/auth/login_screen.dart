@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/advisor_brand.dart';
 import 'register_screen.dart';
 import 'reset_password_screen.dart';
@@ -43,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 850;
+            final wide = ResponsiveLayout.isTablet(context);
             return Row(
               children: [
                 if (wide) const Expanded(child: _LoginHero()),
@@ -202,36 +203,45 @@ class _LoginHero extends StatelessWidget {
         ),
       ),
       padding: const EdgeInsets.all(56),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdvisorBrand(light: true),
-          Spacer(),
-          Icon(Icons.location_city_rounded, size: 76, color: Colors.white),
-          SizedBox(height: 24),
-          Text(
-            'Property decisions,\ngrounded in data.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 38,
-              height: 1.15,
-              fontWeight: FontWeight.w800,
-            ),
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 520),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AdvisorBrand(light: true),
+              SizedBox(height: 64),
+              Icon(Icons.location_city_rounded, size: 76, color: Colors.white),
+              SizedBox(height: 24),
+              Text(
+                'Property decisions,\ngrounded in data.',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  height: 1.15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Explore Malaysian areas, compare market signals and understand every recommendation.',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  height: 1.5,
+                ),
+              ),
+              SizedBox(height: 40),
+              Text(
+                'Built with Malaysian open data - SDG 9',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: 16),
-          Text(
-            'Explore Malaysian areas, compare market signals and understand every recommendation.',
-            style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5),
-          ),
-          Spacer(),
-          Text(
-            'Built with Malaysian open data - SDG 9',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

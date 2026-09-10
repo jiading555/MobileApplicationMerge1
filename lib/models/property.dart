@@ -28,6 +28,7 @@ class Property {
     this.totalUnits,
     this.availableUnits,
     this.unitTypes = const [],
+    this.unitOptions = const [],
     this.sourceUrl,
     this.externalProjectUrl,
     this.developerAddress,
@@ -63,6 +64,7 @@ class Property {
   final int? totalUnits;
   final int? availableUnits;
   final List<String> unitTypes;
+  final List<PropertyUnitOption> unitOptions;
   final String? sourceUrl;
   final String? externalProjectUrl;
   final String? developerAddress;
@@ -117,6 +119,9 @@ class Property {
       unitTypes: (json['unitTypes'] as List<dynamic>? ?? const [])
           .map((value) => value.toString())
           .toList(),
+      unitOptions: _unitOptionsFromJson(
+        json['unitOptions'] ?? json['unit_options'],
+      ),
       sourceUrl: json['sourceUrl'] as String?,
       externalProjectUrl: json['externalProjectUrl'] as String?,
       developerAddress: json['developerAddress'] as String?,
@@ -153,6 +158,10 @@ class Property {
     final unitTypes = _stringListFromJson(
       json['unit_types'] ?? json['unitTypes'],
     );
+    final unitOptions = _unitOptionsFromJson(
+      json['unit_options'] ?? json['unitOptions'],
+    );
+    final facilities = _stringListFromJson(json['facilities']);
     final location = [?district, ?state].join(', ');
 
     return Property(
@@ -160,8 +169,8 @@ class Property {
       name: projectName,
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
-      type: type ?? 'Public housing',
-      tenure: tenure ?? 'Tenure not available',
+      type: type ?? '',
+      tenure: tenure ?? '',
       verifiedPropertyType: type,
       state: state,
       district: district,
@@ -170,15 +179,8 @@ class Property {
       priceMax: priceMax,
       latitude: _doubleFromJson(json['latitude']),
       longitude: _doubleFromJson(json['longitude']),
-      summary: _teduhSummary(
-        scheme: scheme,
-        developer: developer,
-        totalUnits: _intFromJson(json['total_units'] ?? json['totalUnits']),
-        availableUnits: _intFromJson(
-          json['available_units'] ?? json['availableUnits'],
-        ),
-      ),
-      facilities: [?scheme, ?developer, ?state],
+      summary: _teduhSummary(),
+      facilities: facilities,
       palette: palette,
       source:
           _nullableStringFromJson(json['source']) ??
@@ -192,6 +194,7 @@ class Property {
         json['available_units'] ?? json['availableUnits'],
       ),
       unitTypes: unitTypes,
+      unitOptions: unitOptions,
       sourceUrl: _nullableStringFromJson(
         json['source_url'] ?? json['sourceUrl'],
       ),
@@ -228,6 +231,7 @@ class Property {
       'total_units': totalUnits,
       'available_units': availableUnits,
       'unit_types': unitTypes,
+      'unit_options': unitOptions.map((option) => option.toJson()).toList(),
       'source': source,
       'source_url': sourceUrl,
       'external_project_url': externalProjectUrl,
@@ -238,20 +242,8 @@ class Property {
     };
   }
 
-  static String _teduhSummary({
-    required String? scheme,
-    required String? developer,
-    required int? totalUnits,
-    required int? availableUnits,
-  }) {
-    final parts = [
-      'Public housing/project record from TEDUH.',
-      if (scheme != null) 'Scheme: $scheme.',
-      if (developer != null) 'Developer: $developer.',
-      if (totalUnits != null) 'Total units: $totalUnits.',
-      if (availableUnits != null) 'Available units: $availableUnits.',
-    ];
-    return parts.join(' ');
+  static String _teduhSummary() {
+    return 'Official housing project information sourced from TEDUH.';
   }
 
   static String _stringFromJson(Object? value) => value?.toString() ?? '';
@@ -313,5 +305,86 @@ class Property {
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList();
+  }
+
+  static List<PropertyUnitOption> _unitOptionsFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map>()
+        .map(
+          (item) =>
+              PropertyUnitOption.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.hasContent)
+        .toList();
+  }
+}
+
+class PropertyUnitOption {
+  const PropertyUnitOption({
+    this.sourceUnitId,
+    this.unitType,
+    this.priceStart,
+    this.priceFromText,
+    this.sizeSqft,
+    this.sizeText,
+    this.imageUrl,
+  });
+
+  final String? sourceUnitId;
+  final String? unitType;
+  final int? priceStart;
+  final String? priceFromText;
+  final int? sizeSqft;
+  final String? sizeText;
+  final String? imageUrl;
+
+  bool get hasContent =>
+      sourceUnitId != null ||
+      unitType != null ||
+      priceStart != null ||
+      priceFromText != null ||
+      sizeSqft != null ||
+      sizeText != null ||
+      imageUrl != null;
+
+  factory PropertyUnitOption.fromJson(Map<String, dynamic> json) {
+    return PropertyUnitOption(
+      sourceUnitId: Property._nullableStringFromJson(
+        json['source_unit_id'] ?? json['sourceUnitId'] ?? json['id'],
+      ),
+      unitType: Property._nullableStringFromJson(
+        json['unit_type'] ?? json['unitType'] ?? json['name'],
+      ),
+      priceStart: Property._intFromJson(
+        json['price_start'] ?? json['priceStart'],
+      ),
+      priceFromText: Property._nullableStringFromJson(
+        json['price_from_text'] ?? json['priceFromText'],
+      ),
+      sizeSqft: Property._intFromJson(
+        json['size_sqft'] ?? json['sizeSqft'] ?? json['base_area'],
+      ),
+      sizeText: Property._nullableStringFromJson(
+        json['size_text'] ?? json['sizeText'],
+      ),
+      imageUrl: Property._nullableStringFromJson(
+        json['image_url'] ?? json['imageUrl'] ?? json['img_url'],
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (sourceUnitId != null) 'source_unit_id': sourceUnitId,
+      if (unitType != null) 'unit_type': unitType,
+      if (priceStart != null) 'price_start': priceStart,
+      if (priceFromText != null) 'price_from_text': priceFromText,
+      if (sizeSqft != null) 'size_sqft': sizeSqft,
+      if (sizeText != null) 'size_text': sizeText,
+      if (imageUrl != null) 'image_url': imageUrl,
+    };
   }
 }

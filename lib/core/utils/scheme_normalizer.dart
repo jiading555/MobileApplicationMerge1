@@ -1,7 +1,7 @@
 class SchemeNormalizer {
   const SchemeNormalizer._();
 
-  static const anyScheme = 'Any Scheme';
+  static const anyScheme = 'Any Programme';
 
   static List<String> availableSchemes(Iterable<String?> rawSchemes) {
     final schemes = <String>{};
@@ -48,7 +48,10 @@ class SchemeNormalizer {
 
   static bool matches(String? propertyScheme, String? selectedScheme) {
     final selected = _clean(selectedScheme);
-    if (selected.isEmpty || selected == 'Any' || selected == anyScheme) {
+    if (selected.isEmpty ||
+        selected == 'Any' ||
+        selected == anyScheme ||
+        selected == 'Any Scheme') {
       return true;
     }
     return normalize(propertyScheme) == normalize(selected);

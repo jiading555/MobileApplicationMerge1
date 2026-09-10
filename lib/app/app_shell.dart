@@ -8,6 +8,7 @@ import '../features/home/home_screen.dart';
 import '../features/map/property_map_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/search/property_search_screen.dart';
+import '../core/utils/responsive_layout.dart';
 import 'app_scope.dart';
 
 class AppShell extends StatelessWidget {
@@ -40,7 +41,7 @@ class AppShell extends StatelessWidget {
     final state = AppScope.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTablet = constraints.maxWidth >= 760;
+        final isTablet = ResponsiveLayout.isTablet(context);
         final content = IndexedStack(
           index: state.selectedIndex,
           children: screens,
@@ -51,15 +52,17 @@ class AppShell extends StatelessWidget {
               child: Row(
                 children: [
                   NavigationRail(
-                    extended: constraints.maxWidth >= 1050,
+                    extended: ResponsiveLayout.isDesktop(context),
                     selectedIndex: state.selectedIndex,
                     onDestinationSelected: state.selectDestination,
-                    labelType: constraints.maxWidth >= 1050
+                    labelType: ResponsiveLayout.isDesktop(context)
                         ? NavigationRailLabelType.none
                         : NavigationRailLabelType.all,
                     leading: Padding(
                       padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
-                      child: AdvisorBrand(compact: constraints.maxWidth < 1050),
+                      child: AdvisorBrand(
+                        compact: !ResponsiveLayout.isDesktop(context),
+                      ),
                     ),
                     destinations: destinations
                         .map(
@@ -79,7 +82,7 @@ class AppShell extends StatelessWidget {
           );
         }
         return Scaffold(
-          body: content,
+          body: SafeArea(child: content),
           bottomNavigationBar: NavigationBar(
             selectedIndex: state.selectedIndex,
             onDestinationSelected: state.selectDestination,

@@ -108,17 +108,27 @@ void main() {
           name: 'Residensi Gombak',
           areaId: 'selangor_gombak',
           address: 'Gombak, Selangor',
-          type: 'Public housing',
-          tenure: 'Tenure not available',
+          type: '',
+          tenure: '',
           state: 'Selangor',
           district: 'Gombak',
           price: 300000,
-          summary: 'Public housing/project record from TEDUH.',
+          summary: 'Official housing project information sourced from TEDUH.',
           facilities: [],
           palette: 1,
+          source: 'TEDUH - Jabatan Perumahan Negara, KPKT',
           sourceId: '001',
           scheme: 'PR1MA Homes',
           unitTypes: ['APARTMEN'],
+          unitOptions: [
+            PropertyUnitOption(
+              sourceUnitId: 'unit-1',
+              unitType: 'APARTMEN A',
+              priceStart: 300000,
+              sizeSqft: 850,
+              imageUrl: 'https://teduh.kpkt.gov.my/images/unit-a.jpg',
+            ),
+          ],
         ),
       ]);
 
@@ -132,42 +142,54 @@ void main() {
       expect(body.single['property_type'], isNull);
       expect(body.single.containsKey('property_type'), isTrue);
       expect(body.single['unit_types'], ['APARTMEN']);
+      expect(body.single['unit_options'], [
+        {
+          'source_unit_id': 'unit-1',
+          'unit_type': 'APARTMEN A',
+          'price_start': 300000,
+          'size_sqft': 850,
+          'image_url': 'https://teduh.kpkt.gov.my/images/unit-a.jpg',
+        },
+      ]);
       expect(body.single['scheme'], 'PR1MA Homes');
       expect(body.single['updated_at'], isNotNull);
     },
   );
 
-  test('Supabase payload explicitly overwrites bad property_type with null', () async {
-    String? capturedBody;
-    final client = MockClient((request) async {
-      capturedBody = request.body;
-      return http.Response('', 204);
-    });
-    final restClient = SupabaseGovernmentDataRestClient(
-      environment: const GovernmentDataSyncEnvironment(
-        supabaseUrl: 'https://example.supabase.co',
-        serviceRoleKey: 'test-maintenance-key',
-      ),
-      client: client,
-    );
+  test(
+    'Supabase payload explicitly overwrites bad property_type with null',
+    () async {
+      String? capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = request.body;
+        return http.Response('', 204);
+      });
+      final restClient = SupabaseGovernmentDataRestClient(
+        environment: const GovernmentDataSyncEnvironment(
+          supabaseUrl: 'https://example.supabase.co',
+          serviceRoleKey: 'test-maintenance-key',
+        ),
+        client: client,
+      );
 
-    await restClient.upsertProperties([
-      Property.fromTeduhJson(
-        {
-          'source_id': 'PPAM_1',
-          'project_name': 'Taman Mixed',
-          'property_type': null,
-          'unit_types': ['RUMAH TERES', 'RUMAH BERKEMBAR'],
-        },
-        areaId: 'unknown',
-        palette: 0,
-      ),
-    ]);
+      await restClient.upsertProperties([
+        Property.fromTeduhJson(
+          {
+            'source_id': 'PPAM_1',
+            'project_name': 'Taman Mixed',
+            'property_type': null,
+            'unit_types': ['RUMAH TERES', 'RUMAH BERKEMBAR'],
+          },
+          areaId: 'unknown',
+          palette: 0,
+        ),
+      ]);
 
-    final body = jsonDecode(capturedBody!) as List<dynamic>;
-    expect(body.single.containsKey('property_type'), isTrue);
-    expect(body.single['property_type'], isNull);
-  });
+      final body = jsonDecode(capturedBody!) as List<dynamic>;
+      expect(body.single.containsKey('property_type'), isTrue);
+      expect(body.single['property_type'], isNull);
+    },
+  );
 
   test('full dynamic AreaProfile list reaches REST upsert layer', () async {
     final postedTables = <String, List<dynamic>>{};
@@ -194,13 +216,10 @@ void main() {
     expect(result.upsertedAreaProfiles, 7);
     expect(postedTables['area_profiles'], hasLength(7));
     expect(
-      postedTables['area_profiles']!
-          .map((row) => (row as Map<String, dynamic>)['area_id']),
-      containsAll([
-        'selangor_petaling',
-        'selangor_klang',
-        'johor_johor_bahru',
-      ]),
+      postedTables['area_profiles']!.map(
+        (row) => (row as Map<String, dynamic>)['area_id'],
+      ),
+      containsAll(['selangor_petaling', 'selangor_klang', 'johor_johor_bahru']),
     );
   });
 }

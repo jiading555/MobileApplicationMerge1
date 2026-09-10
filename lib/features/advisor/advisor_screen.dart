@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/recommendation.dart';
@@ -349,7 +350,7 @@ class _PreferencePanel extends StatelessWidget {
             const SizedBox(height: 10),
             LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 680;
+                final wide = ResponsiveLayout.isTablet(context);
                 final area = DropdownButtonFormField<String>(
                   initialValue: areaId,
                   decoration: const InputDecoration(
@@ -505,7 +506,7 @@ class _TopRecommendation extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 700;
+          final wide = ResponsiveLayout.isTablet(context);
           final art = Stack(
             children: [
               PropertyArt(palette: property.palette, height: wide ? 360 : 220),
@@ -779,7 +780,7 @@ class _DecisionNotice extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Decision support only. Scores depend on the selected weights and demonstration snapshot, not a professional valuation.',
+              'Decision support only. Scores depend on available official data and selected weights, not a professional valuation.',
               style: TextStyle(color: Color(0xFF70500C), fontSize: 12),
             ),
           ),

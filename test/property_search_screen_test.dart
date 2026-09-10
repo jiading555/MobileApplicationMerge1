@@ -57,8 +57,10 @@ void main() {
     expect(find.text('Any State'), findsOneWidget);
     expect(find.text('Any Area'), findsOneWidget);
     expect(find.text('Any Type'), findsOneWidget);
-    expect(find.text('Any Scheme'), findsOneWidget);
+    expect(find.text('Any Programme'), findsOneWidget);
     expect(find.text('Any Budget'), findsOneWidget);
+    expect(find.text('Reload Latest Data'), findsNothing);
+    expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
 
     expect(find.text('1 properties found'), findsOneWidget);
 
@@ -78,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 properties found'), findsOneWidget);
 
-    await tester.tap(find.text('Any Scheme'));
+    await tester.tap(find.text('Any Programme'));
     await tester.pumpAndSettle();
     expect(find.text('PPAM'), findsWidgets);
     await tester.tap(find.text('PPAM').last);
@@ -89,6 +91,115 @@ void main() {
     expect(find.text('Any State'), findsOneWidget);
     expect(find.text('Any Budget'), findsOneWidget);
   });
+
+  testWidgets(
+    'PropertySearchScreen filters null property_type records by unit_types',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final state = AppState();
+      state.properties = [
+        _teduhProperty(
+          id: 'p1',
+          name: 'Residensi Kinta Apartment',
+          state: 'Perak',
+          district: 'Kinta',
+          scheme: 'PR1MA Homes',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+        _teduhProperty(
+          id: 'p2',
+          name: 'Residensi Kinta Terrace',
+          state: 'Perak',
+          district: 'Kinta',
+          scheme: 'PPAM',
+          price: 700000,
+          unitTypes: const ['RUMAH TERES'],
+        ),
+        _teduhProperty(
+          id: 'p3',
+          name: 'Residensi Klang Semi D',
+          state: 'Selangor',
+          district: 'Klang',
+          scheme: 'PR1MA Homes',
+          price: 400000,
+          unitTypes: const ['RUMAH BERKEMBAR'],
+        ),
+      ];
+      state.areas = const [];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppScope(notifier: state, child: const PropertySearchScreen()),
+        ),
+      );
+
+      expect(find.text('3 properties found'), findsOneWidget);
+
+      await tester.tap(find.text('Any Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apartment / Flat').last);
+      await tester.pumpAndSettle();
+      expect(find.text('1 properties found'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('3 properties found'), findsOneWidget);
+
+      await tester.tap(find.text('Any Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Terrace House').last);
+      await tester.pumpAndSettle();
+      expect(find.text('1 properties found'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Semi-Detached').last);
+      await tester.pumpAndSettle();
+      expect(find.text('1 properties found'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any State'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Perak').last);
+      await tester.pumpAndSettle();
+      expect(find.text('2 properties found'), findsOneWidget);
+
+      await tester.tap(find.text('Any Area'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kinta, Perak').last);
+      await tester.pumpAndSettle();
+      expect(find.text('2 properties found'), findsOneWidget);
+
+      await tester.tap(find.text('Any Programme'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PR1MA Homes').last);
+      await tester.pumpAndSettle();
+      expect(find.text('1 properties found'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any Budget'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(Slider), const Offset(-1000, 0));
+      await tester.pump();
+      await tester.tap(find.text('Apply price'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 properties found'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('3 properties found'), findsOneWidget);
+    },
+  );
 
   testWidgets('PropertySearchScreen builds area options dynamically', (
     tester,
@@ -213,4 +324,29 @@ void main() {
     expect(find.text('Any State'), findsOneWidget);
     expect(find.text('1 properties found'), findsOneWidget);
   });
+}
+
+Property _teduhProperty({
+  required String id,
+  required String name,
+  required String state,
+  required String district,
+  required String scheme,
+  required int price,
+  required List<String> unitTypes,
+}) {
+  return Property.fromTeduhJson(
+    {
+      'source_id': id,
+      'project_name': name,
+      'state': state,
+      'district': district,
+      'scheme': scheme,
+      'price_min': price,
+      'property_type': null,
+      'unit_types': unitTypes,
+    },
+    areaId: '${state.toLowerCase()}_${district.toLowerCase()}',
+    palette: 0,
+  );
 }

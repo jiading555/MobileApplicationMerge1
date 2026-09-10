@@ -46,10 +46,13 @@ class TeduhService {
         return _buildProperties(rawRecords, stateLookup, retrievedAt);
       }
     } on Exception {
-      // Fall through to the HTML fallback below when the structured JSON API
-      // is unavailable or malformed.
+      return _fetchFallbackProjects(retrievedAt);
     }
 
+    return _fetchFallbackProjects(retrievedAt);
+  }
+
+  Future<List<Property>> _fetchFallbackProjects(DateTime retrievedAt) async {
     final htmlProjects = await _fetchProjectsFromHtml(retrievedAt);
     if (htmlProjects.isNotEmpty) {
       return _dedupe(htmlProjects);
@@ -221,6 +224,7 @@ class TeduhService {
     final (state, district) = _splitLocation(location, stateLookup);
     final prices = _collectPrices(record);
     final unitTypes = _collectUnitTypes(record);
+    final unitOptions = _collectUnitOptions(record);
     final developer = record['developer'] is Map
         ? Map<String, dynamic>.from(record['developer'] as Map)
         : <String, dynamic>{};
@@ -245,6 +249,7 @@ class TeduhService {
       'total_units': _parseNumber(record['total_unit'])?.toInt(),
       'available_units': _parseNumber(record['baki_unit'])?.toInt(),
       'unit_types': unitTypes,
+      'unit_options': unitOptions,
       'external_project_url': _cleanText(record['web_url']),
       'developer_address': _cleanText(developer['full_address']),
       'raw_location': location,
@@ -296,6 +301,51 @@ class TeduhService {
       }
     }
     return types;
+  }
+
+  List<Map<String, dynamic>> _collectUnitOptions(Map<String, dynamic> record) {
+    final options = <Map<String, dynamic>>[];
+    final units = record['units'];
+    if (units is! List) {
+      return options;
+    }
+    for (final unit in units.whereType<Map>()) {
+      final row = Map<String, dynamic>.from(unit);
+      final sourceUnitId = _cleanText(row['id']);
+      final unitType =
+          _cleanText(row['unit_type']) ?? _cleanText(row['house_type']);
+      final priceStart = _parseNumber(row['price_start']);
+      final priceFromText = _cleanText(row['price_from_text']);
+      final sizeSqft = _parseNumber(row['base_area']);
+      final sizeText = _cleanText(row['size_text']);
+      final imageUrl = _absoluteTeduhUrl(_cleanText(row['img_url']));
+      final option = <String, dynamic>{};
+      if (sourceUnitId != null) {
+        option['source_unit_id'] = sourceUnitId;
+      }
+      if (unitType != null) {
+        option['unit_type'] = unitType;
+      }
+      if (priceStart != null) {
+        option['price_start'] = priceStart.round();
+      }
+      if (priceFromText != null) {
+        option['price_from_text'] = priceFromText;
+      }
+      if (sizeSqft != null) {
+        option['size_sqft'] = sizeSqft.round();
+      }
+      if (sizeText != null) {
+        option['size_text'] = sizeText;
+      }
+      if (imageUrl != null) {
+        option['image_url'] = imageUrl;
+      }
+      if (option.isNotEmpty) {
+        options.add(option);
+      }
+    }
+    return options;
   }
 
   String? _normaliseScheme(Map<String, dynamic> record) {
@@ -409,9 +459,24 @@ class TeduhService {
   }
 
   String _sourceUrl() {
-    return Uri.https(_host, _projectsPagePath, {
-      'source': 'Perumahan Awam',
-    }).toString();
+    return Uri.https(_host, _projectsPath).toString();
+  }
+
+  String? _absoluteTeduhUrl(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null) {
+      return null;
+    }
+    if (uri.hasScheme && uri.host.isNotEmpty) {
+      return uri.toString();
+    }
+    return Uri.https(
+      _host,
+      value.startsWith('/') ? value : '/$value',
+    ).toString();
   }
 
   String _fallbackSourceId(Map<String, dynamic> record, String? state) {
