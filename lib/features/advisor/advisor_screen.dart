@@ -8,6 +8,7 @@ import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
+import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
