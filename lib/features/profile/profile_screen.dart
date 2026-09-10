@@ -3,15 +3,72 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/constants/property_preference_options.dart';
+import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
+import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../../models/user_preferences.dart';
 import '../search/property_detail_screen.dart';
+
+
+String _normaliseProfileLocation(Object? value) {
+  if (value == null) return '';
+
+  return value
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+}
+
+bool _isUsableProfileProperty(
+    AppState state,
+    Property property,
+    ) {
+  final district = property.district?.trim();
+  final propertyState = property.state?.trim();
+
+  if (district == null ||
+      district.isEmpty ||
+      propertyState == null ||
+      propertyState.isEmpty) {
+    return false;
+  }
+
+  for (final area in state.areas) {
+    if (area.id != property.areaId) continue;
+
+    final districtMatches =
+        _normaliseProfileLocation(area.name) ==
+            _normaliseProfileLocation(district);
+
+    final stateMatches =
+        _normaliseProfileLocation(area.state) ==
+            _normaliseProfileLocation(propertyState);
+
+    if (districtMatches && stateMatches) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+List<Property> _profileAdvisorProperties(AppState state) {
+  return state.properties
+      .where(
+        (property) => _isUsableProfileProperty(
+      state,
+      property,
+    ),
+  )
+      .toList();
+}
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -74,20 +131,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                       return constraints.maxWidth >= 700
                           ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: personal),
-                                const SizedBox(width: 14),
-                                Expanded(child: preferences),
-                              ],
-                            )
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: personal),
+                          const SizedBox(width: 14),
+                          Expanded(child: preferences),
+                        ],
+                      )
                           : Column(
-                              children: [
-                                personal,
-                                const SizedBox(height: 14),
-                                preferences,
-                              ],
-                            );
+                        children: [
+                          personal,
+                          const SizedBox(height: 14),
+                          preferences,
+                        ],
+                      );
                     },
                   ),
                   const SizedBox(height: 14),
@@ -95,7 +152,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     properties: state.favouriteProperties,
                     showAll: _showAllFavourites,
                     onToggle: () => setState(
-                      () => _showAllFavourites = !_showAllFavourites,
+                          () => _showAllFavourites = !_showAllFavourites,
                     ),
                     onOpen: (propertyId) => Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -199,155 +256,94 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _changePassword() async {
-    final updated = await showDialog<bool>(
+    final state = AppScope.of(context);
+    final currentPassword = TextEditingController();
+    final newPassword = TextEditingController();
+    final confirmPassword = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog<void>(
       context: context,
-      builder: (_) => const _ChangePasswordDialog(),
-    );
-    if (!mounted || updated != true) return;
-    _message('Password updated successfully.', false);
-  }
-}
-
-class _ChangePasswordDialog extends StatefulWidget {
-  const _ChangePasswordDialog();
-
-  @override
-  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
-}
-
-class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _currentPassword = TextEditingController();
-  final _newPassword = TextEditingController();
-  final _confirmPassword = TextEditingController();
-  var _obscureCurrentPassword = true;
-  var _obscureNewPassword = true;
-  var _obscureConfirmPassword = true;
-  String? _error;
-
-  @override
-  void dispose() {
-    _currentPassword.dispose();
-    _newPassword.dispose();
-    _confirmPassword.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    final error = await AppScope.of(context).updatePassword(
-      currentPassword: _currentPassword.text,
-      newPassword: _newPassword.text,
-    );
-    if (!mounted) return;
-    if (error == null) {
-      Navigator.pop(context, true);
-      return;
-    }
-    setState(() => _error = error);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Change password'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _passwordField(
-                  controller: _currentPassword,
-                  label: 'Current password',
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: _obscureCurrentPassword,
-                  onVisibilityChanged: () => setState(
-                    () => _obscureCurrentPassword = !_obscureCurrentPassword,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change password'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: currentPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.password],
+                    decoration: const InputDecoration(
+                      labelText: 'Current password',
+                      prefixIcon: Icon(Icons.lock_outline_rounded),
+                    ),
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Enter your current password'
+                        : null,
                   ),
-                  validator: (value) => value == null || value.isEmpty
-                      ? 'Enter your current password'
-                      : null,
-                  autofillHints: const [AutofillHints.password],
-                ),
-                const SizedBox(height: 12),
-                _passwordField(
-                  controller: _newPassword,
-                  label: 'New password',
-                  icon: Icons.password_rounded,
-                  obscureText: _obscureNewPassword,
-                  onVisibilityChanged: () => setState(
-                    () => _obscureNewPassword = !_obscureNewPassword,
-                  ),
-                  validator: (value) => value == null || value.length < 8
-                      ? 'Use at least 8 characters'
-                      : null,
-                  autofillHints: const [AutofillHints.newPassword],
-                ),
-                const SizedBox(height: 12),
-                _passwordField(
-                  controller: _confirmPassword,
-                  label: 'Confirm new password',
-                  icon: Icons.password_rounded,
-                  obscureText: _obscureConfirmPassword,
-                  onVisibilityChanged: () => setState(
-                    () => _obscureConfirmPassword = !_obscureConfirmPassword,
-                  ),
-                  validator: (value) => value != _newPassword.text
-                      ? 'New passwords do not match'
-                      : null,
-                  autofillHints: const [AutofillHints.newPassword],
-                ),
-                if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+                  TextFormField(
+                    controller: newPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    decoration: const InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: Icon(Icons.password_rounded),
+                    ),
+                    validator: (value) => value == null || value.length < 8
+                        ? 'Use at least 8 characters'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: confirmPassword,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm new password',
+                      prefixIcon: Icon(Icons.password_rounded),
+                    ),
+                    validator: (value) => value != newPassword.text
+                        ? 'New passwords do not match'
+                        : null,
+                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Update password'),
-        ),
-      ],
-    );
-  }
-
-  Widget _passwordField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    required bool obscureText,
-    required VoidCallback onVisibilityChanged,
-    required String? Function(String?) validator,
-    required Iterable<String> autofillHints,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      autofillHints: autofillHints,
-      onChanged: (_) => setState(() => _error = null),
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        suffixIcon: IconButton(
-          onPressed: onVisibilityChanged,
-          icon: Icon(
-            obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
           ),
-        ),
+          FilledButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final error = await state.updatePassword(
+                currentPassword: currentPassword.text,
+                newPassword: newPassword.text,
+              );
+              if (!mounted || !dialogContext.mounted) return;
+              if (error == null) Navigator.pop(dialogContext);
+              _message(
+                error ?? 'Password updated successfully.',
+                error != null,
+              );
+            },
+            child: const Text('Update password'),
+          ),
+        ],
       ),
-      validator: validator,
     );
+    currentPassword.dispose();
+    newPassword.dispose();
+    confirmPassword.dispose();
   }
 }
 
@@ -591,7 +587,7 @@ class _FavouriteProperties extends StatelessWidget {
           )
         else
           ...visible.map(
-            (property) => Padding(
+                (property) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: PropertyCard(
                 property: property,
@@ -641,9 +637,14 @@ class _PersonalCard extends StatelessWidget {
 }
 
 class _PreferenceCard extends StatelessWidget {
-  const _PreferenceCard({required this.value, required this.onEdit});
+  const _PreferenceCard({
+    required this.value,
+    required this.onEdit,
+  });
+
   final UserPreferences value;
   final VoidCallback onEdit;
+
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -651,12 +652,32 @@ class _PreferenceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _TitleRow(title: 'Property preferences', icon: Icons.tune_rounded, onEdit: onEdit),
+          _TitleRow(
+            title: 'Property preferences',
+            icon: Icons.tune_rounded,
+            onEdit: onEdit,
+          ),
           const SizedBox(height: 12),
-          _InfoRow(label: 'State', value: value.preferredState.isEmpty ? 'Any state' : value.preferredState),
-          _InfoRow(label: 'District', value: value.preferredDistrict.isEmpty ? 'Any district' : value.preferredDistrict),
-          _InfoRow(label: 'Type', value: value.propertyType),
-          _InfoRow(label: 'Budget', value: '${formatRinggit(value.minimumBudget)} – ${formatRinggit(value.maximumBudget)}'),
+          _InfoRow(
+            label: 'State',
+            value: value.preferredState.isEmpty
+                ? 'Any state'
+                : value.preferredState,
+          ),
+          _InfoRow(
+            label: 'Area',
+            value: value.preferredDistrict.isEmpty
+                ? 'Any area'
+                : value.preferredDistrict,
+          ),
+          _InfoRow(
+            label: 'Type',
+            value: value.propertyType,
+          ),
+          _InfoRow(
+            label: 'Maximum budget',
+            value: formatRinggit(value.maximumBudget),
+          ),
         ],
       ),
     ),
@@ -664,40 +685,81 @@ class _PreferenceCard extends StatelessWidget {
 }
 
 class _TitleRow extends StatelessWidget {
-  const _TitleRow({required this.title, required this.icon, required this.onEdit});
+  const _TitleRow({
+    required this.title,
+    required this.icon,
+    required this.onEdit,
+  });
+
   final String title;
   final IconData icon;
   final VoidCallback onEdit;
+
   @override
   Widget build(BuildContext context) => Row(
     children: [
       Icon(icon, color: AppTheme.blue),
       const SizedBox(width: 9),
-      Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
-      IconButton(onPressed: onEdit, tooltip: 'Edit', icon: const Icon(Icons.edit_outlined)),
+      Expanded(
+        child: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ),
+      IconButton(
+        onPressed: onEdit,
+        tooltip: 'Edit',
+        icon: const Icon(Icons.edit_outlined),
+      ),
     ],
   );
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+  const _InfoRow({
+    required this.label,
+    required this.value,
+  });
+
   final String label;
   final String value;
+
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 6),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 72, child: Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12))),
-        Expanded(child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+        SizedBox(
+          width: 108,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: AppTheme.blue,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ),
       ],
     ),
   );
 }
 
 class _PropertyPreferencesSheet extends StatefulWidget {
-  const _PropertyPreferencesSheet({required this.initialValue});
+  const _PropertyPreferencesSheet({
+    required this.initialValue,
+  });
 
   final UserPreferences initialValue;
 
@@ -708,53 +770,374 @@ class _PropertyPreferencesSheet extends StatefulWidget {
 
 class _PropertyPreferencesSheetState
     extends State<_PropertyPreferencesSheet> {
-  static const double _minimumBudget = 0;
+  static const double _minimumBudget = 350000;
   static const double _maximumBudget = 1600000;
-  static const int _budgetDivisions = 32;
+  static const int _budgetDivisions = 25;
 
+  bool _seeded = false;
+
+  late double maximumBudget;
   late String selectedState;
   late String selectedDistrict;
   late String propertyType;
-  late RangeValues budgetRange;
 
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialValue;
-    selectedState =
-        PropertyPreferenceOptions.states.contains(initial.preferredState)
-        ? initial.preferredState
-        : '';
-    final districts = PropertyPreferenceOptions.districtsFor(selectedState);
-    selectedDistrict = districts.contains(initial.preferredDistrict)
-        ? initial.preferredDistrict
-        : '';
-    propertyType =
-        PropertyPreferenceOptions.propertyTypes.contains(initial.propertyType)
-        ? initial.propertyType
-        : 'Any';
 
-    final minimum = initial.minimumBudget
+    final initial = widget.initialValue;
+
+    final savedMaximum = initial.maximumBudget > 0
+        ? initial.maximumBudget
+        : initial.budget;
+
+    maximumBudget = savedMaximum
         .clamp(_minimumBudget, _maximumBudget)
         .toDouble();
-    final maximum = initial.maximumBudget
-        .clamp(_minimumBudget, _maximumBudget)
-        .toDouble();
-    budgetRange = RangeValues(
-      minimum <= maximum ? minimum : maximum,
-      maximum,
+
+    selectedState = initial.preferredState.trim();
+    selectedDistrict = initial.preferredDistrict.trim();
+    propertyType = initial.propertyType.trim().isEmpty
+        ? 'Any'
+        : initial.propertyType.trim();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_seeded) return;
+
+    final state = AppScope.of(context);
+
+    final states = _availableStates(
+      state: state,
+      targetBudget: maximumBudget,
     );
+
+    if (selectedState.isNotEmpty) {
+      String? canonicalState;
+
+      for (final value in states) {
+        if (_normaliseProfileLocation(value) ==
+            _normaliseProfileLocation(selectedState)) {
+          canonicalState = value;
+          break;
+        }
+      }
+
+      if (canonicalState == null) {
+        selectedState = '';
+        selectedDistrict = '';
+        propertyType = 'Any';
+      } else {
+        selectedState = canonicalState;
+      }
+    }
+
+    if (selectedState.isNotEmpty &&
+        selectedDistrict.isNotEmpty) {
+      final areas = _availableAreas(
+        state: state,
+        targetBudget: maximumBudget,
+        targetState: selectedState,
+      );
+
+      AreaData? canonicalArea;
+
+      for (final area in areas) {
+        if (_normaliseProfileLocation(area.name) ==
+            _normaliseProfileLocation(selectedDistrict)) {
+          canonicalArea = area;
+          break;
+        }
+      }
+
+      if (canonicalArea == null) {
+        selectedDistrict = '';
+        propertyType = 'Any';
+      } else {
+        selectedDistrict = canonicalArea.name;
+      }
+    }
+
+    if (selectedDistrict.isNotEmpty &&
+        propertyType != 'Any') {
+      final selectedAreaId = _areaIdForSelection(
+        state: state,
+        targetState: selectedState,
+        targetDistrict: selectedDistrict,
+      );
+
+      final types = _availablePropertyTypes(
+        state: state,
+        targetBudget: maximumBudget,
+        targetAreaId: selectedAreaId,
+      );
+
+      if (!types.contains(propertyType)) {
+        propertyType = 'Any';
+      }
+    }
+
+    _seeded = true;
+  }
+
+  List<String> _availableStates({
+    required AppState state,
+    required double targetBudget,
+  }) {
+    final validAreaIds =
+    state.areas.map((area) => area.id).toSet();
+
+    final areaIdsWithProperties =
+    _profileAdvisorProperties(state)
+        .where((property) {
+      final price = property.price;
+
+      return price != null &&
+          price <= targetBudget &&
+          validAreaIds.contains(property.areaId);
+    })
+        .map((property) => property.areaId)
+        .toSet();
+
+    final states = state.areas
+        .where(
+          (area) => areaIdsWithProperties.contains(area.id),
+    )
+        .map((area) => area.state.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    return states;
+  }
+
+  List<AreaData> _availableAreas({
+    required AppState state,
+    required double targetBudget,
+    required String targetState,
+  }) {
+    if (targetState.isEmpty) {
+      return const [];
+    }
+
+    final validAreaIds =
+    state.areas.map((area) => area.id).toSet();
+
+    final areaIdsWithProperties =
+    _profileAdvisorProperties(state)
+        .where((property) {
+      final price = property.price;
+
+      return price != null &&
+          price <= targetBudget &&
+          validAreaIds.contains(property.areaId);
+    })
+        .map((property) => property.areaId)
+        .toSet();
+
+    final areas = state.areas
+        .where(
+          (area) =>
+      area.state == targetState &&
+          areaIdsWithProperties.contains(area.id),
+    )
+        .toList()
+      ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(
+          b.name.toLowerCase(),
+        ),
+      );
+
+    return areas;
+  }
+
+  String _areaIdForSelection({
+    required AppState state,
+    required String targetState,
+    required String targetDistrict,
+  }) {
+    if (targetState.isEmpty ||
+        targetDistrict.isEmpty) {
+      return 'any';
+    }
+
+    for (final area in state.areas) {
+      final sameState =
+          _normaliseProfileLocation(area.state) ==
+              _normaliseProfileLocation(targetState);
+
+      final sameDistrict =
+          _normaliseProfileLocation(area.name) ==
+              _normaliseProfileLocation(targetDistrict);
+
+      if (sameState && sameDistrict) {
+        return area.id;
+      }
+    }
+
+    return 'any';
+  }
+
+  List<String> _availablePropertyTypes({
+    required AppState state,
+    required double targetBudget,
+    required String targetAreaId,
+  }) {
+    if (targetAreaId == 'any') {
+      return const [];
+    }
+
+    final types = _profileAdvisorProperties(state)
+        .where((property) {
+      final price = property.price;
+
+      return price != null &&
+          price <= targetBudget &&
+          property.areaId == targetAreaId;
+    })
+        .expand(
+          (property) => property.normalizedPropertyTypes,
+    )
+        .toSet()
+        .toList()
+      ..sort();
+
+    return types;
+  }
+
+  void _changeBudget(
+      AppState state,
+      double value,
+      ) {
+    setState(() {
+      maximumBudget = value;
+
+      final states = _availableStates(
+        state: state,
+        targetBudget: value,
+      );
+
+      if (selectedState.isNotEmpty &&
+          !states.contains(selectedState)) {
+        selectedState = '';
+        selectedDistrict = '';
+        propertyType = 'Any';
+        return;
+      }
+
+      if (selectedState.isNotEmpty &&
+          selectedDistrict.isNotEmpty) {
+        final areas = _availableAreas(
+          state: state,
+          targetBudget: value,
+          targetState: selectedState,
+        );
+
+        final areaExists = areas.any(
+              (area) =>
+          _normaliseProfileLocation(area.name) ==
+              _normaliseProfileLocation(selectedDistrict),
+        );
+
+        if (!areaExists) {
+          selectedDistrict = '';
+          propertyType = 'Any';
+          return;
+        }
+
+        final areaId = _areaIdForSelection(
+          state: state,
+          targetState: selectedState,
+          targetDistrict: selectedDistrict,
+        );
+
+        final types = _availablePropertyTypes(
+          state: state,
+          targetBudget: value,
+          targetAreaId: areaId,
+        );
+
+        if (propertyType != 'Any' &&
+            !types.contains(propertyType)) {
+          propertyType = 'Any';
+        }
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final districts = PropertyPreferenceOptions.districtsFor(selectedState);
+    final state = AppScope.of(context);
+
+    final availableStates = _availableStates(
+      state: state,
+      targetBudget: maximumBudget,
+    );
+
+    String effectiveState = '';
+
+    if (selectedState.isNotEmpty) {
+      for (final value in availableStates) {
+        if (_normaliseProfileLocation(value) ==
+            _normaliseProfileLocation(selectedState)) {
+          effectiveState = value;
+          break;
+        }
+      }
+    }
+
+    final availableAreas = _availableAreas(
+      state: state,
+      targetBudget: maximumBudget,
+      targetState: effectiveState,
+    );
+
+    String effectiveDistrict = '';
+
+    if (selectedDistrict.isNotEmpty) {
+      for (final area in availableAreas) {
+        if (_normaliseProfileLocation(area.name) ==
+            _normaliseProfileLocation(selectedDistrict)) {
+          effectiveDistrict = area.name;
+          break;
+        }
+      }
+    }
+
+    final selectedAreaId = _areaIdForSelection(
+      state: state,
+      targetState: effectiveState,
+      targetDistrict: effectiveDistrict,
+    );
+
+    final availablePropertyTypes =
+    _availablePropertyTypes(
+      state: state,
+      targetBudget: maximumBudget,
+      targetAreaId: selectedAreaId,
+    );
+
+    final effectivePropertyType =
+    propertyType == 'Any' ||
+        availablePropertyTypes.contains(propertyType)
+        ? propertyType
+        : 'Any';
+
     return FractionallySizedBox(
       heightFactor: 0.9,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
+          padding: const EdgeInsets.fromLTRB(
+            24,
+            18,
+            24,
+            16,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -763,145 +1146,221 @@ class _PropertyPreferencesSheetState
                   Expanded(
                     child: Text(
                       'Property preferences',
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge,
                     ),
                   ),
                   IconButton(
                     tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () =>
+                        Navigator.of(context).pop(),
                     icon: const Icon(Icons.close),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 18),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    crossAxisAlignment:
+                    CrossAxisAlignment.stretch,
                     children: [
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedState,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Preferred state',
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('Any state'),
+                      Row(
+                        children: [
+                          Text(
+                            'Maximum budget',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium,
                           ),
-                          ...PropertyPreferenceOptions.states.map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value),
+                          const Spacer(),
+                          Text(
+                            formatRinggit(maximumBudget),
+                            style: const TextStyle(
+                              color: AppTheme.blue,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ],
-                        onChanged: (value) => setState(() {
-                          selectedState = value ?? '';
-                          selectedDistrict = '';
-                        }),
                       ),
-                      const SizedBox(height: 14),
-                      DropdownButtonFormField<String>(
-                        key: ValueKey(selectedState),
-                        initialValue: selectedDistrict,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Preferred district',
+                      Slider(
+                        min: _minimumBudget,
+                        max: _maximumBudget,
+                        divisions: _budgetDivisions,
+                        value: maximumBudget,
+                        onChanged: (value) =>
+                            _changeBudget(state, value),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 4,
                         ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('Any district'),
-                          ),
-                          ...districts.map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value),
-                            ),
-                          ),
-                        ],
-                        onChanged: selectedState.isEmpty
-                            ? null
-                            : (value) => setState(
-                                () => selectedDistrict = value ?? '',
+                        child: Row(
+                          mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'RM 350,000',
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 11,
                               ),
+                            ),
+                            Text(
+                              'RM 1,600,000',
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child:
+                            DropdownButtonFormField<String>(
+                              key: ValueKey(
+                                'profile-state-$effectiveState-${maximumBudget.round()}',
+                              ),
+                              initialValue: effectiveState,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'State',
+                              ),
+                              items: [
+                                const DropdownMenuItem(
+                                  value: '',
+                                  child: Text(
+                                    'Any state',
+                                    maxLines: 1,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ...availableStates.map(
+                                      (value) =>
+                                      DropdownMenuItem(
+                                        value: value,
+                                        child: Text(
+                                          value,
+                                          maxLines: 1,
+                                          overflow:
+                                          TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  selectedState =
+                                      value ?? '';
+                                  selectedDistrict = '';
+                                  propertyType = 'Any';
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child:
+                            DropdownButtonFormField<String>(
+                              key: ValueKey(
+                                'profile-area-$effectiveDistrict-$effectiveState-${maximumBudget.round()}',
+                              ),
+                              initialValue:
+                              effectiveDistrict,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Area',
+                              ),
+                              items: [
+                                DropdownMenuItem(
+                                  value: '',
+                                  child: Text(
+                                    effectiveState.isEmpty
+                                        ? 'Select state first'
+                                        : 'Select area',
+                                    maxLines: 1,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ...availableAreas.map(
+                                      (area) =>
+                                      DropdownMenuItem<String>(
+                                        value: area.name,
+                                        child: Text(
+                                          area.name,
+                                          maxLines: 1,
+                                          overflow:
+                                          TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                ),
+                              ],
+                              onChanged: effectiveState.isEmpty
+                                  ? null
+                                  : (value) {
+                                setState(() {
+                                  selectedDistrict =
+                                      value ?? '';
+                                  propertyType = 'Any';
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: propertyType,
+                        key: ValueKey(
+                          'profile-type-$effectivePropertyType-$selectedAreaId-${maximumBudget.round()}',
+                        ),
+                        initialValue:
+                        effectivePropertyType,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Property type',
                         ),
-                        items: PropertyPreferenceOptions.propertyTypes
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) => setState(
-                          () => propertyType = value ?? 'Any',
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Preferred budget range',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _BudgetValue(
-                              label: 'Minimum',
-                              value: budgetRange.start,
+                        items: [
+                          DropdownMenuItem(
+                            value: 'Any',
+                            child: Text(
+                              selectedAreaId == 'any'
+                                  ? 'Select area first'
+                                  : 'Any',
+                              maxLines: 1,
+                              overflow:
+                              TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _BudgetValue(
-                              label: 'Maximum',
-                              value: budgetRange.end,
-                              alignEnd: true,
-                            ),
+                          ...availablePropertyTypes.map(
+                                (value) =>
+                                DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(
+                                    value,
+                                    maxLines: 1,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                  ),
+                                ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      RangeSlider(
-                        min: _minimumBudget,
-                        max: _maximumBudget,
-                        divisions: _budgetDivisions,
-                        values: budgetRange,
-                        labels: RangeLabels(
-                          formatRinggit(budgetRange.start),
-                          formatRinggit(budgetRange.end),
-                        ),
-                        onChanged: (value) =>
-                            setState(() => budgetRange = value),
-                      ),
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'RM 0',
-                            style: TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 11,
-                            ),
-                          ),
-                          Text(
-                            'RM 1.6M',
-                            style: TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                        onChanged: selectedAreaId == 'any'
+                            ? null
+                            : (value) {
+                          setState(() {
+                            propertyType =
+                                value ?? 'Any';
+                          });
+                        },
                       ),
                     ],
                   ),
@@ -913,9 +1372,11 @@ class _PropertyPreferencesSheetState
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+                        minimumSize:
+                        const Size.fromHeight(48),
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () =>
+                          Navigator.of(context).pop(),
                       child: const Text('Cancel'),
                     ),
                   ),
@@ -923,21 +1384,49 @@ class _PropertyPreferencesSheetState
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+                        minimumSize:
+                        const Size.fromHeight(48),
                       ),
                       onPressed: () {
+                        final finalState = effectiveState;
+                        final finalDistrict =
+                            effectiveDistrict;
+                        final finalAreaId =
+                        _areaIdForSelection(
+                          state: state,
+                          targetState: finalState,
+                          targetDistrict:
+                          finalDistrict,
+                        );
+
+                        final hiddenMinimumBudget =
+                        widget.initialValue.minimumBudget
+                            .clamp(
+                          0.0,
+                          maximumBudget,
+                        )
+                            .toDouble();
+
                         Navigator.of(context).pop(
                           widget.initialValue.copyWith(
-                            preferredState: selectedState,
-                            preferredDistrict: selectedDistrict,
-                            propertyType: propertyType,
-                            minimumBudget: budgetRange.start,
-                            maximumBudget: budgetRange.end,
-                            budget: budgetRange.end,
+                            preferredState: finalState,
+                            preferredDistrict:
+                            finalDistrict,
+                            preferredAreaId:
+                            finalAreaId,
+                            propertyType:
+                            effectivePropertyType,
+                            minimumBudget:
+                            hiddenMinimumBudget,
+                            maximumBudget:
+                            maximumBudget,
+                            budget: maximumBudget,
                           ),
                         );
                       },
-                      child: const Text('Save preferences'),
+                      child: const Text(
+                        'Save preferences',
+                      ),
                     ),
                   ),
                 ],
@@ -949,36 +1438,3 @@ class _PropertyPreferencesSheetState
     );
   }
 }
-
-class _BudgetValue extends StatelessWidget {
-  const _BudgetValue({
-    required this.label,
-    required this.value,
-    this.alignEnd = false,
-  });
-
-  final String label;
-  final double value;
-  final bool alignEnd;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment:
-        alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-    children: [
-      Text(
-        label,
-        style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-      ),
-      const SizedBox(height: 3),
-      Text(
-        formatRinggit(value),
-        style: const TextStyle(
-          color: AppTheme.blue,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    ],
-  );
-}
-

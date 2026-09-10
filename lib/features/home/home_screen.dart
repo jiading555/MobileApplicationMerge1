@@ -44,7 +44,7 @@ class HomeScreen extends StatelessWidget {
                         final columns = constraints.maxWidth >= 900 ? 4 : 2;
                         final width =
                             (constraints.maxWidth - (columns - 1) * 12) /
-                            columns;
+                                columns;
                         return Wrap(
                           spacing: 12,
                           runSpacing: 12,
@@ -96,7 +96,7 @@ class HomeScreen extends StatelessWidget {
                     const SectionHeader(
                       title: 'Trending areas',
                       subtitle:
-                          'Ranked by the price-growth signal in this snapshot',
+                      'Ranked by the price-growth signal in this snapshot',
                     ),
                     const SizedBox(height: 14),
                     SizedBox(
@@ -120,7 +120,7 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 30),
                     SectionHeader(
                       title: 'Recommended for you',
-                      subtitle: 'Based on your current own-stay preferences',
+                      subtitle: 'Based on your current property preferences',
                       actionLabel: 'Ask advisor',
                       onAction: () => state.selectDestination(3),
                     ),
@@ -132,15 +132,15 @@ class HomeScreen extends StatelessWidget {
                             children: featured
                                 .map(
                                   (property) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: PropertyCard(
-                                      property: property,
-                                      compact: true,
-                                      onTap: () =>
-                                          _openProperty(context, property.id),
-                                    ),
-                                  ),
-                                )
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: PropertyCard(
+                                  property: property,
+                                  compact: true,
+                                  onTap: () =>
+                                      _openProperty(context, property.id),
+                                ),
+                              ),
+                            )
                                 .toList(),
                           );
                         }
@@ -149,14 +149,14 @@ class HomeScreen extends StatelessWidget {
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: constraints.maxWidth >= 1050
-                                    ? 4
-                                    : 2,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                mainAxisExtent: 370,
-                              ),
+                          SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: constraints.maxWidth >= 1050
+                                ? 4
+                                : 2,
+                            crossAxisSpacing: 14,
+                            mainAxisSpacing: 14,
+                            mainAxisExtent: 370,
+                          ),
                           itemBuilder: (context, index) => PropertyCard(
                             property: featured[index],
                             onTap: () =>
@@ -271,14 +271,12 @@ class _ModuleHub extends StatelessWidget {
         subtitle: 'Search by area, address, type and budget',
         icon: Icons.apartment_rounded,
         destination: 1,
-        highlighted: true,
       ),
       _ModuleEntry(
         title: 'Map & Facilities',
         subtitle: 'Inspect locations with nearby amenities',
         icon: Icons.map_rounded,
         destination: 2,
-        highlighted: true,
       ),
       _ModuleEntry(
         title: 'Smart Advisor',
@@ -299,10 +297,14 @@ class _ModuleHub extends StatelessWidget {
         destination: 5,
       ),
     ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('App hub', style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          'App hub',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 5),
         const Text(
           'Jump into each module from one place. Property and location tools use local sample data for this build.',
@@ -316,20 +318,26 @@ class _ModuleHub extends StatelessWidget {
                 : constraints.maxWidth >= 640
                 ? 2
                 : 1;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+
+            final width =
+                (constraints.maxWidth -
+                    (columns - 1) * 12) /
+                    columns;
+
             return Wrap(
               spacing: 12,
               runSpacing: 12,
               children: modules
                   .map(
                     (module) => SizedBox(
-                      width: width,
-                      child: _ModuleTile(
-                        module: module,
-                        onTap: () => onSelect(module.destination),
-                      ),
-                    ),
-                  )
+                  width: width,
+                  child: _ModuleTile(
+                    module: module,
+                    onTap: () =>
+                        onSelect(module.destination),
+                  ),
+                ),
+              )
                   .toList(),
             );
           },
@@ -340,14 +348,16 @@ class _ModuleHub extends StatelessWidget {
 }
 
 class _ModuleTile extends StatelessWidget {
-  const _ModuleTile({required this.module, required this.onTap});
+  const _ModuleTile({
+    required this.module,
+    required this.onTap,
+  });
 
   final _ModuleEntry module;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final color = module.highlighted ? AppTheme.blue : AppTheme.ink;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(8),
@@ -355,46 +365,63 @@ class _ModuleTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 118),
+          constraints: const BoxConstraints(
+            minHeight: 118,
+          ),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: module.highlighted
-                  ? const Color(0xFFB7D6FF)
-                  : const Color(0xFFE5EAF1),
+              color: const Color(0xFFB7D6FF),
             ),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+            CrossAxisAlignment.start,
             children: [
               Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.blue.withValues(
+                    alpha: 0.10,
+                  ),
+                  borderRadius:
+                  BorderRadius.circular(8),
                 ),
-                child: Icon(module.icon, color: color),
+                child: Icon(
+                  module.icon,
+                  color: AppTheme.blue,
+                ),
               ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                  CrossAxisAlignment.start,
                   children: [
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                      CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Text(
                             module.title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                              color:
+                              AppTheme.blue,
+                              fontWeight:
+                              FontWeight.w800,
+                            ),
                           ),
                         ),
                         const Icon(
                           Icons.arrow_forward_rounded,
                           size: 18,
-                          color: AppTheme.muted,
+                          color: AppTheme.blue,
                         ),
                       ],
                     ),
@@ -406,17 +433,6 @@ class _ModuleTile extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
-                    if (module.highlighted) ...[
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Area module',
-                        style: TextStyle(
-                          color: AppTheme.blue,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -434,14 +450,12 @@ class _ModuleEntry {
     required this.subtitle,
     required this.icon,
     required this.destination,
-    this.highlighted = false,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final int destination;
-  final bool highlighted;
 }
 
 class _AreaCard extends StatelessWidget {
