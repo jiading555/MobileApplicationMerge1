@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_property_advisor/app/app_scope.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
+import 'package:smart_property_advisor/core/theme/app_theme.dart';
 import 'package:smart_property_advisor/core/utils/location_normalizer.dart';
 import 'package:smart_property_advisor/features/search/property_search_screen.dart';
 import 'package:smart_property_advisor/models/property.dart';
@@ -52,6 +53,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
         home: AppScope(notifier: state, child: const PropertySearchScreen()),
       ),
     );
@@ -149,6 +151,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
           home: AppScope(notifier: state, child: const PropertySearchScreen()),
         ),
       );
@@ -246,6 +249,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
         home: AppScope(notifier: state, child: const PropertySearchScreen()),
       ),
     );
@@ -705,6 +709,52 @@ void main() {
     expect(find.text('Residensi Landscape 0'), findsOneWidget);
   });
 
+  testWidgets('tablet search summary keeps source label trailing aligned', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 600);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.isUsingCloudProperties = true;
+    state.properties = [
+      for (var index = 0; index < 206; index += 1)
+        _teduhProperty(
+          id: 'summary_$index',
+          name: 'Residensi Summary $index',
+          state: 'Selangor',
+          district: 'Petaling',
+          scheme: 'Rumah Selangorku',
+          price: 300000 + index,
+          unitTypes: const ['APARTMEN'],
+        ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    final resultCount = find.text('206 properties found');
+    final source = find.text('Source: Supabase / TEDUH');
+
+    expect(tester.takeException(), isNull);
+    expect(resultCount, findsOneWidget);
+    expect(source, findsOneWidget);
+
+    final resultRect = tester.getRect(resultCount);
+    final sourceRect = tester.getRect(source);
+    final sourceGroupRect = tester.getRect(
+      find.byKey(const ValueKey('property-search-source-summary')),
+    );
+
+    expect(resultRect.left, lessThanOrEqualTo(24));
+    expect(sourceRect.left, greaterThan(resultRect.right));
+    expect(sourceGroupRect.right, greaterThanOrEqualTo(876));
+  });
+
   testWidgets('Property search cards do not use excessive tablet grid height', (
     tester,
   ) async {
@@ -929,6 +979,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
           home: AppScope(notifier: state, child: const PropertySearchScreen()),
         ),
       );
@@ -963,6 +1014,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
         home: AppScope(notifier: state, child: const PropertySearchScreen()),
       ),
     );
@@ -1000,7 +1052,10 @@ Future<void> _pumpSearch(WidgetTester tester, AppState state) {
   return tester.pumpWidget(
     AppScope(
       notifier: state,
-      child: const MaterialApp(home: PropertySearchScreen()),
+      child: MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
+        home: const PropertySearchScreen(),
+      ),
     ),
   );
 }

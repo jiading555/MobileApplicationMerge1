@@ -141,6 +141,9 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = ResponsiveLayout.isTablet(context);
+          final sidePanelWidth = ResponsiveLayout.isDesktop(context)
+              ? 360.0
+              : 340.0;
           final compactLandscapePhone =
               ResponsiveLayout.isCompactLandscapePhone(context);
           final map = _OpenStreetMapPropertyMap(
@@ -164,14 +167,22 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
             children: [
               Padding(
                 padding: compactLandscapePhone
-                    ? const EdgeInsets.fromLTRB(12, 4, 12, 8)
-                    : const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                    ? const EdgeInsets.fromLTRB(10, 2, 10, 6)
+                    : const EdgeInsets.fromLTRB(16, 4, 16, 10),
                 child: DropdownButtonFormField<String>(
                   initialValue: selectedAreaId,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.location_on_outlined),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.location_on_outlined),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: compactLandscapePhone ? 40 : 44,
+                      minHeight: compactLandscapePhone ? 40 : 44,
+                    ),
                     labelText: 'Explore area',
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: compactLandscapePhone ? 10 : 12,
+                    ),
                   ),
                   isExpanded: true,
                   items: [
@@ -190,7 +201,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                     ? Row(
                         children: [
                           Expanded(flex: 7, child: map),
-                          SizedBox(width: 360, child: panel),
+                          SizedBox(width: sidePanelWidth, child: panel),
                         ],
                       )
                     : _PhoneMapLayout(
@@ -673,13 +684,13 @@ class _PhoneMapLayout extends StatelessWidget {
           return Stack(
             children: [
               Positioned.fill(child: map),
-              Positioned(
-                left: 10,
-                right: 10,
-                bottom: 10,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 112),
-                  child: panel,
+              Positioned.fill(
+                child: SafeArea(
+                  top: false,
+                  left: false,
+                  right: false,
+                  minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: Align(alignment: Alignment.bottomCenter, child: panel),
                 ),
               ),
             ],
@@ -723,60 +734,60 @@ class _LocationPanel extends StatelessWidget {
         elevation: 10,
         borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const actionMinWidth = 124.0;
+            final useHorizontalLayout =
+                constraints.maxWidth >= actionMinWidth + 180;
+            final details = _CompactPropertyDetails(property: property!);
+            final action = ConstrainedBox(
+              constraints: const BoxConstraints(
+                minWidth: actionMinWidth,
+                minHeight: 44,
+              ),
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(actionMinWidth, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        PropertyDetailScreen(propertyId: property!.id),
+                  ),
+                ),
+                child: const Text(
+                  'View Details',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            );
+
+            if (!useHorizontalLayout) {
+              return Padding(
+                padding: const EdgeInsets.all(10),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      property!.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      property!.address,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      _priceText(property!),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.green,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [details, const SizedBox(height: 7), action],
                 ),
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: details),
+                  const SizedBox(width: 10),
+                  action,
+                ],
               ),
-              const SizedBox(width: 10),
-              SizedBox(
-                height: 38,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          PropertyDetailScreen(propertyId: property!.id),
-                    ),
-                  ),
-                  child: const Text('View Details'),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       );
     }
@@ -784,7 +795,7 @@ class _LocationPanel extends StatelessWidget {
       color: Colors.white,
       elevation: 10,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -798,16 +809,16 @@ class _LocationPanel extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
-            PropertyArt(palette: property!.palette, height: 132),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+            PropertyArt(palette: property!.palette, height: 120),
+            const SizedBox(height: 12),
             Text(property!.name, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
             Text(
               property!.address,
               style: const TextStyle(color: AppTheme.muted),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 7),
             Text(
               _priceText(property!),
               style: const TextStyle(
@@ -816,12 +827,12 @@ class _LocationPanel extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             Text(
               'Area insights',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -839,7 +850,7 @@ class _LocationPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 7),
             Row(
               children: [
                 Expanded(
@@ -858,10 +869,10 @@ class _LocationPanel extends StatelessWidget {
               ],
             ),
             if (property!.facilities.isNotEmpty) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Wrap(
-                spacing: 7,
-                runSpacing: 7,
+                spacing: 6,
+                runSpacing: 6,
                 children: property!.facilities
                     .map(
                       (item) => Chip(
@@ -871,10 +882,16 @@ class _LocationPanel extends StatelessWidget {
                     .toList(),
               ),
             ],
-            const SizedBox(height: 15),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) =>
@@ -887,6 +904,46 @@ class _LocationPanel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CompactPropertyDetails extends StatelessWidget {
+  const _CompactPropertyDetails({required this.property});
+
+  final Property property;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          property.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          property.address,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _priceText(property),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppTheme.green,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -997,7 +1054,7 @@ class _MiniInsight extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(11),
+      padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
         color: AppTheme.canvas,
         borderRadius: BorderRadius.circular(8),
@@ -1009,7 +1066,7 @@ class _MiniInsight extends StatelessWidget {
             label,
             style: const TextStyle(color: AppTheme.muted, fontSize: 10),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
         ],
       ),

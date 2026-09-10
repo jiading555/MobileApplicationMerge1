@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:smart_property_advisor/app/app_scope.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
+import 'package:smart_property_advisor/core/theme/app_theme.dart';
 import 'package:smart_property_advisor/features/map/property_map_data.dart';
 import 'package:smart_property_advisor/features/map/property_map_screen.dart';
 import 'package:smart_property_advisor/features/search/property_detail_screen.dart';
@@ -216,6 +217,52 @@ void main() {
     expect(mapBox.height, greaterThan(previewBox.height * 2));
   });
 
+  for (final size in [const Size(780, 360), const Size(844, 390)]) {
+    testWidgets(
+      'landscape phone selected preview keeps View Details tappable at $size',
+      (tester) async {
+        const safePadding = EdgeInsets.only(bottom: 32);
+        await _pumpMapWithSideNavigationWidth(
+          tester,
+          size: size,
+          safePadding: safePadding,
+          state: _longLandscapeMapState(),
+        );
+
+        await tester.tap(find.text('RM 320K+'));
+        await tester.pump();
+
+        final preview = find.byKey(
+          const ValueKey('property-map-compact-preview'),
+        );
+        final viewDetails = find.widgetWithText(FilledButton, 'View Details');
+
+        expect(tester.takeException(), isNull);
+        expect(preview, findsOneWidget);
+        expect(find.textContaining('Residensi Petaling Two'), findsOneWidget);
+        expect(viewDetails, findsOneWidget);
+
+        final safeBottom = size.height - safePadding.bottom;
+        final previewRect = tester.getRect(preview);
+        final buttonRect = tester.getRect(viewDetails);
+
+        expect(previewRect.bottom, lessThanOrEqualTo(safeBottom));
+        expect(buttonRect.left, greaterThanOrEqualTo(0));
+        expect(buttonRect.right, lessThanOrEqualTo(size.width));
+        expect(buttonRect.bottom, lessThanOrEqualTo(safeBottom));
+
+        await tester.tap(viewDetails);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PropertyDetailScreen), findsOneWidget);
+        expect(
+          find.text('Residensi Petaling Two With A Long Official Project Name'),
+          findsOneWidget,
+        );
+      },
+    );
+  }
+
   for (final scenario in [
     _LocationScenario(
       name: 'location services disabled',
@@ -297,6 +344,7 @@ Future<void> _pumpMap(
     AppScope(
       notifier: state ?? _mapState(),
       child: MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
         home: PropertyMapScreen(
           useLiveMap: useLiveMap,
           locationClient: locationClient,
@@ -304,6 +352,43 @@ Future<void> _pumpMap(
           onMarkerDataRecomputed: onMarkerDataRecomputed,
           tileLayerBuilder: (_) =>
               const SizedBox.expand(key: ValueKey('test-tile-layer')),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
+Future<void> _pumpMapWithSideNavigationWidth(
+  WidgetTester tester, {
+  required Size size,
+  required EdgeInsets safePadding,
+  required AppState state,
+}) async {
+  await tester.binding.setSurfaceSize(size);
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+
+  await tester.pumpWidget(
+    AppScope(
+      notifier: state,
+      child: MaterialApp(
+        theme: AppTheme.light.copyWith(splashFactory: NoSplash.splashFactory),
+        builder: (context, child) => MediaQuery(
+          data: MediaQueryData(size: size, padding: safePadding),
+          child: child!,
+        ),
+        home: Row(
+          children: [
+            const SizedBox(width: 72),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: PropertyMapScreen(
+                locationClient: _FakeLocationClient.throwing(),
+                tileLayerBuilder: (_) =>
+                    const SizedBox.expand(key: ValueKey('test-tile-layer')),
+              ),
+            ),
+          ],
         ),
       ),
     ),
@@ -380,6 +465,35 @@ AppState _mapState() {
       longitude: 101.6,
       summary: 'Official housing project information sourced from TEDUH.',
       facilities: const ['Transit', 'Petaling'],
+      palette: 2,
+      source: 'TEDUH - Jabatan Perumahan Negara, KPKT',
+      sourceId: 'PETALING_2',
+      scheme: 'Rumah Selangorku',
+    ),
+  ];
+  return state;
+}
+
+AppState _longLandscapeMapState() {
+  final state = _mapState();
+  state.properties = [
+    state.properties.first,
+    const Property(
+      id: 'teduh_petaling_2',
+      name: 'Residensi Petaling Two With A Long Official Project Name',
+      areaId: 'selangor_petaling',
+      address:
+          'Persiaran Petaling Utama Near Transit And Community Facilities, Selangor',
+      type: 'Apartment',
+      tenure: 'Leasehold',
+      state: 'Selangor',
+      district: 'Petaling',
+      priceMin: 320000,
+      priceMax: 410000,
+      latitude: 3.1,
+      longitude: 101.6,
+      summary: 'Official housing project information sourced from TEDUH.',
+      facilities: ['Transit', 'Petaling'],
       palette: 2,
       source: 'TEDUH - Jabatan Perumahan Negara, KPKT',
       sourceId: 'PETALING_2',

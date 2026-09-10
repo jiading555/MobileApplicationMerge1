@@ -80,15 +80,15 @@ class _FullContent extends StatelessWidget {
           children: [
             PropertyArt(
               palette: property.palette,
-              height: enriched ? 122 : 164,
+              height: enriched ? 112 : 164,
             ),
             Positioned(
-              top: 12,
-              left: 12,
+              top: enriched ? 10 : 12,
+              left: enriched ? 10 : 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
+                padding: EdgeInsets.symmetric(
+                  horizontal: enriched ? 9 : 10,
+                  vertical: enriched ? 5 : 6,
                 ),
                 decoration: BoxDecoration(
                   color: AppTheme.green,
@@ -105,8 +105,8 @@ class _FullContent extends StatelessWidget {
               ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
+              top: enriched ? 6 : 8,
+              right: enriched ? 6 : 8,
               child: _FavouriteButton(
                 propertyId: property.id,
                 favouriteIdsListenable: favouriteIdsListenable,
@@ -117,7 +117,7 @@ class _FullContent extends StatelessWidget {
           ],
         ),
         Padding(
-          padding: EdgeInsets.all(enriched ? 12 : 15),
+          padding: EdgeInsets.all(enriched ? 11 : 15),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -127,14 +127,14 @@ class _FullContent extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: 3),
+              SizedBox(height: enriched ? 2 : 3),
               Text(
                 property.address,
                 maxLines: enriched ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppTheme.muted, fontSize: 12),
               ),
-              SizedBox(height: enriched ? 8 : 12),
+              SizedBox(height: enriched ? 6 : 12),
               Text(
                 _priceText(property),
                 style: TextStyle(
@@ -143,14 +143,14 @@ class _FullContent extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              SizedBox(height: enriched ? 7 : 10),
+              SizedBox(height: enriched ? 6 : 10),
               _Facts(property: property),
               if (showPropertyInfo) ...[
-                const SizedBox(height: 7),
+                const SizedBox(height: 6),
                 _PropertyInfo(property: property),
               ],
               if (showDetailsAction) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 7),
                 _DetailsAction(onTap: onTap),
               ],
             ],
@@ -180,19 +180,23 @@ class _CompactContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enriched = showPropertyInfo || showDetailsAction;
     return Padding(
-      padding: const EdgeInsets.all(10),
+      padding: EdgeInsets.all(enriched ? 8 : 10),
       child: Row(
+        crossAxisAlignment: enriched
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 112,
+            width: enriched ? 104 : 112,
             child: PropertyArt(
               palette: property.palette,
-              height: 112,
+              height: enriched ? 104 : 112,
               borderRadius: BorderRadius.circular(8),
             ),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: enriched ? 12 : 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,14 +207,14 @@ class _CompactContent extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 3),
+                SizedBox(height: enriched ? 2 : 3),
                 Text(
                   property.address,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: enriched ? 6 : 8),
                 Text(
                   _priceText(property),
                   maxLines: 1,
@@ -220,23 +224,26 @@ class _CompactContent extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 7),
+                SizedBox(height: enriched ? 6 : 7),
                 _Facts(property: property, compact: true),
                 if (showPropertyInfo) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   _PropertyInfo(property: property, compact: true),
                 ],
                 if (showDetailsAction) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 7),
                   _DetailsAction(onTap: onTap, compact: true),
                 ],
               ],
             ),
           ),
-          _FavouriteButton(
-            propertyId: property.id,
-            favouriteIdsListenable: favouriteIdsListenable,
-            onToggleFavourite: onToggleFavourite,
+          SizedBox.square(
+            dimension: enriched ? 44 : 48,
+            child: _FavouriteButton(
+              propertyId: property.id,
+              favouriteIdsListenable: favouriteIdsListenable,
+              onToggleFavourite: onToggleFavourite,
+            ),
           ),
         ],
       ),
@@ -312,8 +319,8 @@ class _PropertyInfo extends StatelessWidget {
     }
 
     return Wrap(
-      spacing: 12,
-      runSpacing: 5,
+      spacing: compact ? 8 : 10,
+      runSpacing: 4,
       children: entries
           .map((entry) => _InfoLine(entry: entry, compact: compact))
           .toList(),
@@ -339,10 +346,10 @@ class _InfoLine extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(entry.icon, size: 15, color: AppTheme.muted),
-        const SizedBox(width: 5),
+        Icon(entry.icon, size: compact ? 14 : 15, color: AppTheme.muted),
+        const SizedBox(width: 4),
         ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: compact ? 108 : 190),
+          constraints: BoxConstraints(maxWidth: compact ? 104 : 178),
           child: Text(
             entry.label,
             maxLines: 1,
@@ -369,8 +376,11 @@ class _DetailsAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: compact ? null : double.infinity,
-      height: compact ? 42 : 40,
+      height: compact ? 40 : 38,
       child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 16),
+        ),
         onPressed: onTap,
         icon: const Icon(Icons.arrow_forward_rounded, size: 18),
         label: const Text('View Details'),
@@ -388,8 +398,8 @@ class _Facts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 5,
+      spacing: compact ? 8 : 9,
+      runSpacing: 4,
       children: [
         if (property.bedrooms != null)
           _Fact(icon: Icons.bed_rounded, label: '${property.bedrooms}'),
@@ -406,7 +416,7 @@ class _Facts extends StatelessWidget {
           _Fact(
             icon: Icons.account_balance_outlined,
             label: _sourceFactLabel(property),
-            maxWidth: compact ? 130 : null,
+            maxWidth: compact ? 120 : null,
           ),
       ],
     );

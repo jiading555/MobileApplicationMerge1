@@ -88,6 +88,14 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
         ? 'Source: Supabase / TEDUH'
         : 'Source: official data unavailable';
     final compactHeight = ResponsiveLayout.isCompactLandscapePhone(context);
+    final tablet = ResponsiveLayout.isTablet(context);
+    final pagePadding = compactHeight
+        ? const EdgeInsets.fromLTRB(14, 6, 14, 10)
+        : tablet
+        ? const EdgeInsets.fromLTRB(18, 12, 18, 20)
+        : const EdgeInsets.fromLTRB(18, 14, 18, 22);
+    final controlGap = compactHeight ? 8.0 : 10.0;
+    final sectionGap = compactHeight ? 8.0 : 12.0;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: compactHeight ? 48 : null,
@@ -102,9 +110,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
         ],
       ),
       body: PageContainer(
-        padding: compactHeight
-            ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
-            : const EdgeInsets.fromLTRB(20, 18, 20, 28),
+        padding: pagePadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -113,7 +119,20 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Search locations, projects, property type...',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: compactHeight ? 10 : 12,
+                ),
                 prefixIcon: const Icon(Icons.search_rounded),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: compactHeight ? 40 : 44,
+                  minHeight: compactHeight ? 40 : 44,
+                ),
+                suffixIconConstraints: BoxConstraints(
+                  minWidth: compactHeight ? 40 : 44,
+                  minHeight: compactHeight ? 40 : 44,
+                ),
                 suffixIcon: ValueListenableBuilder<TextEditingValue>(
                   valueListenable: searchController,
                   builder: (context, value, _) {
@@ -128,7 +147,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 ),
               ),
             ),
-            SizedBox(height: compactHeight ? 10 : 14),
+            SizedBox(height: controlGap),
             SingleChildScrollView(
               key: const ValueKey('property-filter-scroll-row'),
               scrollDirection: Axis.horizontal,
@@ -146,26 +165,26 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         )
                         .toList(),
                     value: selectedState,
-                    width: 168,
+                    width: 158,
                     selected: selectedState != 'Any',
                     onChanged: (value) => setState(() {
                       selectedState = value;
                       selectedAreaId = 'Any';
                     }),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: controlGap),
                   _FilterDropdown(
                     buttonKey: const ValueKey('property-filter-area-button'),
                     label: selectedAreaLabel,
                     options: areaValues,
                     value: selectedAreaId,
-                    width: 168,
+                    width: 158,
                     enabled: selectedState != 'Any',
                     selected: selectedAreaId != 'Any',
                     onChanged: (value) =>
                         setState(() => selectedAreaId = value),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: controlGap),
                   _FilterDropdown(
                     buttonKey: const ValueKey('property-filter-type-button'),
                     label: selectedType,
@@ -173,11 +192,11 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         .map((value) => _FilterOption(value, value))
                         .toList(),
                     value: selectedType,
-                    width: 178,
+                    width: 166,
                     selected: selectedType != PropertyTypeNormalizer.anyType,
                     onChanged: (value) => setState(() => selectedType = value),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: controlGap),
                   _FilterDropdown(
                     buttonKey: const ValueKey(
                       'property-filter-programme-button',
@@ -187,7 +206,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         .map((value) => _FilterOption(value, value))
                         .toList(),
                     value: selectedScheme,
-                    width: 202,
+                    width: 188,
                     selected: selectedScheme != SchemeNormalizer.anyScheme,
                     onChanged: (value) =>
                         setState(() => selectedScheme = value),
@@ -195,35 +214,12 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                 ],
               ),
             ),
-            SizedBox(height: compactHeight ? 10 : 18),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${results.length} properties found',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 16,
-                  color: AppTheme.muted,
-                ),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    sourceLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
-                ),
-              ],
+            SizedBox(height: sectionGap),
+            _ResultSummaryRow(
+              resultCount: results.length,
+              sourceLabel: sourceLabel,
             ),
-            SizedBox(height: compactHeight ? 8 : 12),
+            SizedBox(height: compactHeight ? 6 : 10),
             Expanded(
               child: results.isEmpty
                   ? const _NoResults()
@@ -233,7 +229,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                           return ListView.separated(
                             itemCount: results.length,
                             separatorBuilder: (_, _) =>
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                             itemBuilder: (context, index) => PropertyCard(
                               property: results[index],
                               compact: true,
@@ -253,9 +249,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: columns,
-                                    crossAxisSpacing: 14,
-                                    mainAxisSpacing: 14,
-                                    mainAxisExtent: 382,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                    mainAxisExtent: 356,
                                   ),
                               itemBuilder: (context, index) {
                                 final property = results[index];
@@ -514,6 +510,65 @@ class _FilterOption {
   final String label;
 }
 
+class _ResultSummaryRow extends StatelessWidget {
+  const _ResultSummaryRow({
+    required this.resultCount,
+    required this.sourceLabel,
+  });
+
+  final int resultCount;
+  final String sourceLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$resultCount properties found',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: Row(
+                key: const ValueKey('property-search-source-summary'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: AppTheme.muted,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      sourceLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FilterDropdown extends StatelessWidget {
   const _FilterDropdown({
     required this.buttonKey,
@@ -589,8 +644,8 @@ class _FilterButton extends StatelessWidget {
         : const Color(0xFFDCE3ED);
     return Container(
       width: width,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: enabled ? Colors.white : const Color(0xFFF4F7FB),
         border: Border.all(color: borderColor),
@@ -605,15 +660,15 @@ class _FilterButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: textColor,
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Icon(
             Icons.arrow_drop_down_rounded,
-            size: 20,
+            size: 19,
             color: enabled
                 ? (selected ? AppTheme.blue : Colors.black87)
                 : AppTheme.muted,
