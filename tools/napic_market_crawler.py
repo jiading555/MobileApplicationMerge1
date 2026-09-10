@@ -26,6 +26,14 @@ from bs4 import BeautifulSoup
 from openpyxl import load_workbook
 
 PUBLICATIONS_URL = "https://napic.jpph.gov.my/en/latest-publication"
+PRICE_PUBLICATIONS_URL = (
+    "https://napic.jpph.gov.my/en/archives/"
+    "harga-kediaman-sukuantahunan-terkini"
+)
+TRANSACTION_PUBLICATIONS_URL = (
+    "https://napic.jpph.gov.my/en/archives/"
+    "jadual-data-transaksi-harta-tanah"
+)
 ARCHIVED_PRICE_URLS = (
     "https://napic.jpph.gov.my/storage/app/media//3-penerbitan/Shahrul/"
     "Bahagian%20Pasaran%20Harta%20Tanah/Harga%20Kediaman%20Sukuan/"
@@ -151,22 +159,46 @@ def get_bytes(session: requests.Session, url: str) -> bytes:
     return response.content
 
 
-def discover_workbooks(session: requests.Session) -> tuple[str, dict[str, str]]:
-    response = session.get(PUBLICATIONS_URL, timeout=TIMEOUT)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    links = {
-        " ".join(link.get_text(" ", strip=True).split()): urljoin(
-            PUBLICATIONS_URL, link.get("href", "")
-        )
-        for link in soup.select("a[href]")
-    }
+def discover_workbooks(session: requests.Session) -> tuple[str | None, dict[str, str]]:
+    links = {}
+    for publication_url in (
+        PUBLICATIONS_URL,
+        PRICE_PUBLICATIONS_URL,
+        TRANSACTION_PUBLICATIONS_URL,
+    ):
+        try:
+            response = session.get(publication_url, timeout=TIMEOUT)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            links.update(
+                {
+                    " ".join(link.get_text(" ", strip=True).split()): urljoin(
+                        publication_url, link.get("href", "")
+                    )
+                    for link in soup.select("a[href]")
+                }
+            )
+        except Exception as error:
+            print(
+                f"warning: NAPIC publication page skipped "
+                f"({publication_url}): {error}",
+                file=sys.stderr,
+            )
+
     price_url = next(
-        (url for text, url in links.items() if "Quarterly Residential Price Tables" in text),
+        (
+            url
+            for text, url in links.items()
+            if "quarterly residential price tables" in normalise(text)
+        ),
         None,
     )
     if not price_url:
-        raise RuntimeError("NAPIC quarterly residential price workbook was not found.")
+        print(
+            "warning: latest NAPIC quarterly residential price workbook "
+            "was not found; archived price workbooks will still be processed",
+            file=sys.stderr,
+        )
 
     transaction_urls: dict[str, str] = {}
     for state, _ in TARGETS:
@@ -593,7 +625,10 @@ def main():
         tuple[str, str], dict[str, dict[str, dict[str, float]]]
     ] = {}
     successful_price_urls = []
-    for candidate_url in (*ARCHIVED_PRICE_URLS, price_url):
+    price_candidates = list(ARCHIVED_PRICE_URLS)
+    if price_url:
+        price_candidates.append(price_url)
+    for candidate_url in price_candidates:
         try:
             snapshot = price_indicators(get_bytes(session, candidate_url), TARGETS)
             successful_price_urls.append(candidate_url)
