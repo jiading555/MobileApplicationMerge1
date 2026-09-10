@@ -61,6 +61,8 @@ class AppState extends ChangeNotifier {
   bool isAccountBusy = false;
   bool registrationNeedsConfirmation = false;
   String? accountError;
+  bool isPasswordRecovery = false;
+  String? accountNotice;
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
 
@@ -256,7 +258,7 @@ class AppState extends ChangeNotifier {
       final response = await Supabase.instance.client.auth.signUp(
         email: email.trim(),
         password: password,
-        emailRedirectTo: SupabaseConfig.emailRedirectTo,
+        emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
         data: {'full_name': name.trim()},
       );
       final authUser = response.user;
@@ -290,6 +292,69 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> handleAuthDeepLink(Uri uri) async {
+    if (uri.scheme != 'smartpropertyadvisor') return;
+
+    if (uri.host == 'email-confirmed') {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (SupabaseConfig.isConfigured) {
+        await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      }
+      isPasswordRecovery = false;
+      isAuthenticated = false;
+      accountNotice = 'Email confirmed successfully. Please sign in.';
+      notifyListeners();
+      return;
+    }
+
+    if (uri.host == 'reset-password') {
+      isPasswordRecovery = true;
+      isAuthenticated = false;
+      accountNotice = null;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> updateRecoveredPassword({
+    required String password,
+    required String confirmation,
+  }) async {
+    final passwordError = AuthValidators.registrationPassword(password);
+    if (passwordError != null) return passwordError;
+    final confirmationError =
+        AuthValidators.confirmPassword(confirmation, password);
+    if (confirmationError != null) return confirmationError;
+
+    isAccountBusy = true;
+    notifyListeners();
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: password),
+      );
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      isPasswordRecovery = false;
+      isAuthenticated = false;
+      accountNotice = 'Password updated successfully. Please sign in.';
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Unable to update password. Please request a new reset link.';
+    } finally {
+      isAccountBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelPasswordRecovery() async {
+    if (SupabaseConfig.isConfigured) {
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+    }
+    isPasswordRecovery = false;
+    isAuthenticated = false;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     if (!user.isDemo && SupabaseConfig.isConfigured) {
       await Supabase.instance.client.auth.signOut();
@@ -307,7 +372,7 @@ class AppState extends ChangeNotifier {
       await Supabase.instance.client.auth.resend(
         type: OtpType.signup,
         email: email.trim(),
-        emailRedirectTo: SupabaseConfig.emailRedirectTo,
+        emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
       );
       return null;
     } on AuthException catch (error) {
@@ -452,7 +517,7 @@ class AppState extends ChangeNotifier {
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(
         email.trim(),
-        redirectTo: SupabaseConfig.emailRedirectTo,
+        redirectTo: SupabaseConfig.passwordRecoveryRedirectUrl,
       );
       return null;
     } on AuthException catch (error) {
