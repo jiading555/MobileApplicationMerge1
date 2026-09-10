@@ -939,7 +939,8 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
               price <= targetBudget &&
               _propertyAreas[property] != null;
         })
-        .map((property) => _propertyAreas[property]!.id)
+        .map((property) => _propertyAreas[property]?.id)
+        .whereType<String>()
         .toSet();
 
     final states =
@@ -971,7 +972,8 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
               price <= targetBudget &&
               _propertyAreas[property] != null;
         })
-        .map((property) => _propertyAreas[property]!.id)
+        .map((property) => _propertyAreas[property]?.id)
+        .whereType<String>()
         .toSet();
 
     final areas =
