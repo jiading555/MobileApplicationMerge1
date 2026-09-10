@@ -61,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accountNotice = AppScope.of(context).accountNotice;
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
@@ -86,6 +87,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                   child: AdvisorBrand(),
                                 ),
                               if (!wide) const SizedBox(height: 44),
+                              if (accountNotice != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE7F8EF),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    accountNotice,
+                                    style: const TextStyle(
+                                      color: Color(0xFF087A4B),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                              ],
                               Text(
                                 'Welcome back',
                                 style: Theme.of(
