@@ -390,6 +390,10 @@ class TeduhService {
       return (stateLookup[upper], null);
     }
 
+    if (LocationNormalizer.hasConflictingKnownStates(text)) {
+      return (null, null);
+    }
+
     final parts = text
         .split(',')
         .map((part) => part.trim())
@@ -408,6 +412,9 @@ class TeduhService {
             : LocationNormalizer.nullableDisplayDistrictName(
                 parts[districtIndex],
               );
+        if (_districtConflictsWithState(district, state)) {
+          return (null, null);
+        }
         return (state, district);
       }
     }
@@ -419,10 +426,20 @@ class TeduhService {
           : LocationNormalizer.nullableDisplayDistrictName(
               suffixMatch.beforeState.split(',').last,
             );
+      if (_districtConflictsWithState(district, suffixMatch.state)) {
+        return (null, null);
+      }
       return (suffixMatch.state, district);
     }
 
     return (LocationNormalizer.nullableDisplayStateName(text), null);
+  }
+
+  bool _districtConflictsWithState(String? district, String state) {
+    final stateId = LocationNormalizer.canonicalStateId(state);
+    return LocationNormalizer.recognizedStateIds(
+      district,
+    ).any((districtStateId) => districtStateId != stateId);
   }
 
   List<Property> _buildProperties(

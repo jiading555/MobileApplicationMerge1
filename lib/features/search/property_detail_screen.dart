@@ -21,7 +21,7 @@ class PropertyDetailScreen extends StatelessWidget {
     final property = state.properties.firstWhere(
       (item) => item.id == propertyId,
     );
-    final area = state.areaFor(property.areaId);
+    final area = state.matchedAreaFor(property);
     PropertyRecommendation? recommendation;
     for (final item in state.recommendations) {
       if (item.property.id == property.id) {
@@ -32,12 +32,12 @@ class PropertyDetailScreen extends StatelessWidget {
     final pricePerSqft = property.pricePerSqft;
     final tenureText = _tenureText(property);
     final propertyTypeText = _propertyTypeText(property);
-    final hasMatchedAreaProfile = area.isGovernmentProfile;
+    final hasMatchedAreaProfile = area?.isGovernmentProfile ?? false;
     final hasAreaSignals =
-        area.safetyScore != null ||
-        area.infrastructureScore != null ||
-        area.priceGrowth != null ||
-        area.rentalYield != null;
+        area?.safetyScore != null ||
+        area?.infrastructureScore != null ||
+        area?.priceGrowth != null ||
+        area?.rentalYield != null;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Property details'),
@@ -250,7 +250,7 @@ class PropertyDetailScreen extends StatelessWidget {
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
                           children: [
-                            if (area.safetyScore != null)
+                            if (area!.safetyScore != null)
                               _Signal(
                                 label: 'Safety',
                                 value: _scoreText(area.safetyScore),
@@ -281,7 +281,7 @@ class PropertyDetailScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _AreaProfileCard(
                         property: property,
-                        areaName: '${area.name}, ${area.state}',
+                        areaName: '${area!.name}, ${area.state}',
                         population: area.population,
                         medianIncome: area.medianIncome,
                         schools: area.schools,

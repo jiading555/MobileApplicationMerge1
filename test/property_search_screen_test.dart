@@ -21,6 +21,7 @@ void main() {
         type: 'Condominium',
         tenure: 'Freehold',
         state: 'Kuala Lumpur',
+        district: 'Kuala Lumpur City',
         price: 500000,
         summary: 'sum',
         facilities: [],
@@ -376,6 +377,76 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('Kuala Lumpur area dropdown uses property localities only', (
+    tester,
+  ) async {
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'setiawangsa',
+        name: 'Residensi Setiawangsa',
+        state: 'Kuala Lumpur',
+        district: 'Setiawangsa',
+        scheme: 'Residensi Wilayah',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+        areaId: 'kuala_lumpur_w_p_kuala_lumpur',
+      ),
+      _teduhProperty(
+        id: 'cheras',
+        name: 'Residensi Cheras',
+        state: 'Kuala Lumpur',
+        district: 'Cheras',
+        scheme: 'Residensi Wilayah',
+        price: 320000,
+        unitTypes: const ['APARTMEN'],
+        areaId: 'kuala_lumpur_w_p_kuala_lumpur',
+      ),
+    ];
+    state.areas = const [
+      AreaData(
+        id: 'kuala_lumpur_w_p_kuala_lumpur',
+        name: 'W P Kuala Lumpur',
+        state: 'Kuala Lumpur',
+        isGovernmentProfile: true,
+      ),
+    ];
+
+    await _pumpSearch(tester, state);
+
+    await tester.tap(find.text('Any State'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kuala Lumpur').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Any Area'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Setiawangsa'), findsWidgets);
+    expect(find.text('Cheras'), findsWidgets);
+    expect(find.text('W P Kuala Lumpur'), findsNothing);
+
+    await tester.tap(find.text('Setiawangsa').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 properties found'), findsOneWidget);
+    expect(find.text('Residensi Setiawangsa'), findsOneWidget);
+    expect(find.text('Residensi Cheras'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'cheras');
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('0 properties found'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.restart_alt_rounded));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'cheras');
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('1 properties found'), findsOneWidget);
+    expect(find.text('Residensi Cheras'), findsOneWidget);
   });
 
   testWidgets('Changing State resets selected Area', (tester) async {
@@ -852,6 +923,7 @@ Property _teduhProperty({
   required int price,
   required List<String> unitTypes,
   String? propertyType,
+  String? areaId,
 }) {
   return Property.fromTeduhJson(
     {
@@ -864,7 +936,7 @@ Property _teduhProperty({
       'property_type': propertyType,
       'unit_types': unitTypes,
     },
-    areaId: LocationNormalizer.canonicalAreaId(state, district),
+    areaId: areaId ?? LocationNormalizer.canonicalAreaId(state, district),
     palette: 0,
   );
 }

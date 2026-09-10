@@ -5,22 +5,82 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/property_art.dart';
+import '../../models/area_data.dart';
 import '../../models/property.dart';
 import '../search/property_detail_screen.dart';
 import 'property_map_data.dart';
 
 class PropertyMapScreen extends StatefulWidget {
-  const PropertyMapScreen({this.useLiveMap = true, super.key});
+  const PropertyMapScreen({
+    this.useLiveMap = true,
+    this.locationClient = const _GeolocatorPropertyMapLocationClient(),
+    this.tileLayerBuilder,
+    this.onCameraTargetApplied,
+    this.onMarkerDataRecomputed,
+    super.key,
+  });
 
   @visibleForTesting
   final bool useLiveMap;
 
+  @visibleForTesting
+  final PropertyMapLocationClient locationClient;
+
+  @visibleForTesting
+  final WidgetBuilder? tileLayerBuilder;
+
+  @visibleForTesting
+  final ValueChanged<MapCameraTarget>? onCameraTargetApplied;
+
+  @visibleForTesting
+  final VoidCallback? onMarkerDataRecomputed;
+
   @override
   State<PropertyMapScreen> createState() => _PropertyMapScreenState();
+}
+
+@visibleForTesting
+abstract interface class PropertyMapLocationClient {
+  Future<bool> isLocationServiceEnabled();
+  Future<LocationPermission> checkPermission();
+  Future<LocationPermission> requestPermission();
+  Future<LatLng> getCurrentLocation();
+}
+
+class _GeolocatorPropertyMapLocationClient
+    implements PropertyMapLocationClient {
+  const _GeolocatorPropertyMapLocationClient();
+
+  @override
+  Future<bool> isLocationServiceEnabled() {
+    return Geolocator.isLocationServiceEnabled();
+  }
+
+  @override
+  Future<LocationPermission> checkPermission() {
+    return Geolocator.checkPermission();
+  }
+
+  @override
+  Future<LocationPermission> requestPermission() {
+    return Geolocator.requestPermission();
+  }
+
+  @override
+  Future<LatLng> getCurrentLocation() async {
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 12),
+      ),
+    );
+    return LatLng(position.latitude, position.longitude);
+  }
 }
 
 class _PropertyMapScreenState extends State<PropertyMapScreen> {
@@ -30,9 +90,25 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
   LatLng? _currentLocation;
   bool _mapReady = false;
   bool _isLocating = false;
+  bool _disposed = false;
+  int _pendingCameraRequest = 0;
+  String? _lastCameraTargetSignature;
+  String? _cachedAreaId;
+  List<Property>? _cachedPropertySource;
+  List<AreaData>? _cachedAreaSource;
+  int _cachedPropertyLength = -1;
+  int _cachedAreaLength = -1;
+  List<Property> _visibleProperties = const [];
+  List<Property> _mappableProperties = const [];
+  List<MapAreaOption> _areaOptions = const [allMapAreaOption];
+  List<Property>? _markerPropertySource;
+  String? _markerSelectedPropertyId;
+  List<Marker> _propertyMarkers = const [];
 
   @override
   void dispose() {
+    _disposed = true;
+    _pendingCameraRequest += 1;
     _mapController.dispose();
     super.dispose();
   }
@@ -40,14 +116,14 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final properties = visibleMapProperties(
-      state.properties,
-      selectedAreaId: selectedAreaId,
-    );
-    final mappableProperties = mappableMapProperties(properties);
+    _updatePropertyCache(state);
     final selected = selectedMapProperty(
-      properties,
+      _mappableProperties,
       selectedPropertyId: selectedPropertyId,
+    );
+    _updateMarkerCache(
+      properties: _mappableProperties,
+      selectedPropertyId: selected?.id,
     );
     return Scaffold(
       appBar: AppBar(
@@ -65,13 +141,13 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
           final wide = ResponsiveLayout.isTablet(context);
           final map = _OpenStreetMapPropertyMap(
             controller: _mapController,
-            properties: mappableProperties,
-            selectedPropertyId: selected?.id,
+            properties: _mappableProperties,
+            propertyMarkers: _propertyMarkers,
             currentLocation: _currentLocation,
             useLiveMap: widget.useLiveMap,
             isLocating: _isLocating,
+            tileLayerBuilder: widget.tileLayerBuilder,
             onMapReady: _handleMapReady,
-            onSelect: _selectProperty,
             onZoomIn: () => _zoomBy(1),
             onZoomOut: () => _zoomBy(-1),
             onMyLocation: _locateUser,
@@ -90,14 +166,10 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                   ),
                   isExpanded: true,
                   items: [
-                    const DropdownMenuItem(
-                      value: allMapAreasId,
-                      child: Text('All areas'),
-                    ),
-                    ...state.areas.map(
-                      (area) => DropdownMenuItem(
-                        value: area.id,
-                        child: Text('${area.name}, ${area.state}'),
+                    ..._areaOptions.map(
+                      (option) => DropdownMenuItem(
+                        value: option.value,
+                        child: Text(option.label),
                       ),
                     ),
                   ],
@@ -126,11 +198,16 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
   }
 
   void _handleMapReady() {
+    if (!mounted || _mapReady) {
+      return;
+    }
     _mapReady = true;
-    _moveCameraToCurrentProperties();
   }
 
   void _selectProperty(Property property) {
+    if (selectedPropertyId == property.id) {
+      return;
+    }
     setState(() => selectedPropertyId = property.id);
     _moveCameraToProperty(property);
   }
@@ -143,32 +220,50 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       selectedAreaId = areaId;
       selectedPropertyId = null;
     });
+    _scheduleCameraToCurrentProperties();
+  }
+
+  void _scheduleCameraToCurrentProperties() {
+    final request = ++_pendingCameraRequest;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _moveCameraToCurrentProperties();
+      if (mounted && !_disposed && request == _pendingCameraRequest) {
+        _moveCameraToCurrentProperties(force: true);
       }
     });
   }
 
-  void _moveCameraToCurrentProperties() {
+  void _moveCameraToCurrentProperties({bool force = false}) {
     if (!_mapReady || !widget.useLiveMap) {
       return;
     }
     final state = AppScope.read(context);
-    final properties = mappableMapProperties(
-      visibleMapProperties(state.properties, selectedAreaId: selectedAreaId),
+    _updatePropertyCache(state);
+    _applyCameraTarget(
+      cameraTargetForProperties(_mappableProperties),
+      force: force,
     );
-    _applyCameraTarget(cameraTargetForProperties(properties));
   }
 
   void _moveCameraToProperty(Property property) {
     if (!_mapReady || !widget.useLiveMap || !hasValidMapCoordinates(property)) {
       return;
     }
-    _mapController.move(propertyLatLng(property), selectedPropertyMapZoom);
+    _applyCameraTarget(
+      MapCameraTarget.center(
+        center: propertyLatLng(property),
+        zoom: selectedPropertyMapZoom,
+      ),
+      force: true,
+    );
   }
 
-  void _applyCameraTarget(MapCameraTarget target) {
+  void _applyCameraTarget(MapCameraTarget target, {bool force = false}) {
+    final signature = target.signature;
+    if (!force && _lastCameraTargetSignature == signature) {
+      return;
+    }
+    _lastCameraTargetSignature = signature;
+    widget.onCameraTargetApplied?.call(target);
     if (target.isBounds) {
       _mapController.fitCamera(
         CameraFit.bounds(
@@ -197,15 +292,16 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
     }
     setState(() => _isLocating = true);
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await widget.locationClient
+          .isLocationServiceEnabled();
       if (!serviceEnabled) {
         _showLocationMessage('Turn on location services to use My Location.');
         return;
       }
 
-      var permission = await Geolocator.checkPermission();
+      var permission = await widget.locationClient.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await widget.locationClient.requestPermission();
       }
       if (permission == LocationPermission.denied) {
         _showLocationMessage('Location permission was denied.');
@@ -218,19 +314,16 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
-      final point = LatLng(position.latitude, position.longitude);
+      final point = await widget.locationClient.getCurrentLocation();
       if (!mounted) {
         return;
       }
       setState(() => _currentLocation = point);
       if (_mapReady && widget.useLiveMap) {
-        _mapController.move(point, selectedPropertyMapZoom);
+        _applyCameraTarget(
+          MapCameraTarget.center(center: point, zoom: selectedPropertyMapZoom),
+          force: true,
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -269,18 +362,78 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       ),
     );
   }
+
+  void _updatePropertyCache(AppState state) {
+    final sourcesUnchanged =
+        identical(_cachedPropertySource, state.properties) &&
+        identical(_cachedAreaSource, state.areas) &&
+        _cachedPropertyLength == state.properties.length &&
+        _cachedAreaLength == state.areas.length;
+    if (sourcesUnchanged && _cachedAreaId == selectedAreaId) {
+      return;
+    }
+    if (!sourcesUnchanged) {
+      _areaOptions = mapAreaOptions(state.properties, areas: state.areas);
+      final availableAreaIds = _areaOptions
+          .map((option) => option.value)
+          .toSet();
+      if (!availableAreaIds.contains(selectedAreaId)) {
+        selectedAreaId = allMapAreasId;
+        selectedPropertyId = null;
+      }
+    }
+    _visibleProperties = visibleMapProperties(
+      state.properties,
+      selectedAreaId: selectedAreaId,
+      areas: state.areas,
+    );
+    _mappableProperties = mappableMapProperties(_visibleProperties);
+    _cachedPropertySource = state.properties;
+    _cachedAreaSource = state.areas;
+    _cachedPropertyLength = state.properties.length;
+    _cachedAreaLength = state.areas.length;
+    _cachedAreaId = selectedAreaId;
+  }
+
+  void _updateMarkerCache({
+    required List<Property> properties,
+    required String? selectedPropertyId,
+  }) {
+    if (identical(_markerPropertySource, properties) &&
+        _markerSelectedPropertyId == selectedPropertyId) {
+      return;
+    }
+    _propertyMarkers = [
+      for (final property in properties)
+        Marker(
+          key: ValueKey('property-marker-${property.id}'),
+          point: propertyLatLng(property),
+          width: 116,
+          height: 58,
+          alignment: Alignment.topCenter,
+          child: _PropertyMarker(
+            property: property,
+            selected: property.id == selectedPropertyId,
+            onTap: () => _selectProperty(property),
+          ),
+        ),
+    ];
+    _markerPropertySource = properties;
+    _markerSelectedPropertyId = selectedPropertyId;
+    widget.onMarkerDataRecomputed?.call();
+  }
 }
 
 class _OpenStreetMapPropertyMap extends StatelessWidget {
   const _OpenStreetMapPropertyMap({
     required this.controller,
     required this.properties,
-    required this.selectedPropertyId,
+    required this.propertyMarkers,
     required this.currentLocation,
     required this.useLiveMap,
     required this.isLocating,
+    required this.tileLayerBuilder,
     required this.onMapReady,
-    required this.onSelect,
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onMyLocation,
@@ -288,12 +441,12 @@ class _OpenStreetMapPropertyMap extends StatelessWidget {
 
   final MapController controller;
   final List<Property> properties;
-  final String? selectedPropertyId;
+  final List<Marker> propertyMarkers;
   final LatLng? currentLocation;
   final bool useLiveMap;
   final bool isLocating;
+  final WidgetBuilder? tileLayerBuilder;
   final VoidCallback onMapReady;
-  final ValueChanged<Property> onSelect;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onMyLocation;
@@ -329,12 +482,14 @@ class _OpenStreetMapPropertyMap extends StatelessWidget {
               onMapReady: onMapReady,
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.smart_property_advisor',
-                maxZoom: 19,
-              ),
-              MarkerLayer(markers: _propertyMarkers()),
+              tileLayerBuilder?.call(context) ??
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.smart_property_advisor',
+                    maxZoom: 19,
+                  ),
+              MarkerLayer(markers: propertyMarkers),
               if (currentLocation != null)
                 MarkerLayer(
                   markers: [
@@ -395,24 +550,6 @@ class _OpenStreetMapPropertyMap extends StatelessWidget {
           ),
       ],
     );
-  }
-
-  List<Marker> _propertyMarkers() {
-    return [
-      for (final property in properties)
-        Marker(
-          key: ValueKey('property-marker-${property.id}'),
-          point: propertyLatLng(property),
-          width: 116,
-          height: 58,
-          alignment: Alignment.topCenter,
-          child: _PropertyMarker(
-            property: property,
-            selected: property.id == selectedPropertyId,
-            onTap: () => onSelect(property),
-          ),
-        ),
-    ];
   }
 }
 
@@ -549,7 +686,7 @@ class _LocationPanel extends StatelessWidget {
       );
     }
     final state = AppScope.of(context);
-    final area = state.areaFor(property!.areaId);
+    final area = state.matchedAreaFor(property!);
     return Material(
       color: Colors.white,
       elevation: 10,
@@ -597,14 +734,14 @@ class _LocationPanel extends StatelessWidget {
                 Expanded(
                   child: _MiniInsight(
                     label: 'Safety',
-                    value: _scoreText(area.safetyScore),
+                    value: _scoreText(area?.safetyScore),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _MiniInsight(
                     label: 'Transit',
-                    value: _scoreText(area.transportScore),
+                    value: _scoreText(area?.transportScore),
                   ),
                 ),
               ],
@@ -615,14 +752,14 @@ class _LocationPanel extends StatelessWidget {
                 Expanded(
                   child: _MiniInsight(
                     label: 'Schools',
-                    value: area.schools?.toString() ?? 'N/A',
+                    value: area?.schools?.toString() ?? 'N/A',
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _MiniInsight(
                     label: 'Hospitals',
-                    value: area.hospitals?.toString() ?? 'N/A',
+                    value: area?.hospitals?.toString() ?? 'N/A',
                   ),
                 ),
               ],

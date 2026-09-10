@@ -5,6 +5,7 @@ import '../data/repositories/area_profile_repository.dart';
 import '../data/repositories/property_repository.dart';
 import '../core/config/supabase_config.dart';
 import '../core/utils/location_normalizer.dart';
+import '../core/utils/property_area_resolver.dart';
 import '../models/app_user.dart';
 import '../models/area_data.dart';
 import '../models/area_profile.dart';
@@ -266,6 +267,10 @@ class AppState extends ChangeNotifier {
     final lookup = areaLookup;
     return lookup[LocationNormalizer.canonicalAreaIdFromExisting(areaId)] ??
         AreaData.unavailable(areaId);
+  }
+
+  AreaData? matchedAreaFor(Property property) {
+    return PropertyAreaResolver.resolve(property: property, areas: areas);
   }
 
   Map<String, AreaData> get areaLookup {

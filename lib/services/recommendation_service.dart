@@ -1,4 +1,6 @@
 import '../core/utils/property_filtering.dart';
+import '../core/utils/property_area_resolver.dart';
+import '../core/utils/location_normalizer.dart';
 import '../models/area_data.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
@@ -12,17 +14,13 @@ class RecommendationService {
     required List<AreaData> areas,
     required UserPreferences preferences,
   }) {
-    final areaIndex = {
-      for (final area in areas)
-        PropertyFilterNormalizer.normalizeAreaId(area.id): area,
-    };
     final results =
         properties
             .where((property) {
-              final area =
-                  areaIndex[PropertyFilterNormalizer.normalizeAreaId(
-                    property.areaId,
-                  )];
+              final area = PropertyAreaResolver.resolve(
+                property: property,
+                areas: areas,
+              );
               if (property.price == null || area == null) {
                 return false;
               }
@@ -34,8 +32,8 @@ class RecommendationService {
                   );
               final areaMatches =
                   preferences.preferredAreaId == 'any' ||
-                  PropertyFilterNormalizer.areaMatches(
-                    property.areaId,
+                  LocationNormalizer.areaIdMatches(
+                    area.id,
                     preferences.preferredAreaId,
                   );
               return typeMatches && areaMatches;
@@ -43,9 +41,7 @@ class RecommendationService {
             .map(
               (property) => _score(
                 property,
-                areaIndex[PropertyFilterNormalizer.normalizeAreaId(
-                  property.areaId,
-                )]!,
+                PropertyAreaResolver.resolve(property: property, areas: areas)!,
                 preferences,
               ),
             )

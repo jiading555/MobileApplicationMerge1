@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/property_area_resolver.dart';
 import '../../models/area_data.dart';
 import '../../models/property.dart';
 
@@ -71,21 +71,14 @@ class PropertyRepository {
     Map<String, dynamic> row,
     List<AreaData> areas,
   ) {
-    final state = LocationNormalizer.canonicalStateId(row['state']);
-    final district = LocationNormalizer.canonicalDistrictId(row['district']);
-    if (state.isNotEmpty && district.isNotEmpty) {
-      final canonicalAreaId = LocationNormalizer.canonicalAreaId(
-        row['state'],
-        row['district'],
-      );
-      for (final area in areas) {
-        if (LocationNormalizer.areaIdMatches(area.id, canonicalAreaId)) {
-          return area.id;
-        }
-      }
-      return canonicalAreaId;
-    }
-    return 'unknown';
+    return PropertyAreaResolver.resolveAreaIdForLocation(
+      sourceAreaId: row['area_id'] ?? row['areaId'],
+      state: row['state'],
+      district: row['district'],
+      address: row['address'],
+      rawLocation: row['raw_location'] ?? row['rawLocation'],
+      areas: areas,
+    );
   }
 }
 

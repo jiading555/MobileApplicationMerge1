@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/property_area_resolver.dart';
 import '../../core/utils/property_filtering.dart';
 import '../../core/utils/property_type_normalizer.dart';
 import '../../core/utils/scheme_normalizer.dart';
@@ -324,33 +325,30 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       return _searchIndex!;
     }
 
-    final areasById = <String, AreaData>{};
-    for (final area in areas) {
-      areasById[LocationNormalizer.canonicalAreaIdFromExisting(area.id)] = area;
-      areasById[LocationNormalizer.canonicalAreaId(area.state, area.name)] =
-          area;
-    }
-
     final rows = <_SearchProperty>[];
     final states = <String>{};
     for (final property in properties) {
-      final normalizedAreaId = PropertyFilterNormalizer.normalizeAreaId(
-        property.areaId,
+      final area = PropertyAreaResolver.resolve(
+        property: property,
+        areas: areas,
       );
-      final area = areasById[normalizedAreaId];
       final displayState = LocationNormalizer.nullableDisplayStateName(
         property.state,
       );
       final displayDistrict = LocationNormalizer.nullableDisplayDistrictName(
         property.district,
       );
+      final normalizedLocalityAreaId =
+          displayState == null || displayDistrict == null
+          ? ''
+          : LocationNormalizer.canonicalAreaId(displayState, displayDistrict);
       if (displayState != null && displayState.isNotEmpty) {
         states.add(displayState);
       }
       rows.add(
         _SearchProperty(
           property: property,
-          normalizedAreaId: normalizedAreaId,
+          normalizedLocalityAreaId: normalizedLocalityAreaId,
           displayState: displayState,
           displayDistrict: displayDistrict,
           searchableText: [
@@ -364,6 +362,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             property.scheme,
             property.developerName,
             property.source,
+            property.rawLocation,
             area?.name,
             area?.state,
           ].whereType<String>().join(' ').toLowerCase(),
@@ -374,7 +373,6 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     final stateValues = ['Any', ...states.toList()..sort()];
     _searchIndex = _SearchIndex(
       rows: rows,
-      areas: areas,
       typeValues: PropertyFilterNormalizer.availablePropertyTypes(properties),
       schemeValues: PropertyFilterNormalizer.availableSchemes(
         properties.map((property) => property.scheme),
@@ -412,7 +410,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       )) {
         continue;
       }
-      if (selectedAreaId != 'Any' && row.normalizedAreaId != normalizedAreaId) {
+      if (selectedAreaId != 'Any' &&
+          row.normalizedLocalityAreaId != normalizedAreaId) {
         continue;
       }
       if (!PropertyFilterNormalizer.propertyTypeMatches(
@@ -449,27 +448,16 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     }
 
     final labelsById = <String, String>{};
-    for (final area in index.areas) {
-      if (!LocationNormalizer.stateMatches(area.state, selectedState)) {
-        continue;
-      }
-      final district = LocationNormalizer.displayDistrictName(area.name);
-      if (district.isEmpty) {
-        continue;
-      }
-      final areaId = LocationNormalizer.canonicalAreaId(area.state, district);
-      labelsById[areaId] = district;
-    }
     for (final row in index.rows) {
       final state = row.displayState;
       final district = row.displayDistrict;
       if (state == null ||
           district == null ||
+          row.normalizedLocalityAreaId.isEmpty ||
           !LocationNormalizer.stateMatches(state, selectedState)) {
         continue;
       }
-      final areaId = LocationNormalizer.canonicalAreaId(state, district);
-      labelsById.putIfAbsent(areaId, () => district);
+      labelsById.putIfAbsent(row.normalizedLocalityAreaId, () => district);
     }
 
     final options =
@@ -487,14 +475,12 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 class _SearchIndex {
   const _SearchIndex({
     required this.rows,
-    required this.areas,
     required this.typeValues,
     required this.schemeValues,
     required this.stateValues,
   });
 
   final List<_SearchProperty> rows;
-  final List<AreaData> areas;
   final List<String> typeValues;
   final List<String> schemeValues;
   final List<String> stateValues;
@@ -503,14 +489,14 @@ class _SearchIndex {
 class _SearchProperty {
   const _SearchProperty({
     required this.property,
-    required this.normalizedAreaId,
+    required this.normalizedLocalityAreaId,
     required this.searchableText,
     required this.displayState,
     required this.displayDistrict,
   });
 
   final Property property;
-  final String normalizedAreaId;
+  final String normalizedLocalityAreaId;
   final String searchableText;
   final String? displayState;
   final String? displayDistrict;

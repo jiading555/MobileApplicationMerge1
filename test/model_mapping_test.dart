@@ -324,6 +324,58 @@ void main() {
     },
   );
 
+  test('TEDUH location parser keeps Cheras as KL locality', () async {
+    final property = await _singleTeduhProject({
+      'id': 'PR1MA_114',
+      'name': 'RESIDENSI ALAM DAMAI',
+      'location': 'Cheras, W.P. Kuala Lumpur',
+    });
+
+    expect(property.state, 'Kuala Lumpur');
+    expect(property.district, 'Cheras');
+    expect(property.rawLocation, 'Cheras, W.P. Kuala Lumpur');
+  });
+
+  test(
+    'TEDUH location parser rejects conflicting federal territories',
+    () async {
+      final property = await _singleTeduhProject({
+        'id': 'RESIDENSIWILAYAH_999',
+        'name': 'Residensi Wilayah Sentral',
+        'location': 'Putrajaya, WILAYAH PERSEKUTUAN LABUAN',
+      });
+
+      expect(property.state, isNull);
+      expect(property.district, isNull);
+      expect(property.rawLocation, 'Putrajaya, WILAYAH PERSEKUTUAN LABUAN');
+    },
+  );
+
+  test('TEDUH location parser keeps ordinary locality and state', () async {
+    final property = await _singleTeduhProject({
+      'id': 'PR1MA_109',
+      'name': 'RESIDENSI UTAMA',
+      'location': 'Sungai Petani, Kedah',
+    });
+
+    expect(property.state, 'Kedah');
+    expect(property.district, 'Sungai Petani');
+  });
+
+  test(
+    'TEDUH location parser keeps state-only input unresolved by district',
+    () async {
+      final property = await _singleTeduhProject({
+        'id': 'SPNB_7',
+        'name': 'Taman Kelubi Idaman, Jasin',
+        'location': 'Melaka',
+      });
+
+      expect(property.state, 'Melaka');
+      expect(property.district, isNull);
+    },
+  );
+
   test('TEDUH pagination follows last_page without artificial cap', () async {
     final requestedPages = <String>[];
     final client = MockClient((request) {
@@ -626,9 +678,14 @@ Future<Property> _singleTeduhProject(Map<String, dynamic> record) async {
         http.Response(
           jsonEncode({
             'states': [
+              {'name': 'Johor'},
+              {'name': 'Kedah'},
+              {'name': 'Kuala Lumpur'},
+              {'name': 'Labuan'},
               {'name': 'Melaka'},
               {'name': 'Negeri Sembilan'},
               {'name': 'Perak'},
+              {'name': 'Putrajaya'},
             ],
           }),
           200,

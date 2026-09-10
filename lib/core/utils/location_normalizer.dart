@@ -111,6 +111,26 @@ class LocationNormalizer {
     return _stateAliases.containsKey(_normaliseWords(value));
   }
 
+  static Set<String> recognizedStateIds(Object? value) {
+    final words = _normaliseWords(value);
+    if (words.isEmpty) {
+      return const {};
+    }
+
+    final padded = ' $words ';
+    final stateIds = <String>{};
+    for (final alias in _stateAliasKeysByLength) {
+      if (padded.contains(' $alias ')) {
+        stateIds.add(canonicalStateId(_stateAliases[alias]));
+      }
+    }
+    return stateIds;
+  }
+
+  static bool hasConflictingKnownStates(Object? value) {
+    return recognizedStateIds(value).length > 1;
+  }
+
   static bool stateMatches(Object? left, Object? right) {
     return canonicalStateId(left) == canonicalStateId(right);
   }
@@ -120,7 +140,8 @@ class LocationNormalizer {
   }
 
   static bool areaIdMatches(Object? left, Object? right) {
-    return canonicalAreaIdFromExisting(left) == canonicalAreaIdFromExisting(right);
+    return canonicalAreaIdFromExisting(left) ==
+        canonicalAreaIdFromExisting(right);
   }
 
   static String stateDistrictKey(Object? state, Object? district) {
@@ -148,11 +169,7 @@ class LocationNormalizer {
   }
 
   static String _cleanLocationText(Object? value) {
-    return value
-            ?.toString()
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim() ??
-        '';
+    return value?.toString().replaceAll(RegExp(r'\s+'), ' ').trim() ?? '';
   }
 
   static String _normaliseWords(Object? value) {

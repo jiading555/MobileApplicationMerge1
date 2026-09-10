@@ -52,7 +52,7 @@ class _ComparisonColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final property = recommendation.property;
-    final area = AppScope.of(context).areaFor(property.areaId);
+    final area = AppScope.of(context).matchedAreaFor(property);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -93,18 +93,18 @@ class _ComparisonColumn extends StatelessWidget {
                       ? 'Unavailable'
                       : formatRinggit(property.pricePerSqft!.round()),
                 ),
-                _Row(label: 'Safety', value: _scoreText(area.safetyScore)),
+                _Row(label: 'Safety', value: _scoreText(area?.safetyScore)),
                 _Row(
                   label: 'Infrastructure',
-                  value: _scoreText(area.infrastructureScore),
+                  value: _scoreText(area?.infrastructureScore),
                 ),
                 _Row(
                   label: 'Price growth',
-                  value: _percentText(area.priceGrowth),
+                  value: _percentText(area?.priceGrowth),
                 ),
                 _Row(
                   label: 'Rental yield',
-                  value: _percentText(area.rentalYield),
+                  value: _percentText(area?.rentalYield),
                 ),
                 const SizedBox(height: 14),
                 const Text(
