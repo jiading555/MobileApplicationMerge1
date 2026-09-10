@@ -9,10 +9,18 @@ import '../features/map/property_map_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/search/property_search_screen.dart';
 import '../core/utils/responsive_layout.dart';
-import 'app_scope.dart';
+import 'app_navigation_scope.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  int selectedIndex = 0;
+  late final ValueChanged<int> _selectDestinationCallback = selectDestination;
 
   static const destinations = [
     _Destination('Home', Icons.home_rounded, Icons.home_outlined),
@@ -36,15 +44,21 @@ class AppShell extends StatelessWidget {
     ProfileScreen(),
   ];
 
+  void selectDestination(int index) {
+    if (index == selectedIndex) {
+      return;
+    }
+    setState(() => selectedIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final state = AppScope.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final isTablet = ResponsiveLayout.isTablet(context);
-        final content = IndexedStack(
-          index: state.selectedIndex,
-          children: screens,
+        final content = AppNavigationScope(
+          selectDestination: _selectDestinationCallback,
+          child: IndexedStack(index: selectedIndex, children: screens),
         );
         if (isTablet) {
           return Scaffold(
@@ -53,8 +67,8 @@ class AppShell extends StatelessWidget {
                 children: [
                   NavigationRail(
                     extended: ResponsiveLayout.isDesktop(context),
-                    selectedIndex: state.selectedIndex,
-                    onDestinationSelected: state.selectDestination,
+                    selectedIndex: selectedIndex,
+                    onDestinationSelected: selectDestination,
                     labelType: ResponsiveLayout.isDesktop(context)
                         ? NavigationRailLabelType.none
                         : NavigationRailLabelType.all,
@@ -84,8 +98,8 @@ class AppShell extends StatelessWidget {
         return Scaffold(
           body: SafeArea(child: content),
           bottomNavigationBar: NavigationBar(
-            selectedIndex: state.selectedIndex,
-            onDestinationSelected: state.selectDestination,
+            selectedIndex: selectedIndex,
+            onDestinationSelected: selectDestination,
             destinations: destinations
                 .map(
                   (item) => NavigationDestination(

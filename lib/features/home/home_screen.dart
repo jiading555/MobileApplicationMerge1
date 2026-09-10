@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_navigation_scope.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
@@ -16,6 +17,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    final selectDestination = AppNavigationScope.of(context);
     final featured = state.properties.take(4).toList();
     final topAreas = [...state.areas]
       ..sort(
@@ -39,16 +41,16 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     _WelcomeHeader(name: state.user.name),
                     const SizedBox(height: 20),
-                    _SearchLauncher(onTap: () => state.selectDestination(1)),
+                    _SearchLauncher(onTap: () => selectDestination(1)),
                     const SizedBox(height: 18),
-                    _ModuleHub(onSelect: state.selectDestination),
+                    _ModuleHub(onSelect: selectDestination),
                     const SizedBox(height: 30),
                     SectionHeader(
                       title: 'Market snapshot',
                       subtitle:
                           'Supabase-backed official data currently loaded',
                       actionLabel: 'View analysis',
-                      onAction: () => state.selectDestination(4),
+                      onAction: () => selectDestination(4),
                     ),
                     const SizedBox(height: 14),
                     LayoutBuilder(
@@ -130,7 +132,7 @@ class HomeScreen extends StatelessWidget {
                             state: area.state,
                             population: area.population,
                             position: index + 1,
-                            onTap: () => state.selectDestination(4),
+                            onTap: () => selectDestination(4),
                           );
                         },
                       ),
@@ -140,7 +142,7 @@ class HomeScreen extends StatelessWidget {
                       title: 'Recommended for you',
                       subtitle: 'Based on your current own-stay preferences',
                       actionLabel: 'Ask advisor',
-                      onAction: () => state.selectDestination(3),
+                      onAction: () => selectDestination(3),
                     ),
                     const SizedBox(height: 14),
                     LayoutBuilder(

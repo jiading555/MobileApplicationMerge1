@@ -38,11 +38,12 @@ class AppState extends ChangeNotifier {
   final PropertyRepository _propertyRepository;
   final RecommendationService _recommendationService;
   final Set<String> _favouriteIds = {'p01', 'p03'};
+  final ValueNotifier<Set<String>> _favouriteIdsNotifier =
+      ValueNotifier<Set<String>>(const {'p01', 'p03'});
 
   bool isLoading = true;
   String? loadError;
   bool isAuthenticated = false;
-  int selectedIndex = 0;
   AppUser user = const AppUser(
     name: 'Alex Tan',
     email: 'alex@smartadvisor.demo',
@@ -62,14 +63,21 @@ class AppState extends ChangeNotifier {
   String? governmentDataRefreshMessage;
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
+  ValueListenable<Set<String>> get favouriteIdsListenable =>
+      _favouriteIdsNotifier;
 
   List<Property> _cachedFavouriteProperties = const [];
   String _favouriteCacheKey = '';
   List<PropertyRecommendation> _cachedRecommendations = const [];
   String _recommendationCacheKey = '';
+  Map<String, AreaData> _cachedAreaById = const {};
+  List<AreaData>? _cachedAreaSource;
+  int _cachedAreaLength = -1;
 
   List<Property> get favouriteProperties {
-    final cacheKey = '${properties.length}|${_favouriteIds.toList().join(',')}';
+    final favouriteIds = _favouriteIds.toList()..sort();
+    final cacheKey =
+        '${identityHashCode(properties)}|${properties.length}|${favouriteIds.join(',')}';
     if (_favouriteCacheKey != cacheKey) {
       _cachedFavouriteProperties = properties
           .where((property) => _favouriteIds.contains(property.id))
@@ -81,7 +89,7 @@ class AppState extends ChangeNotifier {
 
   List<PropertyRecommendation> get recommendations {
     final cacheKey =
-        '${properties.length}|${areas.length}|${preferences.budget}|${preferences.propertyType}|${preferences.preferredAreaId}|${preferences.goal}';
+        '${identityHashCode(properties)}|${properties.length}|${identityHashCode(areas)}|${areas.length}|${preferences.budget}|${preferences.propertyType}|${preferences.preferredAreaId}|${preferences.goal}';
     if (_recommendationCacheKey != cacheKey) {
       _cachedRecommendations = _recommendationService.rank(
         properties: properties,
@@ -234,12 +242,6 @@ class AppState extends ChangeNotifier {
 
   void logout() {
     isAuthenticated = false;
-    selectedIndex = 0;
-    notifyListeners();
-  }
-
-  void selectDestination(int index) {
-    selectedIndex = index;
     notifyListeners();
   }
 
@@ -254,21 +256,43 @@ class AppState extends ChangeNotifier {
     } else {
       _favouriteIds.add(propertyId);
     }
-    notifyListeners();
+    _favouriteCacheKey = '';
+    _favouriteIdsNotifier.value = Set.unmodifiable(_favouriteIds);
   }
 
   bool isFavourite(String propertyId) => _favouriteIds.contains(propertyId);
 
   AreaData areaFor(String areaId) {
-    return areas.firstWhere(
-      (area) => LocationNormalizer.areaIdMatches(area.id, areaId),
-      orElse: () => AreaData.unavailable(areaId),
-    );
+    final lookup = areaLookup;
+    return lookup[LocationNormalizer.canonicalAreaIdFromExisting(areaId)] ??
+        AreaData.unavailable(areaId);
+  }
+
+  Map<String, AreaData> get areaLookup {
+    if (identical(_cachedAreaSource, areas) &&
+        _cachedAreaLength == areas.length) {
+      return _cachedAreaById;
+    }
+    final lookup = <String, AreaData>{};
+    for (final area in areas) {
+      lookup[LocationNormalizer.canonicalAreaIdFromExisting(area.id)] = area;
+      lookup[LocationNormalizer.canonicalAreaId(area.state, area.name)] = area;
+    }
+    _cachedAreaSource = areas;
+    _cachedAreaLength = areas.length;
+    _cachedAreaById = lookup;
+    return _cachedAreaById;
   }
 
   void updateUser(AppUser value) {
     user = value;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _favouriteIdsNotifier.dispose();
+    super.dispose();
   }
 
   Future<List<AreaProfile>> _loadCloudAreaProfiles() async {

@@ -1,52 +1,54 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
-import '../../core/utils/property_filtering.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
 import '../search/property_detail_screen.dart';
+import 'property_map_data.dart';
 
 class PropertyMapScreen extends StatefulWidget {
-  const PropertyMapScreen({super.key});
+  const PropertyMapScreen({this.useLiveMap = true, super.key});
+
+  @visibleForTesting
+  final bool useLiveMap;
 
   @override
   State<PropertyMapScreen> createState() => _PropertyMapScreenState();
 }
 
 class _PropertyMapScreenState extends State<PropertyMapScreen> {
+  final MapController _mapController = MapController();
   String? selectedPropertyId;
-  String selectedAreaId = 'all';
+  String selectedAreaId = allMapAreasId;
+  LatLng? _currentLocation;
+  bool _mapReady = false;
+  bool _isLocating = false;
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final properties = state.properties
-        .where(
-          (property) =>
-              selectedAreaId == 'all' ||
-              PropertyFilterNormalizer.areaMatches(
-                property.areaId,
-                selectedAreaId,
-              ),
-        )
-        .toList();
-    final mappableProperties = properties
-        .where((property) => property.hasCoordinates)
-        .toList();
-    Property? selected = properties.isEmpty ? null : properties.first;
-    if (selectedPropertyId != null) {
-      for (final property in properties) {
-        if (property.id == selectedPropertyId) {
-          selected = property;
-          break;
-        }
-      }
-    }
+    final properties = visibleMapProperties(
+      state.properties,
+      selectedAreaId: selectedAreaId,
+    );
+    final mappableProperties = mappableMapProperties(properties);
+    final selected = selectedMapProperty(
+      properties,
+      selectedPropertyId: selectedPropertyId,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Map & nearby facilities'),
@@ -61,10 +63,18 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = ResponsiveLayout.isTablet(context);
-          final map = _MapCanvas(
+          final map = _OpenStreetMapPropertyMap(
+            controller: _mapController,
             properties: mappableProperties,
             selectedPropertyId: selected?.id,
-            onSelect: (id) => setState(() => selectedPropertyId = id),
+            currentLocation: _currentLocation,
+            useLiveMap: widget.useLiveMap,
+            isLocating: _isLocating,
+            onMapReady: _handleMapReady,
+            onSelect: _selectProperty,
+            onZoomIn: () => _zoomBy(1),
+            onZoomOut: () => _zoomBy(-1),
+            onMyLocation: _locateUser,
           );
           final panel = _LocationPanel(property: selected);
           return Column(
@@ -78,9 +88,10 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                     labelText: 'Explore area',
                     isDense: true,
                   ),
+                  isExpanded: true,
                   items: [
                     const DropdownMenuItem(
-                      value: 'all',
+                      value: allMapAreasId,
                       child: Text('All areas'),
                     ),
                     ...state.areas.map(
@@ -90,10 +101,7 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                       ),
                     ),
                   ],
-                  onChanged: (value) => setState(() {
-                    selectedAreaId = value ?? 'all';
-                    selectedPropertyId = null;
-                  }),
+                  onChanged: (value) => _selectArea(value ?? allMapAreasId),
                 ),
               ),
               Expanded(
@@ -104,19 +112,10 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
                           SizedBox(width: 360, child: panel),
                         ],
                       )
-                    : Stack(
-                        children: [
-                          Positioned.fill(child: map),
-                          if (selected != null)
-                            Align(
-                              alignment: Alignment.bottomCenter,
-                              child: FractionallySizedBox(
-                                heightFactor: 0.46,
-                                widthFactor: 1,
-                                child: panel,
-                              ),
-                            ),
-                        ],
+                    : _PhoneMapLayout(
+                        map: map,
+                        panel: panel,
+                        hasSelection: selected != null,
                       ),
               ),
             ],
@@ -126,13 +125,140 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
     );
   }
 
+  void _handleMapReady() {
+    _mapReady = true;
+    _moveCameraToCurrentProperties();
+  }
+
+  void _selectProperty(Property property) {
+    setState(() => selectedPropertyId = property.id);
+    _moveCameraToProperty(property);
+  }
+
+  void _selectArea(String areaId) {
+    if (areaId == selectedAreaId) {
+      return;
+    }
+    setState(() {
+      selectedAreaId = areaId;
+      selectedPropertyId = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _moveCameraToCurrentProperties();
+      }
+    });
+  }
+
+  void _moveCameraToCurrentProperties() {
+    if (!_mapReady || !widget.useLiveMap) {
+      return;
+    }
+    final state = AppScope.read(context);
+    final properties = mappableMapProperties(
+      visibleMapProperties(state.properties, selectedAreaId: selectedAreaId),
+    );
+    _applyCameraTarget(cameraTargetForProperties(properties));
+  }
+
+  void _moveCameraToProperty(Property property) {
+    if (!_mapReady || !widget.useLiveMap || !hasValidMapCoordinates(property)) {
+      return;
+    }
+    _mapController.move(propertyLatLng(property), selectedPropertyMapZoom);
+  }
+
+  void _applyCameraTarget(MapCameraTarget target) {
+    if (target.isBounds) {
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(target.points),
+          padding: const EdgeInsets.all(64),
+          maxZoom: target.maxZoom,
+        ),
+      );
+      return;
+    }
+    _mapController.move(target.center!, target.zoom!);
+  }
+
+  void _zoomBy(double delta) {
+    if (!_mapReady || !widget.useLiveMap) {
+      return;
+    }
+    final camera = _mapController.camera;
+    final zoom = (camera.zoom + delta).clamp(4, 18).toDouble();
+    _mapController.move(camera.center, zoom);
+  }
+
+  Future<void> _locateUser() async {
+    if (_isLocating) {
+      return;
+    }
+    setState(() => _isLocating = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showLocationMessage('Turn on location services to use My Location.');
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        _showLocationMessage('Location permission was denied.');
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationMessage(
+          'Location permission is permanently denied. Enable it in settings.',
+        );
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      final point = LatLng(position.latitude, position.longitude);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _currentLocation = point);
+      if (_mapReady && widget.useLiveMap) {
+        _mapController.move(point, selectedPropertyMapZoom);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showLocationMessage('Could not get current location.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLocating = false);
+      }
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   void _showMapInfo(BuildContext context) {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Map preview'),
+        title: const Text('OpenStreetMap'),
         content: const Text(
-          'This offline map visual keeps the assessment reliable. Connect Google Maps or OpenStreetMap tiles and replace the normalized pin layout for live deployment.',
+          'Property pins are generated from Supabase records that include valid latitude and longitude values. Records without coordinates remain available in Search and Details, but are not shown as map pins.',
         ),
         actions: [
           TextButton(
@@ -145,151 +271,268 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
   }
 }
 
-class _MapCanvas extends StatelessWidget {
-  const _MapCanvas({
+class _OpenStreetMapPropertyMap extends StatelessWidget {
+  const _OpenStreetMapPropertyMap({
+    required this.controller,
     required this.properties,
     required this.selectedPropertyId,
+    required this.currentLocation,
+    required this.useLiveMap,
+    required this.isLocating,
+    required this.onMapReady,
     required this.onSelect,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onMyLocation,
   });
 
+  final MapController controller;
   final List<Property> properties;
   final String? selectedPropertyId;
-  final ValueChanged<String> onSelect;
+  final LatLng? currentLocation;
+  final bool useLiveMap;
+  final bool isLocating;
+  final VoidCallback onMapReady;
+  final ValueChanged<Property> onSelect;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onMyLocation;
+
+  @override
+  Widget build(BuildContext context) {
+    final initialTarget = cameraTargetForProperties(properties);
+    if (!useLiveMap) {
+      return _TestMapPlaceholder(
+        markerCount: properties.length,
+        cameraTarget: initialTarget,
+      );
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: FlutterMap(
+            mapController: controller,
+            options: MapOptions(
+              initialCenter: initialTarget.center ?? malaysiaMapCenter,
+              initialZoom: initialTarget.zoom ?? malaysiaMapZoom,
+              initialCameraFit: initialTarget.isBounds
+                  ? CameraFit.bounds(
+                      bounds: LatLngBounds.fromPoints(initialTarget.points),
+                      padding: const EdgeInsets.all(64),
+                      maxZoom: initialTarget.maxZoom,
+                    )
+                  : null,
+              minZoom: 4,
+              maxZoom: 18,
+              keepAlive: true,
+              onMapReady: onMapReady,
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.smart_property_advisor',
+                maxZoom: 19,
+              ),
+              MarkerLayer(markers: _propertyMarkers()),
+              if (currentLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      key: const ValueKey('current-location-marker'),
+                      point: currentLocation!,
+                      width: 34,
+                      height: 34,
+                      child: const _CurrentLocationMarker(),
+                    ),
+                  ],
+                ),
+              RichAttributionWidget(
+                alignment: AttributionAlignment.bottomRight,
+                popupBackgroundColor: Colors.white,
+                popupBorderRadius: BorderRadius.circular(8),
+                attributions: [
+                  TextSourceAttribution(
+                    'OpenStreetMap contributors',
+                    onTap: _openOpenStreetMapCopyright,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 16,
+          right: 16,
+          child: Column(
+            children: [
+              _MapControl(
+                tooltip: 'Zoom in',
+                icon: Icons.add_rounded,
+                onTap: onZoomIn,
+              ),
+              const SizedBox(height: 6),
+              _MapControl(
+                tooltip: 'Zoom out',
+                icon: Icons.remove_rounded,
+                onTap: onZoomOut,
+              ),
+              const SizedBox(height: 12),
+              _MapControl(
+                tooltip: 'My location',
+                icon: Icons.my_location_rounded,
+                onTap: onMyLocation,
+                isLoading: isLocating,
+              ),
+            ],
+          ),
+        ),
+        if (properties.isEmpty)
+          const Center(
+            child: _MapEmptyState(
+              message: 'No records with coordinates in this area.',
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<Marker> _propertyMarkers() {
+    return [
+      for (final property in properties)
+        Marker(
+          key: ValueKey('property-marker-${property.id}'),
+          point: propertyLatLng(property),
+          width: 116,
+          height: 58,
+          alignment: Alignment.topCenter,
+          child: _PropertyMarker(
+            property: property,
+            selected: property.id == selectedPropertyId,
+            onTap: () => onSelect(property),
+          ),
+        ),
+    ];
+  }
+}
+
+class _PropertyMarker extends StatelessWidget {
+  const _PropertyMarker({
+    required this.property,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Property property;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = selected ? AppTheme.navy : Colors.white;
+    final foreground = selected ? Colors.white : AppTheme.blue;
+    return Semantics(
+      button: true,
+      label: 'Select ${property.name}',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 160),
+          scale: selected ? 1.08 : 1,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 108,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: background,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  _priceText(property, compact: true),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Icon(Icons.location_pin, color: foreground, size: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentLocationMarker extends StatelessWidget {
+  const _CurrentLocationMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppTheme.blue.withValues(alpha: 0.18),
+      ),
+      child: Center(
+        child: Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.blue,
+            border: Border.all(color: Colors.white, width: 3),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhoneMapLayout extends StatelessWidget {
+  const _PhoneMapLayout({
+    required this.map,
+    required this.panel,
+    required this.hasSelection,
+  });
+
+  final Widget map;
+  final Widget panel;
+  final bool hasSelection;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return ClipRect(
-          child: Stack(
-            children: [
-              Positioned.fill(child: CustomPaint(painter: _MapPainter())),
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Column(
-                  children: [
-                    _MapControl(icon: Icons.add_rounded, onTap: () {}),
-                    const SizedBox(height: 6),
-                    _MapControl(icon: Icons.remove_rounded, onTap: () {}),
-                    const SizedBox(height: 12),
-                    _MapControl(icon: Icons.my_location_rounded, onTap: () {}),
-                  ],
-                ),
-              ),
-              ...List.generate(properties.length, (index) {
-                final property = properties[index];
-                final pin = _pinPosition(property, properties);
-                final selected = property.id == selectedPropertyId;
-                return Positioned(
-                  left: constraints.maxWidth * pin.x - 32,
-                  top: constraints.maxHeight * pin.y - 22,
-                  child: GestureDetector(
-                    onTap: () => onSelect(property.id),
-                    child: AnimatedScale(
-                      duration: const Duration(milliseconds: 180),
-                      scale: selected ? 1.12 : 1,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: selected ? AppTheme.navy : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x33000000),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          _priceText(property, compact: true),
-                          style: TextStyle(
-                            color: selected ? Colors.white : AppTheme.blue,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              Positioned(
-                left: 15,
-                bottom: 15,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'Offline normalized map - records without coordinates are not pinned',
-                    style: TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              if (properties.isEmpty)
-                const Center(
-                  child: _MapEmptyState(
-                    message: 'No records with coordinates in this area.',
-                  ),
-                ),
-            ],
-          ),
+        if (!hasSelection) {
+          return map;
+        }
+        final compactHeight = constraints.maxHeight < 520;
+        final panelHeight = compactHeight
+            ? (constraints.maxHeight * 0.45).clamp(140.0, 200.0)
+            : (constraints.maxHeight * 0.42).clamp(220.0, 340.0);
+        return Column(
+          children: [
+            Expanded(child: map),
+            SizedBox(height: panelHeight, child: panel),
+          ],
         );
       },
     );
   }
-
-  _PinPosition _pinPosition(Property property, List<Property> properties) {
-    final minLat = properties
-        .map((property) => property.latitude)
-        .whereType<double>()
-        .reduce(math.min);
-    final maxLat = properties
-        .map((property) => property.latitude)
-        .whereType<double>()
-        .reduce(math.max);
-    final minLng = properties
-        .map((property) => property.longitude)
-        .whereType<double>()
-        .reduce(math.min);
-    final maxLng = properties
-        .map((property) => property.longitude)
-        .whereType<double>()
-        .reduce(math.max);
-    final latRange = maxLat - minLat;
-    final lngRange = maxLng - minLng;
-    final normalizedX = lngRange == 0
-        ? 0.5
-        : (property.longitude! - minLng) / lngRange;
-    final normalizedY = latRange == 0
-        ? 0.5
-        : (maxLat - property.latitude!) / latRange;
-    return _PinPosition(
-      x: (0.08 + normalizedX * 0.84).clamp(0.08, 0.92).toDouble(),
-      y: (0.10 + normalizedY * 0.78).clamp(0.10, 0.88).toDouble(),
-    );
-  }
-}
-
-class _PinPosition {
-  const _PinPosition({required this.x, required this.y});
-
-  final double x;
-  final double y;
 }
 
 class _LocationPanel extends StatelessWidget {
@@ -384,18 +627,20 @@ class _LocationPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: property!.facilities
-                  .map(
-                    (item) => Chip(
-                      label: Text(item, style: const TextStyle(fontSize: 10)),
-                    ),
-                  )
-                  .toList(),
-            ),
+            if (property!.facilities.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: property!.facilities
+                    .map(
+                      (item) => Chip(
+                        label: Text(item, style: const TextStyle(fontSize: 10)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
             const SizedBox(height: 15),
             SizedBox(
               width: double.infinity,
@@ -416,8 +661,38 @@ class _LocationPanel extends StatelessWidget {
   }
 }
 
-String _scoreText(double? score) {
-  return score == null ? 'N/A' : '${score.round()}/100';
+class _MapControl extends StatelessWidget {
+  const _MapControl({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+    this.isLoading = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(8),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: isLoading ? null : onTap,
+        icon: isLoading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(icon),
+        iconSize: 20,
+      ),
+    );
+  }
 }
 
 class _MapEmptyState extends StatelessWidget {
@@ -440,6 +715,30 @@ class _MapEmptyState extends StatelessWidget {
   }
 }
 
+class _TestMapPlaceholder extends StatelessWidget {
+  const _TestMapPlaceholder({
+    required this.markerCount,
+    required this.cameraTarget,
+  });
+
+  final int markerCount;
+  final MapCameraTarget cameraTarget;
+
+  @override
+  Widget build(BuildContext context) {
+    final center = cameraTarget.center ?? malaysiaMapCenter;
+    return ColoredBox(
+      color: const Color(0xFFEAF2E8),
+      child: Center(
+        child: _MapEmptyState(
+          message:
+              'OpenStreetMap test placeholder - $markerCount markers near ${center.latitude.toStringAsFixed(2)}, ${center.longitude.toStringAsFixed(2)}.',
+        ),
+      ),
+    );
+  }
+}
+
 String _priceText(Property property, {bool compact = false}) {
   final min = property.priceMin;
   final max = property.priceMax;
@@ -452,6 +751,10 @@ String _priceText(Property property, {bool compact = false}) {
   return price == null
       ? 'Price unavailable'
       : formatRinggit(price, compact: compact);
+}
+
+String _scoreText(double? score) {
+  return score == null ? 'N/A' : '${score.round()}/100';
 }
 
 class _MiniInsight extends StatelessWidget {
@@ -483,113 +786,9 @@ class _MiniInsight extends StatelessWidget {
   }
 }
 
-class _MapControl extends StatelessWidget {
-  const _MapControl({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      elevation: 3,
-      borderRadius: BorderRadius.circular(8),
-      child: IconButton(onPressed: onTap, icon: Icon(icon), iconSize: 20),
-    );
-  }
-}
-
-class _MapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFEAF2E8),
-    );
-    final blocks = Paint()..color = const Color(0xFFF7F4EA);
-    final random = math.Random(7);
-    for (var index = 0; index < 34; index++) {
-      final left = random.nextDouble() * size.width;
-      final top = random.nextDouble() * size.height;
-      final width = 25 + random.nextDouble() * 75;
-      final height = 18 + random.nextDouble() * 48;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(left, top, width, height),
-          const Radius.circular(5),
-        ),
-        blocks,
-      );
-    }
-    final road = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 18
-      ..style = PaintingStyle.stroke;
-    final roadEdge = Paint()
-      ..color = const Color(0xFFD7E0E4)
-      ..strokeWidth = 21
-      ..style = PaintingStyle.stroke;
-    final paths = [
-      Path()
-        ..moveTo(-20, size.height * 0.25)
-        ..cubicTo(
-          size.width * 0.25,
-          size.height * 0.18,
-          size.width * 0.55,
-          size.height * 0.42,
-          size.width + 20,
-          size.height * 0.30,
-        ),
-      Path()
-        ..moveTo(size.width * 0.18, -20)
-        ..cubicTo(
-          size.width * 0.28,
-          size.height * 0.25,
-          size.width * 0.15,
-          size.height * 0.65,
-          size.width * 0.36,
-          size.height + 20,
-        ),
-      Path()
-        ..moveTo(size.width * 0.73, -20)
-        ..cubicTo(
-          size.width * 0.58,
-          size.height * 0.32,
-          size.width * 0.86,
-          size.height * 0.55,
-          size.width * 0.76,
-          size.height + 20,
-        ),
-    ];
-    for (final path in paths) {
-      canvas.drawPath(path, roadEdge);
-      canvas.drawPath(path, road);
-    }
-    final water = Paint()..color = const Color(0xFFB9E0EE);
-    final river = Path()
-      ..moveTo(-10, size.height * 0.82)
-      ..cubicTo(
-        size.width * 0.25,
-        size.height * 0.70,
-        size.width * 0.58,
-        size.height * 0.96,
-        size.width + 10,
-        size.height * 0.78,
-      )
-      ..lineTo(size.width + 10, size.height * 0.86)
-      ..cubicTo(
-        size.width * 0.58,
-        size.height * 1.03,
-        size.width * 0.25,
-        size.height * 0.78,
-        -10,
-        size.height * 0.9,
-      )
-      ..close();
-    canvas.drawPath(river, water);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+void _openOpenStreetMapCopyright() {
+  launchUrl(
+    Uri.parse('https://www.openstreetmap.org/copyright'),
+    mode: LaunchMode.externalApplication,
+  );
 }

@@ -38,7 +38,7 @@ Map<String, Widget> _moduleScreens() {
     'Property Search': PropertySearchScreen(),
     'Property Details': PropertyDetailScreen(propertyId: 'teduh_1'),
     'Area Analytics': AnalysisScreen(),
-    'Map': PropertyMapScreen(),
+    'Map': PropertyMapScreen(useLiveMap: false),
   };
 }
 

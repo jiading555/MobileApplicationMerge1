@@ -1,8 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/property_filtering.dart';
 import '../../core/utils/property_type_normalizer.dart';
@@ -22,95 +23,47 @@ class PropertySearchScreen extends StatefulWidget {
 }
 
 class _PropertySearchScreenState extends State<PropertySearchScreen> {
+  static const _searchDebounceDuration = Duration(milliseconds: 250);
+
   final searchController = TextEditingController();
-  int? maximumPrice;
+  Timer? _searchDebounce;
+  String searchQuery = '';
   String selectedState = 'Any';
   String selectedAreaId = 'Any';
   String selectedType = PropertyTypeNormalizer.anyType;
   String selectedScheme = SchemeNormalizer.anyScheme;
 
+  _SearchIndex? _searchIndex;
+  List<Property>? _indexedPropertiesSource;
+  List<AreaData>? _indexedAreasSource;
+  int _indexedPropertiesLength = -1;
+  int _indexedAreasLength = -1;
+  _SearchIndex? _lastFilterIndex;
+  String _lastFilterKey = '';
+  List<Property> _lastFilteredResults = const [];
+  _SearchIndex? _lastAreaOptionsIndex;
+  String _lastAreaOptionsState = '';
+  List<_FilterOption> _lastAreaOptions = const [];
+
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     searchController.dispose();
     super.dispose();
-  }
-
-  List<Property> filtered(List<Property> properties, List<AreaData> areas) {
-    final query = searchController.text.trim().toLowerCase();
-    final results = properties.where((property) {
-      final area = _safeAreaFor(areas, property.areaId);
-      final searchable = [
-        property.name,
-        property.address,
-        property.type,
-        ...property.unitTypes,
-        property.tenure,
-        property.state,
-        property.district,
-        property.scheme,
-        property.developerName,
-        property.source,
-        area?.name,
-        area?.state,
-      ].whereType<String>().join(' ').toLowerCase();
-      final matchesQuery = query.isEmpty || searchable.contains(query);
-
-      final matchesState = PropertyFilterNormalizer.stateMatches(
-        property.state,
-        selectedState,
-      );
-
-      final matchesArea = PropertyFilterNormalizer.areaMatches(
-        property.areaId,
-        selectedAreaId,
-      );
-      final matchesType = PropertyFilterNormalizer.propertyTypeMatches(
-        property,
-        selectedType,
-      );
-      final matchesScheme = PropertyFilterNormalizer.schemeMatches(
-        property.scheme,
-        selectedScheme,
-      );
-      final matchesPrice = PropertyFilterNormalizer.matchPrice(
-        property,
-        maximumPrice,
-      );
-      return matchesQuery &&
-          matchesState &&
-          matchesArea &&
-          matchesType &&
-          matchesScheme &&
-          matchesPrice;
-    }).toList();
-
-    return results;
   }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final typeValues = PropertyFilterNormalizer.availablePropertyTypes(
-      state.properties,
-    );
-    final schemeValues = PropertyFilterNormalizer.availableSchemes(
-      state.properties.map((p) => p.scheme),
-    );
-    final stateValues = [
-      'Any',
-      ...state.properties
-          .map((p) => p.state)
-          .whereType<String>()
-          .map(LocationNormalizer.displayStateName)
-          .where((state) => state.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort(),
-    ];
-    final areaValues = _areaFilterOptions(state.areas, state.properties);
+    final index = _ensureSearchIndex(state.properties, state.areas);
+    final typeValues = index.typeValues;
+    final schemeValues = index.schemeValues;
+    final stateValues = index.stateValues;
+    final areaValues = _areaFilterOptions(index, selectedState);
     final areaIds = areaValues.map((option) => option.value).toSet();
     if (!stateValues.contains(selectedState)) {
       selectedState = 'Any';
+      selectedAreaId = 'Any';
     }
     if (!areaIds.contains(selectedAreaId)) {
       selectedAreaId = 'Any';
@@ -121,7 +74,7 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     if (!schemeValues.contains(selectedScheme)) {
       selectedScheme = SchemeNormalizer.anyScheme;
     }
-    final results = filtered(state.properties, state.areas);
+    final results = _filtered(index);
     final selectedAreaLabel = selectedAreaId == 'Any'
         ? 'Any Area'
         : areaValues
@@ -151,67 +104,90 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
           children: [
             TextField(
               controller: searchController,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Search locations, projects, property type...',
                 prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: searchController.text.isEmpty
-                    ? const Icon(Icons.tune_rounded)
-                    : IconButton(
-                        onPressed: () {
-                          searchController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.close_rounded),
-                      ),
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: searchController,
+                  builder: (context, value, _) {
+                    if (value.text.isEmpty) {
+                      return const Icon(Icons.tune_rounded);
+                    }
+                    return IconButton(
+                      onPressed: _clearSearch,
+                      icon: const Icon(Icons.close_rounded),
+                    );
+                  },
+                ),
               ),
             ),
             const SizedBox(height: 14),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _DropdownFilter(
-                    label: selectedState == 'Any' ? 'Any State' : selectedState,
-                    values: stateValues,
-                    value: selectedState,
-                    onChanged: (value) => setState(() => selectedState = value),
-                  ),
-                  const SizedBox(width: 9),
-                  _AreaDropdownFilter(
-                    label: selectedAreaLabel,
-                    values: areaValues,
-                    value: selectedAreaId,
-                    onChanged: (value) =>
-                        setState(() => selectedAreaId = value),
-                  ),
-                  const SizedBox(width: 9),
-                  _DropdownFilter(
-                    title: 'Property Type',
-                    label: selectedType,
-                    values: typeValues,
-                    value: selectedType,
-                    onChanged: (value) => setState(() => selectedType = value),
-                  ),
-                  const SizedBox(width: 9),
-                  _DropdownFilter(
-                    title: 'Housing Programme',
-                    label: selectedScheme,
-                    values: schemeValues,
-                    value: selectedScheme,
-                    onChanged: (value) =>
-                        setState(() => selectedScheme = value),
-                  ),
-                  const SizedBox(width: 9),
-                  _FilterButton(
-                    icon: Icons.payments_outlined,
-                    label: maximumPrice == null
-                        ? 'Any Budget'
-                        : 'Up to ${formatRinggit(maximumPrice!, compact: true)}',
-                    onTap: _showPriceSheet,
-                  ),
-                ],
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final twoColumn = constraints.maxWidth < 560;
+                final itemWidth = twoColumn
+                    ? (constraints.maxWidth - 10) / 2
+                    : (constraints.maxWidth - 30) / 4;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _FilterDropdown(
+                      label: selectedState == 'Any'
+                          ? 'Any State'
+                          : selectedState,
+                      options: stateValues
+                          .map(
+                            (value) => _FilterOption(
+                              value,
+                              value == 'Any' ? 'Any State' : value,
+                            ),
+                          )
+                          .toList(),
+                      value: selectedState,
+                      width: itemWidth,
+                      selected: selectedState != 'Any',
+                      onChanged: (value) => setState(() {
+                        selectedState = value;
+                        selectedAreaId = 'Any';
+                      }),
+                    ),
+                    _FilterDropdown(
+                      label: selectedAreaLabel,
+                      options: areaValues,
+                      value: selectedAreaId,
+                      width: itemWidth,
+                      enabled: selectedState != 'Any',
+                      selected: selectedAreaId != 'Any',
+                      onChanged: (value) =>
+                          setState(() => selectedAreaId = value),
+                    ),
+                    _FilterDropdown(
+                      label: selectedType,
+                      options: typeValues
+                          .map((value) => _FilterOption(value, value))
+                          .toList(),
+                      value: selectedType,
+                      width: itemWidth,
+                      selected: selectedType != PropertyTypeNormalizer.anyType,
+                      onChanged: (value) =>
+                          setState(() => selectedType = value),
+                    ),
+                    _FilterDropdown(
+                      label: selectedScheme,
+                      options: schemeValues
+                          .map((value) => _FilterOption(value, value))
+                          .toList(),
+                      value: selectedScheme,
+                      width: itemWidth,
+                      selected: selectedScheme != SchemeNormalizer.anyScheme,
+                      onChanged: (value) =>
+                          setState(() => selectedScheme = value),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 18),
             Row(
@@ -231,11 +207,13 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                   color: AppTheme.muted,
                 ),
                 const SizedBox(width: 5),
-                Text(
-                  sourceLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                Flexible(
+                  child: Text(
+                    sourceLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -253,6 +231,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                             itemBuilder: (context, index) => PropertyCard(
                               property: results[index],
                               compact: true,
+                              showPropertyInfo: true,
+                              showDetailsAction: true,
                               onTap: () => _open(results[index]),
                             ),
                           );
@@ -260,19 +240,28 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
                         final columns = ResponsiveLayout.isDesktop(context)
                             ? 3
                             : 2;
-                        return GridView.builder(
-                          itemCount: results.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                childAspectRatio: columns == 3 ? 0.84 : 1.02,
-                              ),
-                          itemBuilder: (context, index) => PropertyCard(
-                            property: results[index],
-                            onTap: () => _open(results[index]),
-                          ),
+                        return CustomScrollView(
+                          slivers: [
+                            SliverGrid.builder(
+                              itemCount: results.length,
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    crossAxisSpacing: 14,
+                                    mainAxisSpacing: 14,
+                                    mainAxisExtent: 382,
+                                  ),
+                              itemBuilder: (context, index) {
+                                final property = results[index];
+                                return PropertyCard(
+                                  property: property,
+                                  showPropertyInfo: true,
+                                  showDetailsAction: true,
+                                  onTap: () => _open(property),
+                                );
+                              },
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -293,8 +282,9 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
 
   void _reset() {
     searchController.clear();
+    _searchDebounce?.cancel();
     setState(() {
-      maximumPrice = null;
+      searchQuery = '';
       selectedState = 'Any';
       selectedAreaId = 'Any';
       selectedType = PropertyTypeNormalizer.anyType;
@@ -302,93 +292,184 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
     });
   }
 
-  Future<void> _showPriceSheet() async {
-    var draft = (maximumPrice ?? 1500000).toDouble();
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Maximum price',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      formatRinggit(draft),
-                      style: const TextStyle(
-                        color: AppTheme.blue,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() => maximumPrice = null);
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text('Clear Filter'),
-                  ),
-                ],
-              ),
-              Slider(
-                min: 350000,
-                max: 1600000,
-                divisions: 25,
-                value: draft,
-                onChanged: (value) => setSheetState(() => draft = value),
-              ),
-              FilledButton(
-                onPressed: () {
-                  setState(() => maximumPrice = draft.round());
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Apply price'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(_searchDebounceDuration, () {
+      final nextQuery = value.trim().toLowerCase();
+      if (!mounted || nextQuery == searchQuery) {
+        return;
+      }
+      setState(() => searchQuery = nextQuery);
+    });
   }
 
-  AreaData? _safeAreaFor(List<AreaData> areas, String areaId) {
-    try {
-      return areas.firstWhere(
-        (area) => LocationNormalizer.areaIdMatches(area.id, areaId),
-      );
-    } catch (_) {
-      return null;
+  void _clearSearch() {
+    searchController.clear();
+    _searchDebounce?.cancel();
+    if (searchQuery.isEmpty) {
+      return;
     }
+    setState(() => searchQuery = '');
+  }
+
+  _SearchIndex _ensureSearchIndex(
+    List<Property> properties,
+    List<AreaData> areas,
+  ) {
+    if (identical(_indexedPropertiesSource, properties) &&
+        identical(_indexedAreasSource, areas) &&
+        _indexedPropertiesLength == properties.length &&
+        _indexedAreasLength == areas.length &&
+        _searchIndex != null) {
+      return _searchIndex!;
+    }
+
+    final areasById = <String, AreaData>{};
+    for (final area in areas) {
+      areasById[LocationNormalizer.canonicalAreaIdFromExisting(area.id)] = area;
+      areasById[LocationNormalizer.canonicalAreaId(area.state, area.name)] =
+          area;
+    }
+
+    final rows = <_SearchProperty>[];
+    final states = <String>{};
+    for (final property in properties) {
+      final normalizedAreaId = PropertyFilterNormalizer.normalizeAreaId(
+        property.areaId,
+      );
+      final area = areasById[normalizedAreaId];
+      final displayState = LocationNormalizer.nullableDisplayStateName(
+        property.state,
+      );
+      final displayDistrict = LocationNormalizer.nullableDisplayDistrictName(
+        property.district,
+      );
+      if (displayState != null && displayState.isNotEmpty) {
+        states.add(displayState);
+      }
+      rows.add(
+        _SearchProperty(
+          property: property,
+          normalizedAreaId: normalizedAreaId,
+          displayState: displayState,
+          displayDistrict: displayDistrict,
+          searchableText: [
+            property.name,
+            property.address,
+            property.type,
+            ...property.unitTypes,
+            property.tenure,
+            property.state,
+            property.district,
+            property.scheme,
+            property.developerName,
+            property.source,
+            area?.name,
+            area?.state,
+          ].whereType<String>().join(' ').toLowerCase(),
+        ),
+      );
+    }
+
+    final stateValues = ['Any', ...states.toList()..sort()];
+    _searchIndex = _SearchIndex(
+      rows: rows,
+      areas: areas,
+      typeValues: PropertyFilterNormalizer.availablePropertyTypes(properties),
+      schemeValues: PropertyFilterNormalizer.availableSchemes(
+        properties.map((property) => property.scheme),
+      ),
+      stateValues: stateValues,
+    );
+    _indexedPropertiesSource = properties;
+    _indexedAreasSource = areas;
+    _indexedPropertiesLength = properties.length;
+    _indexedAreasLength = areas.length;
+    _lastFilterIndex = null;
+    _lastAreaOptionsIndex = null;
+    return _searchIndex!;
+  }
+
+  List<Property> _filtered(_SearchIndex index) {
+    final normalizedAreaId = PropertyFilterNormalizer.normalizeAreaId(
+      selectedAreaId,
+    );
+    final key =
+        '$searchQuery|$selectedState|$normalizedAreaId|$selectedType|$selectedScheme';
+    if (identical(_lastFilterIndex, index) && _lastFilterKey == key) {
+      return _lastFilteredResults;
+    }
+
+    final results = <Property>[];
+    for (final row in index.rows) {
+      final property = row.property;
+      if (searchQuery.isNotEmpty && !row.searchableText.contains(searchQuery)) {
+        continue;
+      }
+      if (!PropertyFilterNormalizer.stateMatches(
+        property.state,
+        selectedState,
+      )) {
+        continue;
+      }
+      if (selectedAreaId != 'Any' && row.normalizedAreaId != normalizedAreaId) {
+        continue;
+      }
+      if (!PropertyFilterNormalizer.propertyTypeMatches(
+        property,
+        selectedType,
+      )) {
+        continue;
+      }
+      if (!PropertyFilterNormalizer.schemeMatches(
+        property.scheme,
+        selectedScheme,
+      )) {
+        continue;
+      }
+      results.add(property);
+    }
+
+    _lastFilterIndex = index;
+    _lastFilterKey = key;
+    _lastFilteredResults = results;
+    return results;
   }
 
   List<_FilterOption> _areaFilterOptions(
-    List<AreaData> areas,
-    List<Property> properties,
+    _SearchIndex index,
+    String selectedState,
   ) {
-    final labelsById = <String, String>{};
-    for (final area in areas) {
-      labelsById[area.id] = '${area.name}, ${area.state}';
+    if (selectedState == 'Any') {
+      return const [_FilterOption('Any', 'Any Area')];
     }
-    for (final property in properties) {
-      final state = LocationNormalizer.nullableDisplayStateName(property.state);
-      final district = LocationNormalizer.nullableDisplayDistrictName(
-        property.district,
-      );
-      if (state == null || district == null) {
+    if (identical(_lastAreaOptionsIndex, index) &&
+        _lastAreaOptionsState == selectedState) {
+      return _lastAreaOptions;
+    }
+
+    final labelsById = <String, String>{};
+    for (final area in index.areas) {
+      if (!LocationNormalizer.stateMatches(area.state, selectedState)) {
+        continue;
+      }
+      final district = LocationNormalizer.displayDistrictName(area.name);
+      if (district.isEmpty) {
+        continue;
+      }
+      final areaId = LocationNormalizer.canonicalAreaId(area.state, district);
+      labelsById[areaId] = district;
+    }
+    for (final row in index.rows) {
+      final state = row.displayState;
+      final district = row.displayDistrict;
+      if (state == null ||
+          district == null ||
+          !LocationNormalizer.stateMatches(state, selectedState)) {
         continue;
       }
       final areaId = LocationNormalizer.canonicalAreaId(state, district);
-      labelsById.putIfAbsent(areaId, () => '$district, $state');
+      labelsById.putIfAbsent(areaId, () => district);
     }
 
     final options =
@@ -396,8 +477,43 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
             .map((entry) => _FilterOption(entry.key, entry.value))
             .toList()
           ..sort((left, right) => left.label.compareTo(right.label));
-    return [const _FilterOption('Any', 'Any Area'), ...options];
+    _lastAreaOptionsIndex = index;
+    _lastAreaOptionsState = selectedState;
+    _lastAreaOptions = [const _FilterOption('Any', 'Any Area'), ...options];
+    return _lastAreaOptions;
   }
+}
+
+class _SearchIndex {
+  const _SearchIndex({
+    required this.rows,
+    required this.areas,
+    required this.typeValues,
+    required this.schemeValues,
+    required this.stateValues,
+  });
+
+  final List<_SearchProperty> rows;
+  final List<AreaData> areas;
+  final List<String> typeValues;
+  final List<String> schemeValues;
+  final List<String> stateValues;
+}
+
+class _SearchProperty {
+  const _SearchProperty({
+    required this.property,
+    required this.normalizedAreaId,
+    required this.searchableText,
+    required this.displayState,
+    required this.displayDistrict,
+  });
+
+  final Property property;
+  final String normalizedAreaId;
+  final String searchableText;
+  final String? displayState;
+  final String? displayDistrict;
 }
 
 class _FilterOption {
@@ -407,138 +523,107 @@ class _FilterOption {
   final String label;
 }
 
-class _AreaDropdownFilter extends StatelessWidget {
-  const _AreaDropdownFilter({
+class _FilterDropdown extends StatelessWidget {
+  const _FilterDropdown({
     required this.label,
-    required this.values,
+    required this.options,
     required this.value,
+    required this.width,
     required this.onChanged,
+    this.enabled = true,
+    this.selected = false,
   });
 
   final String label;
-  final List<_FilterOption> values;
+  final List<_FilterOption> options;
   final String value;
+  final double width;
   final ValueChanged<String> onChanged;
+  final bool enabled;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       initialValue: value,
-      onSelected: onChanged,
-      itemBuilder: (_) => values
+      enabled: enabled,
+      constraints: BoxConstraints.tightFor(width: width),
+      onSelected: enabled ? onChanged : null,
+      itemBuilder: (_) => options
           .map(
-            (item) => PopupMenuItem(value: item.value, child: Text(item.label)),
+            (item) => PopupMenuItem(
+              value: item.value,
+              child: Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           )
           .toList(),
-      child: _FilterButton(label: label),
-    );
-  }
-}
-
-class _DropdownFilter extends StatelessWidget {
-  const _DropdownFilter({
-    required this.label,
-    required this.values,
-    required this.value,
-    required this.onChanged,
-    this.title,
-  });
-
-  final String? title;
-  final String label;
-  final List<String> values;
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      initialValue: value,
-      onSelected: onChanged,
-      itemBuilder: (_) => values
-          .map((item) => PopupMenuItem(value: item, child: Text(item)))
-          .toList(),
-      child: _FilterButton(title: title, label: label),
+      child: _FilterButton(
+        label: label,
+        enabled: enabled,
+        selected: selected,
+        width: width,
+      ),
     );
   }
 }
 
 class _FilterButton extends StatelessWidget {
-  const _FilterButton({required this.label, this.title, this.icon, this.onTap});
+  const _FilterButton({
+    required this.label,
+    required this.width,
+    required this.enabled,
+    required this.selected,
+  });
 
-  final String? title;
   final String label;
-  final IconData? icon;
-  final VoidCallback? onTap;
+  final double width;
+  final bool enabled;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    final child = Container(
-      constraints: const BoxConstraints(
-        minWidth: 128,
-        maxWidth: 220,
-        minHeight: 48,
-      ),
+    final textColor = enabled
+        ? (selected ? AppTheme.blue : Colors.black87)
+        : AppTheme.muted;
+    final borderColor = selected && enabled
+        ? AppTheme.blue
+        : const Color(0xFFDCE3ED);
+    return Container(
+      width: width,
+      height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFDCE3ED)),
+        color: enabled ? Colors.white : const Color(0xFFF4F7FB),
+        border: Border.all(color: borderColor),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 18, color: AppTheme.blue),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: title == null
-                ? Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
-          const Icon(Icons.arrow_drop_down_rounded, size: 20),
+          Icon(
+            Icons.arrow_drop_down_rounded,
+            size: 20,
+            color: enabled
+                ? (selected ? AppTheme.blue : Colors.black87)
+                : AppTheme.muted,
+          ),
         ],
-      ),
-    );
-
-    if (onTap == null) {
-      return child;
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: child,
       ),
     );
   }
@@ -558,7 +643,7 @@ class _NoResults extends StatelessWidget {
           Text('No properties match these filters.'),
           SizedBox(height: 4),
           Text(
-            'Increase the budget or reset a filter.',
+            'Reset a filter to broaden the results.',
             style: TextStyle(color: AppTheme.muted),
           ),
         ],

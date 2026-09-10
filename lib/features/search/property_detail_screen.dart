@@ -42,16 +42,20 @@ class PropertyDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Property details'),
         actions: [
-          IconButton(
-            onPressed: () => state.toggleFavourite(property.id),
-            icon: Icon(
-              state.isFavourite(property.id)
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              color: state.isFavourite(property.id)
-                  ? const Color(0xFFE54865)
-                  : AppTheme.ink,
-            ),
+          ValueListenableBuilder<Set<String>>(
+            valueListenable: state.favouriteIdsListenable,
+            builder: (context, favouriteIds, _) {
+              final isFavourite = favouriteIds.contains(property.id);
+              return IconButton(
+                onPressed: () => state.toggleFavourite(property.id),
+                icon: Icon(
+                  isFavourite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: isFavourite ? const Color(0xFFE54865) : AppTheme.ink,
+                ),
+              );
+            },
           ),
           IconButton(
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(

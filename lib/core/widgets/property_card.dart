@@ -1,10 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../app/app_state.dart';
 import '../../models/property.dart';
 import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
+import '../utils/scheme_normalizer.dart';
 import 'property_art.dart';
 
 class PropertyCard extends StatelessWidget {
@@ -12,42 +13,75 @@ class PropertyCard extends StatelessWidget {
     required this.property,
     required this.onTap,
     this.compact = false,
+    this.showPropertyInfo = false,
+    this.showDetailsAction = false,
     super.key,
   });
 
   final Property property;
   final VoidCallback onTap;
   final bool compact;
+  final bool showPropertyInfo;
+  final bool showDetailsAction;
 
   @override
   Widget build(BuildContext context) {
-    final state = AppScope.of(context);
+    final state = AppScope.read(context);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: compact
-            ? _CompactContent(property: property, state: state)
-            : _FullContent(property: property, state: state),
+            ? _CompactContent(
+                property: property,
+                onTap: onTap,
+                favouriteIdsListenable: state.favouriteIdsListenable,
+                onToggleFavourite: state.toggleFavourite,
+                showPropertyInfo: showPropertyInfo,
+                showDetailsAction: showDetailsAction,
+              )
+            : _FullContent(
+                property: property,
+                onTap: onTap,
+                favouriteIdsListenable: state.favouriteIdsListenable,
+                onToggleFavourite: state.toggleFavourite,
+                showPropertyInfo: showPropertyInfo,
+                showDetailsAction: showDetailsAction,
+              ),
       ),
     );
   }
 }
 
 class _FullContent extends StatelessWidget {
-  const _FullContent({required this.property, required this.state});
+  const _FullContent({
+    required this.property,
+    required this.onTap,
+    required this.favouriteIdsListenable,
+    required this.onToggleFavourite,
+    required this.showPropertyInfo,
+    required this.showDetailsAction,
+  });
 
   final Property property;
-  final AppState state;
+  final VoidCallback onTap;
+  final ValueListenable<Set<String>> favouriteIdsListenable;
+  final ValueChanged<String> onToggleFavourite;
+  final bool showPropertyInfo;
+  final bool showDetailsAction;
 
   @override
   Widget build(BuildContext context) {
+    final enriched = showPropertyInfo || showDetailsAction;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Stack(
           children: [
-            PropertyArt(palette: property.palette, height: 164),
+            PropertyArt(
+              palette: property.palette,
+              height: enriched ? 122 : 164,
+            ),
             Positioned(
               top: 12,
               left: 12,
@@ -73,22 +107,17 @@ class _FullContent extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child: IconButton.filledTonal(
-                onPressed: () => state.toggleFavourite(property.id),
-                icon: Icon(
-                  state.isFavourite(property.id)
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  color: state.isFavourite(property.id)
-                      ? const Color(0xFFE54865)
-                      : AppTheme.ink,
-                ),
+              child: _FavouriteButton(
+                propertyId: property.id,
+                favouriteIdsListenable: favouriteIdsListenable,
+                onToggleFavourite: onToggleFavourite,
+                filled: true,
               ),
             ),
           ],
         ),
         Padding(
-          padding: const EdgeInsets.all(15),
+          padding: EdgeInsets.all(enriched ? 12 : 15),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -101,21 +130,29 @@ class _FullContent extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 property.address,
-                maxLines: 2,
+                maxLines: enriched ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppTheme.muted, fontSize: 12),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: enriched ? 8 : 12),
               Text(
                 _priceText(property),
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppTheme.green,
-                  fontSize: 18,
+                  fontSize: enriched ? 16 : 18,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: enriched ? 7 : 10),
               _Facts(property: property),
+              if (showPropertyInfo) ...[
+                const SizedBox(height: 7),
+                _PropertyInfo(property: property),
+              ],
+              if (showDetailsAction) ...[
+                const SizedBox(height: 8),
+                _DetailsAction(onTap: onTap),
+              ],
             ],
           ),
         ),
@@ -125,10 +162,21 @@ class _FullContent extends StatelessWidget {
 }
 
 class _CompactContent extends StatelessWidget {
-  const _CompactContent({required this.property, required this.state});
+  const _CompactContent({
+    required this.property,
+    required this.onTap,
+    required this.favouriteIdsListenable,
+    required this.onToggleFavourite,
+    required this.showPropertyInfo,
+    required this.showDetailsAction,
+  });
 
   final Property property;
-  final AppState state;
+  final VoidCallback onTap;
+  final ValueListenable<Set<String>> favouriteIdsListenable;
+  final ValueChanged<String> onToggleFavourite;
+  final bool showPropertyInfo;
+  final bool showDetailsAction;
 
   @override
   Widget build(BuildContext context) {
@@ -174,21 +222,158 @@ class _CompactContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 7),
                 _Facts(property: property, compact: true),
+                if (showPropertyInfo) ...[
+                  const SizedBox(height: 8),
+                  _PropertyInfo(property: property, compact: true),
+                ],
+                if (showDetailsAction) ...[
+                  const SizedBox(height: 8),
+                  _DetailsAction(onTap: onTap, compact: true),
+                ],
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => state.toggleFavourite(property.id),
-            icon: Icon(
-              state.isFavourite(property.id)
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              color: state.isFavourite(property.id)
-                  ? const Color(0xFFE54865)
-                  : AppTheme.muted,
-            ),
+          _FavouriteButton(
+            propertyId: property.id,
+            favouriteIdsListenable: favouriteIdsListenable,
+            onToggleFavourite: onToggleFavourite,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FavouriteButton extends StatelessWidget {
+  const _FavouriteButton({
+    required this.propertyId,
+    required this.favouriteIdsListenable,
+    required this.onToggleFavourite,
+    this.filled = false,
+  });
+
+  final String propertyId;
+  final ValueListenable<Set<String>> favouriteIdsListenable;
+  final ValueChanged<String> onToggleFavourite;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: favouriteIdsListenable,
+      builder: (context, favouriteIds, _) {
+        final isFavourite = favouriteIds.contains(propertyId);
+        final icon = Icon(
+          isFavourite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          color: isFavourite
+              ? const Color(0xFFE54865)
+              : filled
+              ? AppTheme.ink
+              : AppTheme.muted,
+        );
+        if (filled) {
+          return IconButton.filledTonal(
+            onPressed: () => onToggleFavourite(propertyId),
+            icon: icon,
+          );
+        }
+        return IconButton(
+          onPressed: () => onToggleFavourite(propertyId),
+          icon: icon,
+        );
+      },
+    );
+  }
+}
+
+class _PropertyInfo extends StatelessWidget {
+  const _PropertyInfo({required this.property, this.compact = false});
+
+  final Property property;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = _sourceLabel(property);
+    final entries = [
+      if (_propertyTypeLabel(property) case final type?)
+        _InfoEntry(icon: Icons.home_work_outlined, label: type),
+      if (_programmeLabel(property) case final programme?)
+        _InfoEntry(
+          icon: Icons.account_balance_outlined,
+          label: 'Programme: $programme',
+        ),
+      if (_shouldShowSourceInfo(property) && source != null)
+        _InfoEntry(icon: Icons.dataset_outlined, label: source),
+    ];
+
+    if (entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 5,
+      children: entries
+          .map((entry) => _InfoLine(entry: entry, compact: compact))
+          .toList(),
+    );
+  }
+}
+
+class _InfoEntry {
+  const _InfoEntry({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({required this.entry, required this.compact});
+
+  final _InfoEntry entry;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(entry.icon, size: 15, color: AppTheme.muted),
+        const SizedBox(width: 5),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: compact ? 108 : 190),
+          child: Text(
+            entry.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: compact ? 11 : 12,
+              color: AppTheme.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailsAction extends StatelessWidget {
+  const _DetailsAction({required this.onTap, this.compact = false});
+
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: compact ? null : double.infinity,
+      height: compact ? 42 : 40,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+        label: const Text('View Details'),
       ),
     );
   }
@@ -228,6 +413,48 @@ class _Facts extends StatelessWidget {
   }
 }
 
+String? _propertyTypeLabel(Property property) {
+  final candidates = [
+    property.verifiedPropertyType,
+    ...property.unitOptions.map((option) => option.unitType),
+    ...property.unitTypes,
+    property.type,
+  ];
+  for (final candidate in candidates) {
+    final text = _cleanOptionalText(candidate);
+    if (text == null) {
+      continue;
+    }
+    final normalized = text.toLowerCase();
+    if (property.isGovernmentRecord &&
+        (normalized == 'public housing' || normalized == 'public')) {
+      continue;
+    }
+    return _displayText(text);
+  }
+  return null;
+}
+
+String? _programmeLabel(Property property) {
+  final scheme = _cleanOptionalText(property.scheme);
+  if (scheme == null) {
+    return null;
+  }
+  final normalized = SchemeNormalizer.normalize(scheme);
+  return normalized.isEmpty ? null : normalized;
+}
+
+String? _sourceLabel(Property property) {
+  return property.isGovernmentRecord ? 'TEDUH / KPKT' : null;
+}
+
+bool _shouldShowSourceInfo(Property property) {
+  return _sourceLabel(property) != null &&
+      (property.bedrooms != null ||
+          property.bathrooms != null ||
+          property.sizeSqft != null);
+}
+
 String _sourceFactLabel(Property property) {
   if (property.isGovernmentRecord) {
     return 'TEDUH / KPKT';
@@ -243,6 +470,40 @@ String _priceText(Property property) {
   }
   final price = property.price ?? min ?? max;
   return price == null ? 'Price unavailable' : formatRinggit(price);
+}
+
+String? _cleanOptionalText(String? value) {
+  final text = value?.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (text == null || text.isEmpty) {
+    return null;
+  }
+  final normalized = text.toLowerCase();
+  if (normalized == 'n/a' ||
+      normalized == 'na' ||
+      normalized == 'unknown' ||
+      normalized == 'not available' ||
+      normalized == 'not applicable' ||
+      normalized == 'property type not available') {
+    return null;
+  }
+  return text;
+}
+
+String _displayText(String value) {
+  if (value.contains(RegExp(r'[a-z]'))) {
+    return value;
+  }
+  return value
+      .split(' ')
+      .map((word) => word.length <= 3 ? word : _titleCaseWord(word))
+      .join(' ');
+}
+
+String _titleCaseWord(String word) {
+  if (word.isEmpty) {
+    return word;
+  }
+  return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
 }
 
 class _Fact extends StatelessWidget {

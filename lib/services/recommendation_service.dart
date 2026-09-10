@@ -12,17 +12,18 @@ class RecommendationService {
     required List<AreaData> areas,
     required UserPreferences preferences,
   }) {
-    final areaIndex = {for (final area in areas) area.id: area};
+    final areaIndex = {
+      for (final area in areas)
+        PropertyFilterNormalizer.normalizeAreaId(area.id): area,
+    };
     final results =
         properties
             .where((property) {
-              if (property.price == null ||
-                  !areaIndex.keys.any(
-                    (areaId) => PropertyFilterNormalizer.areaMatches(
-                      property.areaId,
-                      areaId,
-                    ),
-                  )) {
+              final area =
+                  areaIndex[PropertyFilterNormalizer.normalizeAreaId(
+                    property.areaId,
+                  )];
+              if (property.price == null || area == null) {
                 return false;
               }
               final typeMatches =
@@ -42,14 +43,9 @@ class RecommendationService {
             .map(
               (property) => _score(
                 property,
-                areaIndex.entries
-                    .firstWhere(
-                      (entry) => PropertyFilterNormalizer.areaMatches(
-                        property.areaId,
-                        entry.key,
-                      ),
-                    )
-                    .value,
+                areaIndex[PropertyFilterNormalizer.normalizeAreaId(
+                  property.areaId,
+                )]!,
                 preferences,
               ),
             )

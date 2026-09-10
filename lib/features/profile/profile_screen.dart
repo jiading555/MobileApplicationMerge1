@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_navigation_scope.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_layout.dart';
@@ -22,6 +23,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    final selectDestination = AppNavigationScope.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile & settings'),
@@ -34,122 +36,131 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: SingleChildScrollView(
-        child: PageContainer(
-          maxWidth: 1000,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ProfileHeader(
-                user: state.user,
-                favouriteCount: state.favouriteProperties.length,
-              ),
-              const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final preferences = _PreferencesSummary();
-                  final account = _AccountActions(
-                    onEdit: () => _editProfile(context),
-                    onPassword: () => _changePassword(context),
-                    onAbout: () => _showAbout(context),
-                  );
-                  return ResponsiveLayout.isTablet(context)
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: preferences),
-                            const SizedBox(width: 14),
-                            Expanded(child: account),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            preferences,
-                            const SizedBox(height: 14),
-                            account,
-                          ],
-                        );
-                },
-              ),
-              const SizedBox(height: 22),
-              Card(
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      value: notifications,
-                      onChanged: (value) =>
-                          setState(() => notifications = value),
-                      secondary: const Icon(Icons.notifications_outlined),
-                      title: const Text('Recommendation alerts'),
-                      subtitle: const Text(
-                        'Receive saved-area and data refresh reminders',
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: dataSaver,
-                      onChanged: (value) => setState(() => dataSaver = value),
-                      secondary: const Icon(Icons.data_saver_on_rounded),
-                      title: const Text('Data saver'),
-                      subtitle: const Text(
-                        'Prefer the bundled snapshot over live refreshes',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 26),
-              Row(
+      body: ValueListenableBuilder<Set<String>>(
+        valueListenable: state.favouriteIdsListenable,
+        builder: (context, _, _) {
+          final favouriteProperties = state.favouriteProperties;
+          return SingleChildScrollView(
+            child: PageContainer(
+              maxWidth: 1000,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Favourite properties',
-                    style: Theme.of(context).textTheme.titleLarge,
+                  _ProfileHeader(
+                    user: state.user,
+                    favouriteCount: favouriteProperties.length,
                   ),
-                  const Spacer(),
-                  Text(
-                    '${state.favouriteProperties.length} saved',
-                    style: const TextStyle(color: AppTheme.muted),
+                  const SizedBox(height: 22),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final preferences = _PreferencesSummary(
+                        selectDestination: selectDestination,
+                      );
+                      final account = _AccountActions(
+                        onEdit: () => _editProfile(context),
+                        onPassword: () => _changePassword(context),
+                        onAbout: () => _showAbout(context),
+                      );
+                      return ResponsiveLayout.isTablet(context)
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: preferences),
+                                const SizedBox(width: 14),
+                                Expanded(child: account),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                preferences,
+                                const SizedBox(height: 14),
+                                account,
+                              ],
+                            );
+                    },
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (state.favouriteProperties.isEmpty)
-                const _EmptyFavourites()
-              else
-                ...state.favouriteProperties.map(
-                  (property) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: PropertyCard(
-                      property: property,
-                      compact: true,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              PropertyDetailScreen(propertyId: property.id),
+                  const SizedBox(height: 22),
+                  Card(
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          value: notifications,
+                          onChanged: (value) =>
+                              setState(() => notifications = value),
+                          secondary: const Icon(Icons.notifications_outlined),
+                          title: const Text('Recommendation alerts'),
+                          subtitle: const Text(
+                            'Receive saved-area and data refresh reminders',
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        SwitchListTile(
+                          value: dataSaver,
+                          onChanged: (value) =>
+                              setState(() => dataSaver = value),
+                          secondary: const Icon(Icons.data_saver_on_rounded),
+                          title: const Text('Data saver'),
+                          subtitle: const Text(
+                            'Prefer the bundled snapshot over live refreshes',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  Row(
+                    children: [
+                      Text(
+                        'Favourite properties',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${favouriteProperties.length} saved',
+                        style: const TextStyle(color: AppTheme.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (favouriteProperties.isEmpty)
+                    const _EmptyFavourites()
+                  else
+                    ...favouriteProperties.map(
+                      (property) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: PropertyCard(
+                          property: property,
+                          compact: true,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  PropertyDetailScreen(propertyId: property.id),
+                            ),
+                          ),
                         ),
                       ),
                     ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: state.logout,
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text('Sign out'),
+                    ),
                   ),
-                ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: state.logout,
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Sign out'),
-                ),
+                  const SizedBox(height: 12),
+                  const Center(
+                    child: Text(
+                      'Smart Property Advisor v1.0.0 - Assignment sample',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              const Center(
-                child: Text(
-                  'Smart Property Advisor v1.0.0 - Assignment sample',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -361,6 +372,10 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 class _PreferencesSummary extends StatelessWidget {
+  const _PreferencesSummary({required this.selectDestination});
+
+  final ValueChanged<int> selectDestination;
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -401,7 +416,7 @@ class _PreferencesSummary extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: TextButton.icon(
-                onPressed: () => state.selectDestination(3),
+                onPressed: () => selectDestination(3),
                 icon: const Icon(Icons.auto_awesome_rounded),
                 label: const Text('Update in Advisor'),
               ),

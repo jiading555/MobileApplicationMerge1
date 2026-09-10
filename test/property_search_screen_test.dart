@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_property_advisor/app/app_scope.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
+import 'package:smart_property_advisor/core/utils/location_normalizer.dart';
 import 'package:smart_property_advisor/features/search/property_search_screen.dart';
 import 'package:smart_property_advisor/models/property.dart';
 import 'package:smart_property_advisor/models/area_data.dart';
 
 void main() {
-  testWidgets('PropertySearchScreen shows filter labels and opens menus', (
+  testWidgets('PropertySearchScreen shows final filters and opens menus', (
     tester,
   ) async {
     final state = AppState();
@@ -58,7 +59,8 @@ void main() {
     expect(find.text('Any Area'), findsOneWidget);
     expect(find.text('Any Type'), findsOneWidget);
     expect(find.text('Any Programme'), findsOneWidget);
-    expect(find.text('Any Budget'), findsOneWidget);
+    expect(find.text('Any Budget'), findsNothing);
+    expect(find.text('Budget'), findsNothing);
     expect(find.text('Reload Latest Data'), findsNothing);
     expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
 
@@ -72,10 +74,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Kuala Lumpur'), findsWidgets);
 
+    await tester.tap(find.text('Any Area'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kuala Lumpur City'), findsWidgets);
+    await tester.tap(find.text('Kuala Lumpur City').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Kuala Lumpur City'), findsOneWidget);
+
     await tester.tap(find.text('Any Type'));
     await tester.pumpAndSettle();
     expect(find.text('Apartment / Flat'), findsWidgets);
-    expect(find.text('Condominium'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(PopupMenuItem<String>),
+        matching: find.text('Condominium'),
+      ),
+      findsNothing,
+    );
     await tester.tap(find.text('Apartment / Flat').last);
     await tester.pumpAndSettle();
     expect(find.text('1 properties found'), findsOneWidget);
@@ -89,7 +104,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.restart_alt_rounded));
     await tester.pumpAndSettle();
     expect(find.text('Any State'), findsOneWidget);
-    expect(find.text('Any Budget'), findsOneWidget);
+    expect(find.text('Any Area'), findsOneWidget);
+    expect(find.text('Any Budget'), findsNothing);
   });
 
   testWidgets(
@@ -174,7 +190,7 @@ void main() {
 
       await tester.tap(find.text('Any Area'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Kinta, Perak').last);
+      await tester.tap(find.text('Kinta').last);
       await tester.pumpAndSettle();
       expect(find.text('2 properties found'), findsOneWidget);
 
@@ -186,22 +202,11 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.restart_alt_rounded));
       await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Any Budget'));
-      await tester.pumpAndSettle();
-      await tester.drag(find.byType(Slider), const Offset(-1000, 0));
-      await tester.pump();
-      await tester.tap(find.text('Apply price'));
-      await tester.pumpAndSettle();
-      expect(find.text('1 properties found'), findsOneWidget);
-
-      await tester.tap(find.byIcon(Icons.restart_alt_rounded));
-      await tester.pumpAndSettle();
       expect(find.text('3 properties found'), findsOneWidget);
     },
   );
 
-  testWidgets('PropertySearchScreen builds area options dynamically', (
+  testWidgets('Area is not populated nationwide when State is Any State', (
     tester,
   ) async {
     final state = AppState();
@@ -221,6 +226,20 @@ void main() {
         palette: 0,
         scheme: 'PR1MA Homes',
       ),
+      Property(
+        id: 'p2',
+        name: 'Residensi Kemaman',
+        areaId: 'terengganu_kemaman',
+        address: 'Kemaman, Terengganu',
+        type: 'APARTMEN',
+        tenure: 'Tenure not available',
+        state: 'Terengganu',
+        district: 'Kemaman',
+        summary: 'sum',
+        facilities: [],
+        palette: 0,
+        scheme: 'PPAM',
+      ),
     ];
     state.areas = const [];
 
@@ -233,7 +252,496 @@ void main() {
     await tester.tap(find.text('Any Area'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Kinta, Perak'), findsWidgets);
+    expect(find.text('Kinta'), findsNothing);
+    expect(find.text('Kemaman'), findsNothing);
+    expect(find.text('Any Area'), findsOneWidget);
+  });
+
+  testWidgets('Selecting Terengganu only exposes Terengganu areas', (
+    tester,
+  ) async {
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'besut',
+        name: 'Residensi Besut',
+        state: 'Terengganu',
+        district: 'Besut',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'dungun',
+        name: 'Residensi Dungun',
+        state: 'Terengganu',
+        district: 'Dungun',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'hulu_terengganu',
+        name: 'Residensi Hulu Terengganu',
+        state: 'Terengganu',
+        district: 'Hulu Terengganu',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'kemaman',
+        name: 'Residensi Kemaman',
+        state: 'Terengganu',
+        district: 'Kemaman',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'kuala_nerus',
+        name: 'Residensi Kuala Nerus',
+        state: 'Terengganu',
+        district: 'Kuala Nerus',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'kuala_terengganu',
+        name: 'Residensi Kuala Terengganu',
+        state: 'Terengganu',
+        district: 'Kuala Terengganu',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'marang',
+        name: 'Residensi Marang',
+        state: 'Terengganu',
+        district: 'Marang',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'setiu',
+        name: 'Residensi Setiu',
+        state: 'Terengganu',
+        district: 'Setiu',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'kinta',
+        name: 'Residensi Kinta',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    await tester.tap(find.text('Any State'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Terengganu').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Any Area'));
+    await tester.pumpAndSettle();
+
+    for (final area in const [
+      'Besut',
+      'Dungun',
+      'Hulu Terengganu',
+      'Kemaman',
+      'Kuala Nerus',
+      'Kuala Terengganu',
+      'Marang',
+      'Setiu',
+    ]) {
+      expect(find.text(area), findsWidgets);
+    }
+    expect(find.text('Kinta'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(PopupMenuItem<String>),
+        matching: find.text('Kemaman, Terengganu'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Changing State resets selected Area', (tester) async {
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'kemaman',
+        name: 'Residensi Kemaman',
+        state: 'Terengganu',
+        district: 'Kemaman',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'kinta',
+        name: 'Residensi Kinta',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: 'PPAM',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    await tester.tap(find.text('Any State'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Terengganu').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Any Area'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kemaman').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kemaman'), findsOneWidget);
+    expect(find.text('1 properties found'), findsOneWidget);
+
+    await tester.tap(find.text('Terengganu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Perak').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Any Area'), findsOneWidget);
+    expect(find.text('Kemaman'), findsNothing);
+    expect(find.text('1 properties found'), findsOneWidget);
+  });
+
+  testWidgets(
+    'State Area Property Type and Housing Programme filtering works together',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final state = AppState();
+      state.properties = [
+        _teduhProperty(
+          id: 'target',
+          name: 'Residensi Kemaman Apartment PPAM',
+          state: 'Terengganu',
+          district: 'Kemaman',
+          scheme: 'PPAM',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+        _teduhProperty(
+          id: 'wrong_type',
+          name: 'Residensi Kemaman Terrace PPAM',
+          state: 'Terengganu',
+          district: 'Kemaman',
+          scheme: 'PPAM',
+          price: 300000,
+          unitTypes: const ['RUMAH TERES'],
+        ),
+        _teduhProperty(
+          id: 'wrong_scheme',
+          name: 'Residensi Kemaman Apartment PR1MA',
+          state: 'Terengganu',
+          district: 'Kemaman',
+          scheme: 'PR1MA Homes',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+        _teduhProperty(
+          id: 'wrong_area',
+          name: 'Residensi Besut Apartment PPAM',
+          state: 'Terengganu',
+          district: 'Besut',
+          scheme: 'PPAM',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+        _teduhProperty(
+          id: 'wrong_state',
+          name: 'Residensi Kinta Apartment PPAM',
+          state: 'Perak',
+          district: 'Kinta',
+          scheme: 'PPAM',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+      ];
+      state.areas = const [];
+
+      await _pumpSearch(tester, state);
+      expect(find.text('5 properties found'), findsOneWidget);
+
+      await tester.tap(find.text('Any State'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Terengganu').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any Area'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kemaman').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apartment / Flat').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Any Programme'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PPAM').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 properties found'), findsOneWidget);
+      expect(find.text('Residensi Kemaman Apartment PPAM'), findsOneWidget);
+    },
+  );
+
+  testWidgets('PropertySearchScreen has no phone-size overflow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'target',
+        name: 'Residensi Kuala Terengganu Apartment PPAM',
+        state: 'Terengganu',
+        district: 'Kuala Terengganu',
+        scheme: 'Perumahan Penjawat Awam Malaysia (PPAM)',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Any State'), findsOneWidget);
+    expect(find.text('Any Area'), findsOneWidget);
+    expect(find.text('Any Type'), findsOneWidget);
+    expect(find.text('Any Programme'), findsOneWidget);
+  });
+
+  testWidgets('Property search cards do not use excessive tablet grid height', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 900);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'height',
+        name: 'Residensi Natural Height',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: 'SPNB',
+        price: 300000,
+        unitTypes: const ['RUMAH TERES'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(find.byType(GridView), findsNothing);
+    final cardFinder = find.ancestor(
+      of: find.text('Residensi Natural Height'),
+      matching: find.byType(Card),
+    );
+    expect(cardFinder, findsOneWidget);
+    final cardHeight = tester.getSize(cardFinder).height;
+    expect(cardHeight, greaterThan(300));
+    expect(cardHeight, lessThan(420));
+  });
+
+  testWidgets('Property card shows type and housing programme when available', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 900);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'metadata',
+        name: 'Residensi Metadata',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: 'Perumahan Penjawat Awam Malaysia (PPAM)',
+        price: 300000,
+        unitTypes: const ['RUMAH TERES'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(find.text('Rumah Teres'), findsOneWidget);
+    expect(find.text('Programme: PPAM'), findsOneWidget);
+    expect(find.text('TEDUH / KPKT'), findsOneWidget);
+  });
+
+  testWidgets('Missing optional card metadata does not show placeholder rows', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 900);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'missing_metadata',
+        name: 'Residensi Sparse',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: '',
+        price: 300000,
+        unitTypes: const [],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(find.textContaining('Programme:'), findsNothing);
+    expect(find.text('N/A'), findsNothing);
+    expect(find.text('Unknown'), findsNothing);
+    expect(find.text('Not Available'), findsNothing);
+  });
+
+  testWidgets(
+    'View Details action opens the existing property details screen',
+    (tester) async {
+      final state = AppState();
+      state.properties = [
+        _teduhProperty(
+          id: 'details',
+          name: 'Residensi Details',
+          state: 'Perak',
+          district: 'Kinta',
+          scheme: 'SPNB',
+          price: 300000,
+          unitTypes: const ['APARTMEN'],
+        ),
+      ];
+      state.areas = const [];
+
+      await _pumpSearch(tester, state);
+      await tester.ensureVisible(find.text('View Details'));
+      await tester.tap(find.text('View Details'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Property details'), findsOneWidget);
+      expect(find.text('Residensi Details'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Favourite action still toggles from property search card', (
+    tester,
+  ) async {
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'favourite',
+        name: 'Residensi Favourite',
+        state: 'Perak',
+        district: 'Kinta',
+        scheme: 'SPNB',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+    await tester.tap(find.byIcon(Icons.favorite_border_rounded).first);
+    await tester.pump();
+
+    expect(state.isFavourite('teduh_favourite'), isTrue);
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+  });
+
+  testWidgets('PropertySearchScreen has no desktop grid overflow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 900);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    final state = AppState();
+    state.properties = [
+      _teduhProperty(
+        id: 'desktop_1',
+        name: 'Residensi Kuala Terengganu Apartment PPAM With Longer Name',
+        state: 'Terengganu',
+        district: 'Kuala Terengganu',
+        scheme: 'Perumahan Penjawat Awam Malaysia (PPAM)',
+        price: 300000,
+        unitTypes: const ['APARTMEN'],
+      ),
+      _teduhProperty(
+        id: 'desktop_2',
+        name: 'Residensi Kemaman Terrace SPNB With Longer Name',
+        state: 'Terengganu',
+        district: 'Kemaman',
+        scheme: 'SPNB',
+        price: 350000,
+        unitTypes: const ['RUMAH TERES'],
+      ),
+      _teduhProperty(
+        id: 'desktop_3',
+        name: 'Residensi Besut Semi Detached PR1MA With Longer Name',
+        state: 'Terengganu',
+        district: 'Besut',
+        scheme: 'PR1MA Homes',
+        price: 400000,
+        unitTypes: const ['RUMAH BERKEMBAR'],
+      ),
+    ];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('3 properties found'), findsOneWidget);
+    expect(find.text('View Details'), findsNWidgets(3));
   });
 
   testWidgets(
@@ -264,7 +772,7 @@ void main() {
       );
 
       await tester.enterText(find.byType(TextField), 'kinta');
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
       expect(find.text('1 properties found'), findsOneWidget);
     },
@@ -326,6 +834,15 @@ void main() {
   });
 }
 
+Future<void> _pumpSearch(WidgetTester tester, AppState state) {
+  return tester.pumpWidget(
+    AppScope(
+      notifier: state,
+      child: const MaterialApp(home: PropertySearchScreen()),
+    ),
+  );
+}
+
 Property _teduhProperty({
   required String id,
   required String name,
@@ -334,6 +851,7 @@ Property _teduhProperty({
   required String scheme,
   required int price,
   required List<String> unitTypes,
+  String? propertyType,
 }) {
   return Property.fromTeduhJson(
     {
@@ -343,10 +861,10 @@ Property _teduhProperty({
       'district': district,
       'scheme': scheme,
       'price_min': price,
-      'property_type': null,
+      'property_type': propertyType,
       'unit_types': unitTypes,
     },
-    areaId: '${state.toLowerCase()}_${district.toLowerCase()}',
+    areaId: LocationNormalizer.canonicalAreaId(state, district),
     palette: 0,
   );
 }
