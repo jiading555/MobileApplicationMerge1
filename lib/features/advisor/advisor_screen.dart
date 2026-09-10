@@ -5,6 +5,7 @@ import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
