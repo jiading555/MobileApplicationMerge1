@@ -471,14 +471,14 @@ class _Overview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final marketAreas = ['Overall', ...area.marketAreas];
+    final marketAreas = <String>{'Overall', ...area.marketAreas}.toList();
     final activeMarketArea = marketAreas.contains(marketArea)
         ? marketArea
         : 'Overall';
-    final priceTypes = [
+    final priceTypes = <String>{
       'All residential',
       ...area.propertyTypesForMarketArea(activeMarketArea),
-    ];
+    }.toList();
     final activeType = priceTypes.contains(propertyType)
         ? propertyType
         : 'All residential';
@@ -850,14 +850,14 @@ class _PriceTrend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final marketAreas = ['Overall', ...area.marketAreas];
+    final marketAreas = <String>{'Overall', ...area.marketAreas}.toList();
     final activeMarketArea = marketAreas.contains(marketArea)
         ? marketArea
         : 'Overall';
-    final options = [
+    final options = <String>{
       'All residential',
       ...area.propertyTypesForMarketArea(activeMarketArea),
-    ];
+    }.toList();
     final activeType = options.contains(propertyType)
         ? propertyType
         : 'All residential';
