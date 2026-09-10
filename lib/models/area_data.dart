@@ -1,6 +1,13 @@
 import 'area_profile.dart';
 
 class AreaData {
+  static const double safetyCrimeRateCeilingPer100k = 2000;
+  static const double schoolsPer10kAtFullScore = 1.5;
+  static const double hospitalBedsPer10kAtFullScore = 20;
+  static const double transportStopsPer10kAtFullScore = 5;
+  static const double marketGrowthFloor = -20;
+  static const double marketGrowthCeiling = 20;
+
   const AreaData({
     required this.id,
     required this.name,
@@ -9,7 +16,6 @@ class AreaData {
     this.populationGrowth,
     this.medianIncome,
     this.safetyScore,
-    this.connectivityScore,
     this.transportScore,
     this.schools,
     this.hospitals,
@@ -53,7 +59,6 @@ class AreaData {
   final double? populationGrowth;
   final int? medianIncome;
   final double? safetyScore;
-  final double? connectivityScore;
   final double? transportScore;
   final int? schools;
   final int? hospitals;
@@ -98,47 +103,39 @@ class AreaData {
   bool get hasPriceHistory =>
       priceHistory.length >= 2 && priceHistory.every((value) => value > 0);
 
-  double? get infrastructureScore {
+  bool get hasCompleteInfrastructureData {
     final populationValue = population;
-    if (populationValue != null && populationValue > 0) {
-      var weightedScore = 0.0;
-      var availableWeight = 0.0;
-      final schoolCount = schools;
-      if (educationYear != null && schoolCount != null) {
-        final schoolsPer10k = schoolCount / populationValue * 10000;
-        final schoolScore = (schoolsPer10k / 1.5 * 100)
+    return populationValue != null &&
+        populationValue > 0 &&
+        educationYear != null &&
+        schools != null &&
+        schools! >= 0 &&
+        hospitalYear != null &&
+        hospitalBeds != null &&
+        hospitalBeds! >= 0 &&
+        transportYear != null &&
+        transportScore != null;
+  }
+
+  double? get infrastructureScore {
+    if (!hasCompleteInfrastructureData) return null;
+
+    final populationValue = population!;
+    final schoolsPer10k = schools! / populationValue * 10000;
+    final bedsPer10k = hospitalBeds! / populationValue * 10000;
+    final schoolScore =
+        (schoolsPer10k / schoolsPer10kAtFullScore * 100)
             .clamp(0, 100)
             .toDouble();
-        weightedScore += schoolScore * 0.35;
-        availableWeight += 0.35;
-      }
-      final bedCount = hospitalBeds;
-      if (hospitalYear != null && bedCount != null) {
-        final bedsPer10k = bedCount / populationValue * 10000;
-        final bedScore = (bedsPer10k / 20 * 100).clamp(0, 100).toDouble();
-        weightedScore += bedScore * 0.35;
-        availableWeight += 0.35;
-      }
-      final transitScore = transportScore;
-      if (transportYear != null && transitScore != null) {
-        weightedScore += transitScore.clamp(0, 100).toDouble() * 0.30;
-        availableWeight += 0.30;
-      }
-      if (availableWeight > 0) {
-        return (weightedScore / availableWeight).clamp(0, 100).toDouble();
-      }
-    }
+    final bedScore =
+        (bedsPer10k / hospitalBedsPer10kAtFullScore * 100)
+            .clamp(0, 100)
+            .toDouble();
+    final transitScore = transportScore!.clamp(0, 100).toDouble();
 
-    final scores = <double>[
-      if (schools != null) (schools! / 130 * 100).clamp(0, 100).toDouble(),
-      if (transportScore != null) transportScore!.clamp(0, 100).toDouble(),
-      if (connectivityScore != null)
-        connectivityScore!.clamp(0, 100).toDouble(),
-    ];
-    if (scores.isEmpty) {
-      return null;
-    }
-    return scores.reduce((sum, value) => sum + value) / scores.length;
+    return (schoolScore * 0.35 + bedScore * 0.35 + transitScore * 0.30)
+        .clamp(0, 100)
+        .toDouble();
   }
 
   List<String> get marketPropertyTypes {
@@ -225,14 +222,18 @@ class AreaData {
   double? get transactionVolumeGrowth {
     final current = transactionCount;
     final previous = previousTransactionCount;
-    if (current == null || previous == null || previous <= 0) return null;
+    if (current == null || current < 0 || previous == null || previous <= 0) {
+      return null;
+    }
     return (current - previous) / previous * 100;
   }
 
   double? get transactionValueGrowth {
     final current = transactionValueMillion;
     final previous = previousTransactionValueMillion;
-    if (current == null || previous == null || previous <= 0) return null;
+    if (current == null || current < 0 || previous == null || previous <= 0) {
+      return null;
+    }
     return (current - previous) / previous * 100;
   }
 
@@ -240,8 +241,15 @@ class AreaData {
     final volume = transactionVolumeGrowth;
     final value = transactionValueGrowth;
     if (volume == null || value == null) return null;
-    double normalise(double growth) =>
-        ((growth.clamp(-20, 20) + 20) / 40 * 100).toDouble();
+
+    double normalise(double growth) {
+      final capped = growth.clamp(marketGrowthFloor, marketGrowthCeiling);
+      return ((capped - marketGrowthFloor) /
+              (marketGrowthCeiling - marketGrowthFloor) *
+              100)
+          .toDouble();
+    }
+
     return (normalise(volume) * 0.60 + normalise(value) * 0.40)
         .clamp(0, 100)
         .toDouble();
@@ -255,7 +263,6 @@ class AreaData {
     'populationGrowth': populationGrowth,
     'medianIncome': medianIncome,
     'safetyScore': safetyScore,
-    'connectivityScore': connectivityScore,
     'transportScore': transportScore,
     'schools': schools,
     'hospitals': hospitals,
@@ -301,7 +308,6 @@ class AreaData {
       populationGrowth: _doubleFromJson(json['populationGrowth']),
       medianIncome: _intFromJson(json['medianIncome']),
       safetyScore: _doubleFromJson(json['safetyScore']),
-      connectivityScore: _doubleFromJson(json['connectivityScore']),
       transportScore: _doubleFromJson(json['transportScore']),
       schools: _intFromJson(json['schools']),
       hospitals: _intFromJson(json['hospitals']),
@@ -358,7 +364,6 @@ class AreaData {
       populationGrowth: _doubleFromJson(json['populationGrowth']),
       medianIncome: _intFromJson(json['medianIncome']),
       safetyScore: _doubleFromJson(json['safetyScore']),
-      connectivityScore: _doubleFromJson(json['connectivityScore']),
       transportScore: _doubleFromJson(json['transportScore']),
       schools: _intFromJson(json['schools']),
       hospitals: _intFromJson(json['hospitals']),
@@ -380,17 +385,29 @@ class AreaData {
     final population = canonicalProfile.population;
     final crimeCount = canonicalProfile.crimeCount;
     final crimeRate =
-        population == null || population <= 0 || crimeCount == null
+        population == null ||
+            population <= 0 ||
+            crimeCount == null ||
+            crimeCount < 0 ||
+            canonicalProfile.crimeYear == null
         ? null
         : crimeCount / population * 100000;
     final safetyScore = crimeRate == null
         ? null
-        : (100 - crimeRate / 35).clamp(45, 95).toDouble();
+        : (100 * (1 - crimeRate / safetyCrimeRateCeilingPer100k))
+              .clamp(0, 100)
+              .toDouble();
     final transportCount = canonicalProfile.transportStopCount;
     final transportScore =
-        transportCount == null || population == null || population <= 0
+        transportCount == null ||
+            transportCount < 0 ||
+            population == null ||
+            population <= 0 ||
+            canonicalProfile.transportYear == null
         ? null
-        : ((transportCount / population * 10000) * 100)
+        : ((transportCount / population * 10000) /
+                  transportStopsPer10kAtFullScore *
+                  100)
               .clamp(0, 100)
               .toDouble();
 
@@ -402,7 +419,6 @@ class AreaData {
       populationGrowth: null,
       medianIncome: canonicalProfile.medianHouseholdIncome?.round(),
       safetyScore: safetyScore,
-      connectivityScore: transportScore,
       transportScore: transportScore,
       schools: canonicalProfile.educationInstitutionCount,
       hospitals: null,

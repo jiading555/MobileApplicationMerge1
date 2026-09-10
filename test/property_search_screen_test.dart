@@ -39,7 +39,6 @@ void main() {
         populationGrowth: 0,
         medianIncome: 0,
         safetyScore: 0,
-        connectivityScore: 0,
         transportScore: 0,
         schools: 0,
         hospitals: 0,
