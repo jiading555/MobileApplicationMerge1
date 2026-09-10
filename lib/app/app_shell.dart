@@ -135,38 +135,53 @@ class _AppShellState extends State<AppShell>
   Widget _buildCompactSideNavigation() {
     return SizedBox(
       key: const ValueKey('compact-side-navigation'),
-      width: 64,
+      width: 72,
       child: Material(
         color: Theme.of(context).colorScheme.surface,
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          itemCount: destinations.length,
-          itemBuilder: (context, index) {
-            final destination = destinations[index];
-            final selected = selectedIndex == index;
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Tooltip(
-                message: destination.label,
-                child: IconButton(
-                  key: ValueKey('compact-nav-${destination.label}'),
-                  isSelected: selected,
-                  onPressed: () => selectDestination(index),
-                  icon: Icon(destination.icon),
-                  selectedIcon: Icon(
-                    destination.selectedIcon,
-                    color: AppTheme.blue,
-                  ),
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(48, 44),
-                    backgroundColor: selected
-                        ? AppTheme.blue.withValues(alpha: 0.12)
-                        : Colors.transparent,
-                  ),
-                ),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(6, 8, 6, 6),
+              child: AdvisorBrand(compact: true),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                key: const ValueKey('compact-navigation-destinations'),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                itemCount: destinations.length,
+                itemBuilder: (context, index) {
+                  final destination = destinations[index];
+                  final selected = selectedIndex == index;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
+                    child: Tooltip(
+                      message: destination.label,
+                      child: IconButton(
+                        key: ValueKey('compact-nav-${destination.label}'),
+                        isSelected: selected,
+                        onPressed: () => selectDestination(index),
+                        icon: Icon(destination.icon),
+                        selectedIcon: Icon(
+                          destination.selectedIcon,
+                          color: AppTheme.blue,
+                        ),
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(48, 44),
+                          backgroundColor: selected
+                              ? AppTheme.blue.withValues(alpha: 0.12)
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
