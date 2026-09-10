@@ -1440,8 +1440,10 @@ class _AdvisorBudgetControlState extends State<_AdvisorBudgetControl> {
           max: 1600000,
           divisions: 25,
           value: _draftValue,
-          onChanged: (value) => setState(() => _draftValue = value),
-          onChangeEnd: widget.onChangeEnd,
+          onChanged: (value) {
+            setState(() => _draftValue = value);
+            widget.onChangeEnd(value);
+          },
         ),
       ],
     );
@@ -1698,8 +1700,10 @@ class _PrioritySliderState extends State<_PrioritySlider> {
             value: displayValue.clamp(0.0, 100.0).toDouble(),
             onChanged: widget.locked
                 ? null
-                : (value) => setState(() => _draftValue = value),
-            onChangeEnd: widget.locked ? null : widget.onChanged,
+                : (value) {
+                    setState(() => _draftValue = value);
+                    widget.onChanged(value);
+                  },
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
