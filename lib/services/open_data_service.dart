@@ -4,11 +4,18 @@ import 'package:http/http.dart' as http;
 
 import '../core/utils/location_normalizer.dart';
 import '../models/area_profile.dart';
+import 'transport_data_service.dart';
 
 class OpenDataService {
-  OpenDataService({http.Client? client}) : _client = client ?? http.Client();
+  OpenDataService({
+    http.Client? client,
+    TransportDataService? transportDataService,
+  }) : _client = client ?? http.Client(),
+       _transportDataService =
+           transportDataService ?? TransportDataService(client: client);
 
   final http.Client _client;
+  final TransportDataService _transportDataService;
 
   static const _apiBase = 'https://api.data.gov.my/data-catalogue';
   static const _populationDistrictCsv =
@@ -23,6 +30,9 @@ class OpenDataService {
         'https://open.dosm.gov.my/data-catalogue/hh_income_district',
     'crime_district': 'https://data.gov.my/data-catalogue/crime_district',
     'schools_district': 'https://data.gov.my/data-catalogue/schools_district',
+    'hospital_beds': 'https://data.gov.my/data-catalogue/hospital_beds',
+    'gtfs_static': 'https://developer.data.gov.my/realtime-api/gtfs-static',
+    'district_boundaries': TransportDataService.districtBoundaryUrl,
   };
 
   static const _crimeDistrictAliases = {
@@ -33,16 +43,57 @@ class OpenDataService {
       'Sungai Buloh',
       'Serdang',
     ],
+    'selangor|gombak': ['Gombak'],
     'selangor|ulu_langat': ['Kajang', 'Ampang Jaya'],
     'johor|johor_bahru': ['Johor Bahru Selatan', 'Johor Bahru Utara'],
+    'johor|kulai': ['Kulaijaya'],
+    'johor|tangkak': ['Ledang'],
+    'kuala_lumpur|w_p_kuala_lumpur': ['All', 'Kuala Lumpur'],
+    'selangor|ulu_selangor': ['Hulu Selangor'],
+    'selangor|klang': ['Klang Selatan', 'Klang Utara'],
+    'pulau_pinang|timur_laut': ['Timur Laut'],
+  };
+
+  static const _hospitalDistrictAliases = {
+    'selangor|petaling': ['Petaling (Subang Jaya)'],
+    'selangor|gombak': ['Gombak (Rawang)'],
+    'selangor|ulu_langat': ['Hulu Langat (Bangi)', 'Ulu Langat (Bangi)'],
+    'johor|johor_bahru': ['Johor Bahru'],
+    'pulau_pinang|timur_laut': ['Timur Laut (Georgetown)', 'Timur Laut'],
   };
 
   Future<List<AreaProfile>> fetchAreaProfiles() async {
     final retrievedAt = DateTime.now().toUtc();
-    final populationRows = await _fetchCsv(_populationDistrictCsv);
-    final incomeRows = await _fetchDataset('hh_income_district');
-    final schoolRows = await _fetchDataset('schools_district');
-    final crimeRows = await _fetchCsv(_crimeDistrictCsv);
+    final failures = <String>[];
+
+    final populationRows = await _criticalRows(
+      'Population',
+      _fetchPopulationDataset(),
+      failures,
+    );
+    final incomeRows = await _criticalRows(
+      'Household income',
+      _fetchDataset('hh_income_district'),
+      failures,
+    );
+    final schoolRows = await _criticalRows(
+      'Schools',
+      _fetchDataset('schools_district'),
+      failures,
+    );
+    final crimeRows = await _criticalRows(
+      'Crime',
+      _fetchCrimeDataset(),
+      failures,
+    );
+    final hospitalRows = await _optionalRows(
+      'Hospital beds',
+      _fetchDataset('hospital_beds'),
+    );
+
+    if (failures.isNotEmpty) {
+      throw GovernmentDataRefreshException(failures);
+    }
 
     final populationByKey = _latestRecordsByLocation(
       populationRows,
@@ -57,27 +108,71 @@ class OpenDataService {
       crimeRows,
       predicate: (record) => _normaliseText(record['type']) == 'all',
     );
+    final hospitalByKey = _latestRecordsByLocation(
+      hospitalRows,
+      predicate: (record) {
+        final type = _normaliseText(record['type']);
+        return type.isEmpty || type == 'all';
+      },
+    );
+
+    final mastersByKey = <String, _MasterDistrict>{};
+    for (final entry in populationByKey.entries) {
+      final master = _masterDistrict(entry.value);
+      if (master != null) {
+        mastersByKey[entry.key] = master;
+      }
+    }
+
+    TransportSnapshot? transport;
+    if (mastersByKey.isNotEmpty) {
+      try {
+        transport = await _transportDataService.fetchStopCounts(
+          targets: mastersByKey.values
+              .map((master) => (master.state, master.district))
+              .toList(),
+        );
+      } catch (_) {
+        transport = null;
+      }
+    }
 
     final profiles = <AreaProfile>[];
     for (final entry in populationByKey.entries) {
-      final master = _masterDistrict(entry.value);
+      final master = mastersByKey[entry.key];
       if (master == null) {
         continue;
       }
 
-      final key = entry.key;
       final population = _firstField(entry.value, const ['population', 'pop']);
       final populationValue = population == null
           ? null
           : (population * 1000).round();
-      final incomeRecords = incomeByKey[key] ?? const [];
-      final schoolRecords = schoolsByKey[key] ?? const [];
-      final crimeRecords = _crimeRecordsFor(key, crimeByKey);
+      final incomeRecords = incomeByKey[entry.key] ?? const [];
+      final schoolRecords = schoolsByKey[entry.key] ?? const [];
+      final crimeRecords = _recordsForAliases(
+        entry.key,
+        crimeByKey,
+        _crimeDistrictAliases,
+      );
+      final hospitalRecords = _recordsForAliases(
+        entry.key,
+        hospitalByKey,
+        _hospitalDistrictAliases,
+      );
+      final populationYear = _recordYear(entry.value);
+      final incomeYear = _recordYear(incomeRecords);
+      final educationYear = _recordYear(schoolRecords);
+      final crimeYear = _recordYear(crimeRecords);
+      final hospitalYear = _recordYear(hospitalRecords);
+      final transportYear = transport?.retrievedAt.year;
       final years = [
-        _recordYear(entry.value),
-        _recordYear(incomeRecords),
-        _recordYear(schoolRecords),
-        _recordYear(crimeRecords),
+        populationYear,
+        incomeYear,
+        educationYear,
+        crimeYear,
+        hospitalYear,
+        transportYear,
       ].whereType<int>();
 
       profiles.add(
@@ -89,30 +184,39 @@ class OpenDataService {
           state: master.state,
           district: master.district,
           population: populationValue,
-          populationYear: _recordYear(entry.value),
+          populationYear: populationYear,
           medianHouseholdIncome: _firstField(incomeRecords, const [
             'income_median',
             'median_income',
             'median_household_income',
           ]),
-          incomeYear: _recordYear(incomeRecords),
+          incomeYear: incomeYear,
           crimeCount: _sumField(crimeRecords, const [
             'crimes',
             'crime',
             'total',
           ])?.round(),
-          crimeYear: _recordYear(crimeRecords),
+          crimeYear: crimeYear,
           educationInstitutionCount: _sumField(schoolRecords, const [
             'schools',
             'school',
             'total',
           ])?.round(),
-          educationYear: _recordYear(schoolRecords),
-          transportStopCount: null,
-          transportYear: null,
+          educationYear: educationYear,
+          hospitalBedCount: _firstField(hospitalRecords, const [
+            'beds',
+            'hospital_beds',
+            'total',
+          ])?.round(),
+          hospitalYear: hospitalYear,
+          transportStopCount: transport?.countFor(
+            master.state,
+            master.district,
+          ),
+          transportYear: transportYear,
           dataYear: years.isEmpty
               ? null
-              : years.reduce((a, b) => a > b ? a : b),
+              : years.reduce((left, right) => left > right ? left : right),
           source: 'OpenDOSM; data.gov.my',
           sourceUrl: _sourceReferences.values.join('; '),
           retrievedAt: retrievedAt,
@@ -127,10 +231,38 @@ class OpenDataService {
     return profiles;
   }
 
+  Future<List<Map<String, dynamic>>> _criticalRows(
+    String label,
+    Future<List<Map<String, dynamic>>> request,
+    List<String> failures,
+  ) async {
+    try {
+      final rows = await request;
+      if (rows.isEmpty) {
+        failures.add('$label: no records returned');
+      }
+      return rows;
+    } catch (error) {
+      failures.add('$label: $error');
+      return const [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _optionalRows(
+    String _,
+    Future<List<Map<String, dynamic>>> request,
+  ) async {
+    try {
+      return await request;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetchDataset(String datasetId) async {
     final uri = Uri.parse(
       _apiBase,
-    ).replace(queryParameters: {'id': datasetId, 'limit': '5000'});
+    ).replace(queryParameters: {'id': datasetId, 'limit': '100000'});
     final response = await _client.get(uri);
     if (response.statusCode != 200) {
       throw Exception(
@@ -153,6 +285,22 @@ class OpenDataService {
       }
     }
     return const [];
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPopulationDataset() async {
+    final csvRows = await _fetchCsv(_populationDistrictCsv);
+    if (csvRows.isNotEmpty) {
+      return csvRows;
+    }
+    throw Exception('the CSV returned no records');
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCrimeDataset() async {
+    final csvRows = await _fetchCsv(_crimeDistrictCsv);
+    if (csvRows.isNotEmpty) {
+      return csvRows;
+    }
+    throw Exception('the CSV returned no records');
   }
 
   Future<List<Map<String, dynamic>>> _fetchCsv(String url) async {
@@ -252,16 +400,17 @@ class OpenDataService {
     });
   }
 
-  List<Map<String, dynamic>> _crimeRecordsFor(
+  List<Map<String, dynamic>> _recordsForAliases(
     String masterKey,
-    Map<String, List<Map<String, dynamic>>> crimeByKey,
+    Map<String, List<Map<String, dynamic>>> rowsByKey,
+    Map<String, List<String>> aliasMap,
   ) {
-    final exact = crimeByKey[masterKey];
+    final exact = rowsByKey[masterKey];
     if (exact != null && exact.isNotEmpty) {
       return exact;
     }
 
-    final aliases = _crimeDistrictAliases[masterKey];
+    final aliases = aliasMap[masterKey];
     if (aliases == null) {
       return const [];
     }
@@ -270,7 +419,8 @@ class OpenDataService {
     final records = <Map<String, dynamic>>[];
     for (final alias in aliases) {
       records.addAll(
-        crimeByKey['$stateKey|${LocationNormalizer.canonicalDistrictId(alias)}'] ??
+        rowsByKey['$stateKey|'
+                '${LocationNormalizer.canonicalDistrictIdForState(stateKey, alias)}'] ??
             const [],
       );
     }
@@ -282,6 +432,7 @@ class OpenDataService {
       final state = LocationNormalizer.displayStateName(record['state']);
       final district = LocationNormalizer.displayDistrictName(
         record['district'],
+        state: state,
       );
       if (state.isNotEmpty && district.isNotEmpty) {
         return _MasterDistrict(state, district);
@@ -291,12 +442,11 @@ class OpenDataService {
   }
 
   String? _recordLocationKey(Map<String, dynamic> record) {
-    final state = LocationNormalizer.canonicalStateId(record['state']);
-    final district = LocationNormalizer.canonicalDistrictId(record['district']);
-    if (state.isEmpty || district.isEmpty) {
-      return null;
-    }
-    return '$state|$district';
+    final key = LocationNormalizer.stateDistrictKey(
+      record['state'],
+      record['district'],
+    );
+    return key.startsWith('|') || key.endsWith('|') ? null : key;
   }
 
   int? _recordYear(List<Map<String, dynamic>> records) {
@@ -304,7 +454,7 @@ class OpenDataService {
     if (years.isEmpty) {
       return null;
     }
-    return years.reduce((a, b) => a > b ? a : b);
+    return years.reduce((left, right) => left > right ? left : right);
   }
 
   int? _recordYearFromMap(Map<String, dynamic> record) {
@@ -359,7 +509,11 @@ class OpenDataService {
     if (value is num) {
       return value;
     }
-    return num.tryParse(value.toString().replaceAll(',', '').trim());
+    final text = value.toString().replaceAll(',', '').trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    return num.tryParse(text);
   }
 
   String _normaliseText(Object? value) {
@@ -378,4 +532,14 @@ class _MasterDistrict {
 
   final String state;
   final String district;
+}
+
+class GovernmentDataRefreshException implements Exception {
+  const GovernmentDataRefreshException(this.failures);
+
+  final List<String> failures;
+
+  @override
+  String toString() =>
+      'Some government datasets could not be refreshed: ${failures.join('; ')}';
 }

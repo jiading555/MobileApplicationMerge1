@@ -1,3 +1,5 @@
+import '../core/utils/property_type_normalizer.dart';
+
 class Property {
   const Property({
     required this.id,
@@ -82,6 +84,31 @@ class Property {
       return null;
     }
     return askingPrice / size;
+  }
+
+  List<String> get normalizedPropertyTypes {
+    final candidates = [
+      verifiedPropertyType,
+      ...unitOptions.map((option) => option.unitType),
+      ...unitTypes,
+      type,
+    ];
+    final categories = <String>{};
+    for (final candidate in candidates) {
+      final text = candidate?.trim();
+      if (text == null || text.isEmpty) {
+        continue;
+      }
+      final normalized = text.toLowerCase();
+      if (isGovernmentRecord &&
+          (normalized == 'public housing' || normalized == 'public')) {
+        continue;
+      }
+      categories.addAll(PropertyTypeNormalizer.categoriesFor(text));
+    }
+    return PropertyTypeNormalizer.orderedCategories
+        .where(categories.contains)
+        .toList();
   }
 
   factory Property.fromJson(Map<String, dynamic> json) {

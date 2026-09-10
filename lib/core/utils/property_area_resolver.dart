@@ -48,7 +48,10 @@ class PropertyAreaResolver {
     }
 
     final canonicalState = LocationNormalizer.canonicalStateId(state);
-    final canonicalDistrict = LocationNormalizer.canonicalDistrictId(district);
+    final canonicalDistrict = LocationNormalizer.canonicalDistrictIdForState(
+      state,
+      district,
+    );
     if (canonicalState.isNotEmpty && canonicalDistrict.isNotEmpty) {
       return LocationNormalizer.canonicalAreaId(state, district);
     }
@@ -107,7 +110,10 @@ class PropertyAreaResolver {
       address: address,
       rawLocation: rawLocation,
     );
-    final propertyDistrict = LocationNormalizer.canonicalDistrictId(district);
+    final propertyDistrict = LocationNormalizer.canonicalDistrictIdForState(
+      propertyState,
+      district,
+    );
 
     if (_validAreaId(sourceAreaId)) {
       final sourceId = LocationNormalizer.canonicalAreaIdFromExisting(
@@ -129,7 +135,11 @@ class PropertyAreaResolver {
         areaList,
         (area) =>
             _sameState(propertyState, area) &&
-            LocationNormalizer.districtMatches(area.name, district),
+            LocationNormalizer.districtMatches(
+              area.name,
+              district,
+              state: area.state,
+            ),
       );
       if (exactStateDistrict != null) {
         return exactStateDistrict;
@@ -151,7 +161,11 @@ class PropertyAreaResolver {
           areaList,
           (area) =>
               _sameState(propertyState, area) &&
-              LocationNormalizer.canonicalDistrictId(area.name) == alias,
+              LocationNormalizer.canonicalDistrictIdForState(
+                    area.state,
+                    area.name,
+                  ) ==
+                  alias,
         );
         if (match != null) {
           return match;

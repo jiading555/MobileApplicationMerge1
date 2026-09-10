@@ -10,6 +10,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Welcome back'), findsOneWidget);
-    expect(find.text('Continue with sample data'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
   });
 }

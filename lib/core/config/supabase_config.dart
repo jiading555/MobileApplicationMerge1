@@ -7,6 +7,11 @@ class SupabaseConfig {
   static const String publishableKey =
       'sb_publishable_1JrYLNMfBjXtCAH9XNyBbg_4v-C0LKw';
 
+  static const String emailConfirmationRedirectUrl =
+      'smartpropertyadvisor://email-confirmed';
+  static const String passwordRecoveryRedirectUrl =
+      'smartpropertyadvisor://reset-password';
+
   static bool get isConfigured =>
       url.trim().isNotEmpty &&
       publishableKey.trim().isNotEmpty &&

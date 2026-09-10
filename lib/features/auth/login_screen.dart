@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/auth_validators.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/advisor_brand.dart';
 import 'register_screen.dart';
-import 'reset_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,11 +15,15 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController(text: 'alex@smartadvisor.demo');
-  final passwordController = TextEditingController(text: 'smartadvisor');
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
   final formKey = GlobalKey<FormState>();
   bool obscurePassword = true;
   String? error;
+
+  bool get canSubmit =>
+      AuthValidators.email(emailController.text) == null &&
+      AuthValidators.loginPassword(passwordController.text) == null;
 
   @override
   void dispose() {
@@ -28,22 +32,47 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void submit() {
+  Future<void> submit() async {
     if (!formKey.currentState!.validate()) {
       return;
     }
-    final result = AppScope.of(
+    final result = await AppScope.of(
       context,
     ).login(emailController.text, passwordController.text);
-    setState(() => error = result);
+    if (mounted) setState(() => error = result);
+  }
+
+  Future<void> sendPasswordReset() async {
+    final emailError = AuthValidators.email(emailController.text);
+    if (emailError != null) {
+      setState(
+        () => error = 'Enter your email address to reset your password.',
+      );
+      return;
+    }
+
+    final result = await AppScope.of(
+      context,
+    ).resetPassword(emailController.text);
+    if (!mounted) return;
+    if (result != null) {
+      setState(() => error = result);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Password reset link sent. Check your email.'),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final accountNotice = AppScope.of(context).accountNotice;
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, constraints) {
+          builder: (context, _) {
             final wide = ResponsiveLayout.isTablet(context);
             return Row(
               children: [
@@ -59,8 +88,29 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (!wide) const AdvisorBrand(),
+                              if (!wide)
+                                const Align(
+                                  alignment: Alignment.center,
+                                  child: AdvisorBrand(),
+                                ),
                               if (!wide) const SizedBox(height: 44),
+                              if (accountNotice != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE7F8EF),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    accountNotice,
+                                    style: const TextStyle(
+                                      color: Color(0xFF087A4B),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                              ],
                               Text(
                                 'Welcome back',
                                 style: Theme.of(
@@ -75,25 +125,32 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 30),
                               TextFormField(
                                 controller: emailController,
+                                onChanged: (_) => setState(() => error = null),
                                 keyboardType: TextInputType.emailAddress,
+                                autovalidateMode:
+                                    AutovalidateMode.onUserInteraction,
                                 decoration: const InputDecoration(
                                   labelText: 'Email address',
+                                  hintText: 'name@example.com',
                                   prefixIcon: Icon(Icons.mail_outline_rounded),
+                                  errorMaxLines: 3,
                                 ),
-                                validator: (value) =>
-                                    value == null || !value.trim().contains('@')
-                                    ? 'Enter a valid email address'
-                                    : null,
+                                validator: AuthValidators.email,
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: passwordController,
+                                onChanged: (_) => setState(() => error = null),
                                 obscureText: obscurePassword,
+                                autovalidateMode:
+                                    AutovalidateMode.onUserInteraction,
                                 decoration: InputDecoration(
                                   labelText: 'Password',
+                                  hintText: 'Enter your password',
                                   prefixIcon: const Icon(
                                     Icons.lock_outline_rounded,
                                   ),
+                                  errorMaxLines: 3,
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(
                                       () => obscurePassword = !obscurePassword,
@@ -105,20 +162,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-                                validator: (value) =>
-                                    value == null || value.length < 6
-                                    ? 'Enter at least 6 characters'
-                                    : null,
+                                validator: AuthValidators.loginPassword,
                               ),
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) =>
-                                          const ResetPasswordScreen(),
-                                    ),
-                                  ),
+                                  onPressed: AppScope.of(context).isAccountBusy
+                                      ? null
+                                      : sendPasswordReset,
                                   child: const Text('Forgot password?'),
                                 ),
                               ),
@@ -139,13 +190,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 14),
                               ],
                               FilledButton(
-                                onPressed: submit,
-                                child: const Text('Sign in'),
-                              ),
-                              const SizedBox(height: 12),
-                              OutlinedButton(
-                                onPressed: AppScope.of(context).continueAsDemo,
-                                child: const Text('Continue with sample data'),
+                                onPressed:
+                                    AppScope.of(context).isAccountBusy ||
+                                        !canSubmit
+                                    ? null
+                                    : submit,
+                                child: AppScope.of(context).isAccountBusy
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Sign in'),
                               ),
                               const SizedBox(height: 22),
                               Wrap(
@@ -162,15 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: const Text('Create account'),
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 18),
-                              const Text(
-                                'Sample mode - Supabase can be connected before deployment',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: AppTheme.muted,
-                                  fontSize: 11,
-                                ),
                               ),
                             ],
                           ),
@@ -193,46 +242,52 @@ class _LoginHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppTheme.navy, AppTheme.blue, AppTheme.teal],
-        ),
-      ),
-      padding: const EdgeInsets.all(56),
-      child: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 520),
-          child: const Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 620;
+        return Container(
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppTheme.navy, AppTheme.blue, AppTheme.teal],
+            ),
+          ),
+          padding: EdgeInsets.all(compact ? 32 : 56),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AdvisorBrand(light: true),
-              SizedBox(height: 64),
-              Icon(Icons.location_city_rounded, size: 76, color: Colors.white),
-              SizedBox(height: 24),
+              const AdvisorBrand(light: true),
+              SizedBox(height: compact ? 32 : 0),
+              if (!compact) const Spacer(),
+              Icon(
+                Icons.location_city_rounded,
+                size: compact ? 48 : 76,
+                color: Colors.white,
+              ),
+              SizedBox(height: compact ? 16 : 24),
               Text(
                 'Property decisions,\ngrounded in data.',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 32,
+                  fontSize: compact ? 30 : 38,
                   height: 1.15,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              SizedBox(height: 16),
+              SizedBox(height: compact ? 10 : 16),
               Text(
                 'Explore Malaysian areas, compare market signals and understand every recommendation.',
                 style: TextStyle(
                   color: Colors.white70,
-                  fontSize: 16,
-                  height: 1.5,
+                  fontSize: compact ? 14 : 16,
+                  height: compact ? 1.35 : 1.5,
                 ),
               ),
-              SizedBox(height: 40),
-              Text(
+              SizedBox(height: compact ? 24 : 0),
+              if (!compact) const Spacer(),
+              const Text(
                 'Built with Malaysian open data - SDG 9',
                 style: TextStyle(
                   color: Colors.white70,
@@ -241,8 +296,8 @@ class _LoginHero extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -13,6 +13,8 @@ class AreaData {
     this.transportScore,
     this.schools,
     this.hospitals,
+    this.hospitalBeds,
+    this.transportStopCount,
     this.averagePricePsf,
     this.rentalYield,
     this.priceGrowth,
@@ -24,7 +26,22 @@ class AreaData {
     this.incomeYear,
     this.crimeYear,
     this.educationYear,
+    this.hospitalYear,
     this.transportYear,
+    this.marketPricePeriods = const [],
+    this.marketPriceHistoryByType = const {},
+    this.marketPricePeriodsByType = const {},
+    this.marketAreaPriceHistoryByType = const {},
+    this.marketAreaPricePeriodsByType = const {},
+    this.medianResidentialPrice,
+    this.marketPriceYear,
+    this.transactionCount,
+    this.previousTransactionCount,
+    this.transactionValueMillion,
+    this.previousTransactionValueMillion,
+    this.marketPeriod,
+    this.marketSourceUrl,
+    this.marketRetrievedAt,
     this.retrievedAt,
     this.isGovernmentProfile = false,
   });
@@ -40,6 +57,8 @@ class AreaData {
   final double? transportScore;
   final int? schools;
   final int? hospitals;
+  final int? hospitalBeds;
+  final int? transportStopCount;
   final int? averagePricePsf;
   final double? rentalYield;
   final double? priceGrowth;
@@ -51,27 +70,284 @@ class AreaData {
   final int? incomeYear;
   final int? crimeYear;
   final int? educationYear;
+  final int? hospitalYear;
   final int? transportYear;
+  final List<String> marketPricePeriods;
+  final Map<String, List<double>> marketPriceHistoryByType;
+  final Map<String, List<String>> marketPricePeriodsByType;
+  final Map<String, Map<String, List<double>>> marketAreaPriceHistoryByType;
+  final Map<String, Map<String, List<String>>> marketAreaPricePeriodsByType;
+  final double? medianResidentialPrice;
+  final int? marketPriceYear;
+  final int? transactionCount;
+  final int? previousTransactionCount;
+  final double? transactionValueMillion;
+  final double? previousTransactionValueMillion;
+  final String? marketPeriod;
+  final String? marketSourceUrl;
+  final DateTime? marketRetrievedAt;
   final DateTime? retrievedAt;
   final bool isGovernmentProfile;
 
-  double? get infrastructureScore {
-    final education = schools;
-    final transport = transportScore;
-    final connectivity = connectivityScore;
-    if (education == null && transport == null && connectivity == null) {
-      return null;
-    }
-    final scores = <double>[
-      if (education != null) (education / 130 * 100).clamp(0, 100).toDouble(),
-      if (transport != null) transport.clamp(0, 100).toDouble(),
-      if (connectivity != null) connectivity.clamp(0, 100).toDouble(),
-    ];
-    return scores.reduce((sum, value) => sum + value) / scores.length;
-  }
+  bool get hasMarketPrice => medianResidentialPrice != null;
+
+  bool get hasMarketHistory =>
+      marketPricePeriods.length == priceHistory.length &&
+      priceHistory.length >= 2;
 
   bool get hasPriceHistory =>
       priceHistory.length >= 2 && priceHistory.every((value) => value > 0);
+
+  double? get infrastructureScore {
+    final populationValue = population;
+    if (populationValue != null && populationValue > 0) {
+      var weightedScore = 0.0;
+      var availableWeight = 0.0;
+      final schoolCount = schools;
+      if (educationYear != null && schoolCount != null) {
+        final schoolsPer10k = schoolCount / populationValue * 10000;
+        final schoolScore = (schoolsPer10k / 1.5 * 100)
+            .clamp(0, 100)
+            .toDouble();
+        weightedScore += schoolScore * 0.35;
+        availableWeight += 0.35;
+      }
+      final bedCount = hospitalBeds;
+      if (hospitalYear != null && bedCount != null) {
+        final bedsPer10k = bedCount / populationValue * 10000;
+        final bedScore = (bedsPer10k / 20 * 100).clamp(0, 100).toDouble();
+        weightedScore += bedScore * 0.35;
+        availableWeight += 0.35;
+      }
+      final transitScore = transportScore;
+      if (transportYear != null && transitScore != null) {
+        weightedScore += transitScore.clamp(0, 100).toDouble() * 0.30;
+        availableWeight += 0.30;
+      }
+      if (availableWeight > 0) {
+        return (weightedScore / availableWeight).clamp(0, 100).toDouble();
+      }
+    }
+
+    final scores = <double>[
+      if (schools != null) (schools! / 130 * 100).clamp(0, 100).toDouble(),
+      if (transportScore != null) transportScore!.clamp(0, 100).toDouble(),
+      if (connectivityScore != null)
+        connectivityScore!.clamp(0, 100).toDouble(),
+    ];
+    if (scores.isEmpty) {
+      return null;
+    }
+    return scores.reduce((sum, value) => sum + value) / scores.length;
+  }
+
+  List<String> get marketPropertyTypes {
+    final types = marketPriceHistoryByType.keys.where((type) {
+      final values = marketPriceHistoryByType[type] ?? const [];
+      final periods = marketPricePeriodsByType[type] ?? const [];
+      return values.isNotEmpty && values.length == periods.length;
+    }).toList()..sort();
+    return types;
+  }
+
+  List<String> get marketAreas {
+    final areas = marketAreaPriceHistoryByType.keys.where((marketArea) {
+      final histories = marketAreaPriceHistoryByType[marketArea];
+      return histories != null &&
+          histories.values.any((values) => values.isNotEmpty);
+    }).toList()..sort();
+    return areas;
+  }
+
+  List<String> propertyTypesForMarketArea(String marketArea) {
+    if (marketArea == 'Overall') return marketPropertyTypes;
+    final histories = marketAreaPriceHistoryByType[marketArea] ?? const {};
+    final periods = marketAreaPricePeriodsByType[marketArea] ?? const {};
+    final types = histories.keys.where((type) {
+      final values = histories[type] ?? const [];
+      final labels = periods[type] ?? const [];
+      return values.isNotEmpty && values.length == labels.length;
+    }).toList()..sort();
+    return types;
+  }
+
+  List<double> priceHistoryFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    if (marketArea != 'Overall') {
+      return marketAreaPriceHistoryByType[marketArea]?[propertyType] ??
+          const [];
+    }
+    return propertyType == 'All residential'
+        ? priceHistory
+        : marketPriceHistoryByType[propertyType] ?? const [];
+  }
+
+  List<String> pricePeriodsFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    if (marketArea != 'Overall') {
+      return marketAreaPricePeriodsByType[marketArea]?[propertyType] ??
+          const [];
+    }
+    return propertyType == 'All residential'
+        ? marketPricePeriods
+        : marketPricePeriodsByType[propertyType] ?? const [];
+  }
+
+  double? latestPriceFor(String propertyType, {String marketArea = 'Overall'}) {
+    if (marketArea == 'Overall' && propertyType == 'All residential') {
+      return medianResidentialPrice;
+    }
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
+    return values.isEmpty ? null : values.last;
+  }
+
+  bool hasPriceHistoryFor(
+    String propertyType, {
+    String marketArea = 'Overall',
+  }) {
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
+    final periods = pricePeriodsFor(propertyType, marketArea: marketArea);
+    return values.length >= 2 && values.length == periods.length;
+  }
+
+  double? priceGrowthFor(String propertyType, {String marketArea = 'Overall'}) {
+    final values = priceHistoryFor(propertyType, marketArea: marketArea);
+    if (values.length < 2 || values[values.length - 2] == 0) return null;
+    return (values.last - values[values.length - 2]) /
+        values[values.length - 2] *
+        100;
+  }
+
+  double? get transactionVolumeGrowth {
+    final current = transactionCount;
+    final previous = previousTransactionCount;
+    if (current == null || previous == null || previous <= 0) return null;
+    return (current - previous) / previous * 100;
+  }
+
+  double? get transactionValueGrowth {
+    final current = transactionValueMillion;
+    final previous = previousTransactionValueMillion;
+    if (current == null || previous == null || previous <= 0) return null;
+    return (current - previous) / previous * 100;
+  }
+
+  double? get marketDemandScore {
+    final volume = transactionVolumeGrowth;
+    final value = transactionValueGrowth;
+    if (volume == null || value == null) return null;
+    double normalise(double growth) =>
+        ((growth.clamp(-20, 20) + 20) / 40 * 100).toDouble();
+    return (normalise(volume) * 0.60 + normalise(value) * 0.40)
+        .clamp(0, 100)
+        .toDouble();
+  }
+
+  Map<String, dynamic> toCacheJson() => {
+    'id': id,
+    'name': name,
+    'state': state,
+    'population': population,
+    'populationGrowth': populationGrowth,
+    'medianIncome': medianIncome,
+    'safetyScore': safetyScore,
+    'connectivityScore': connectivityScore,
+    'transportScore': transportScore,
+    'schools': schools,
+    'hospitals': hospitals,
+    'hospitalBeds': hospitalBeds,
+    'transportStopCount': transportStopCount,
+    'averagePricePsf': averagePricePsf,
+    'rentalYield': rentalYield,
+    'priceGrowth': priceGrowth,
+    'priceHistory': priceHistory,
+    'snapshotDate': snapshotDate,
+    'source': source,
+    'sourceUrl': sourceUrl,
+    'populationYear': populationYear,
+    'incomeYear': incomeYear,
+    'crimeYear': crimeYear,
+    'educationYear': educationYear,
+    'hospitalYear': hospitalYear,
+    'transportYear': transportYear,
+    'marketPricePeriods': marketPricePeriods,
+    'marketPriceHistoryByType': marketPriceHistoryByType,
+    'marketPricePeriodsByType': marketPricePeriodsByType,
+    'marketAreaPriceHistoryByType': marketAreaPriceHistoryByType,
+    'marketAreaPricePeriodsByType': marketAreaPricePeriodsByType,
+    'medianResidentialPrice': medianResidentialPrice,
+    'marketPriceYear': marketPriceYear,
+    'transactionCount': transactionCount,
+    'previousTransactionCount': previousTransactionCount,
+    'transactionValueMillion': transactionValueMillion,
+    'previousTransactionValueMillion': previousTransactionValueMillion,
+    'marketPeriod': marketPeriod,
+    'marketSourceUrl': marketSourceUrl,
+    'marketRetrievedAt': marketRetrievedAt?.toIso8601String(),
+    'retrievedAt': retrievedAt?.toIso8601String(),
+    'isGovernmentProfile': isGovernmentProfile,
+  };
+
+  factory AreaData.fromCacheJson(Map<String, dynamic> json) {
+    return AreaData(
+      id: json['id']?.toString() ?? 'unknown',
+      name: json['name']?.toString() ?? 'Unknown area',
+      state: json['state']?.toString() ?? 'Unknown',
+      population: _intFromJson(json['population']),
+      populationGrowth: _doubleFromJson(json['populationGrowth']),
+      medianIncome: _intFromJson(json['medianIncome']),
+      safetyScore: _doubleFromJson(json['safetyScore']),
+      connectivityScore: _doubleFromJson(json['connectivityScore']),
+      transportScore: _doubleFromJson(json['transportScore']),
+      schools: _intFromJson(json['schools']),
+      hospitals: _intFromJson(json['hospitals']),
+      hospitalBeds: _intFromJson(json['hospitalBeds']),
+      transportStopCount: _intFromJson(json['transportStopCount']),
+      averagePricePsf: _intFromJson(json['averagePricePsf']),
+      rentalYield: _doubleFromJson(json['rentalYield']),
+      priceGrowth: _doubleFromJson(json['priceGrowth']),
+      priceHistory: _doubleListFromJson(json['priceHistory']),
+      snapshotDate: json['snapshotDate']?.toString(),
+      source: json['source']?.toString() ?? 'SQLite cache',
+      sourceUrl: json['sourceUrl']?.toString(),
+      populationYear: _intFromJson(json['populationYear']),
+      incomeYear: _intFromJson(json['incomeYear']),
+      crimeYear: _intFromJson(json['crimeYear']),
+      educationYear: _intFromJson(json['educationYear']),
+      hospitalYear: _intFromJson(json['hospitalYear']),
+      transportYear: _intFromJson(json['transportYear']),
+      marketPricePeriods: _stringListFromJson(json['marketPricePeriods']),
+      marketPriceHistoryByType: _doubleListMapFromJson(
+        json['marketPriceHistoryByType'],
+      ),
+      marketPricePeriodsByType: _stringListMapFromJson(
+        json['marketPricePeriodsByType'],
+      ),
+      marketAreaPriceHistoryByType: _nestedDoubleListMapFromJson(
+        json['marketAreaPriceHistoryByType'],
+      ),
+      marketAreaPricePeriodsByType: _nestedStringListMapFromJson(
+        json['marketAreaPricePeriodsByType'],
+      ),
+      medianResidentialPrice: _doubleFromJson(json['medianResidentialPrice']),
+      marketPriceYear: _intFromJson(json['marketPriceYear']),
+      transactionCount: _intFromJson(json['transactionCount']),
+      previousTransactionCount: _intFromJson(json['previousTransactionCount']),
+      transactionValueMillion: _doubleFromJson(json['transactionValueMillion']),
+      previousTransactionValueMillion: _doubleFromJson(
+        json['previousTransactionValueMillion'],
+      ),
+      marketPeriod: json['marketPeriod']?.toString(),
+      marketSourceUrl: json['marketSourceUrl']?.toString(),
+      marketRetrievedAt: _dateTimeFromJson(json['marketRetrievedAt']),
+      retrievedAt: _dateTimeFromJson(json['retrievedAt']),
+      isGovernmentProfile: json['isGovernmentProfile'] as bool? ?? false,
+    );
+  }
 
   factory AreaData.fromJson(Map<String, dynamic> json) {
     return AreaData(
@@ -86,21 +362,23 @@ class AreaData {
       transportScore: _doubleFromJson(json['transportScore']),
       schools: _intFromJson(json['schools']),
       hospitals: _intFromJson(json['hospitals']),
+      hospitalBeds: _intFromJson(json['hospitalBeds']),
+      transportStopCount: _intFromJson(json['transportStopCount']),
       averagePricePsf: _intFromJson(json['averagePricePsf']),
       rentalYield: _doubleFromJson(json['rentalYield']),
       priceGrowth: _doubleFromJson(json['priceGrowth']),
-      priceHistory: (json['priceHistory'] as List<dynamic>? ?? const [])
-          .map((value) => (value as num).toDouble())
-          .toList(),
+      priceHistory: _doubleListFromJson(json['priceHistory']),
       snapshotDate: json['snapshotDate'] as String?,
       source: json['source'] as String? ?? 'Static metadata',
+      sourceUrl: json['sourceUrl'] as String?,
+      retrievedAt: _dateTimeFromJson(json['retrievedAt']),
     );
   }
 
   factory AreaData.fromProfile(AreaProfile profile, {AreaData? fallback}) {
     final canonicalProfile = profile.canonicalized();
-    final population = profile.population;
-    final crimeCount = profile.crimeCount;
+    final population = canonicalProfile.population;
+    final crimeCount = canonicalProfile.crimeCount;
     final crimeRate =
         population == null || population <= 0 || crimeCount == null
         ? null
@@ -108,10 +386,13 @@ class AreaData {
     final safetyScore = crimeRate == null
         ? null
         : (100 - crimeRate / 35).clamp(45, 95).toDouble();
-    final transportCount = profile.transportStopCount;
-    final transportScore = transportCount == null
+    final transportCount = canonicalProfile.transportStopCount;
+    final transportScore =
+        transportCount == null || population == null || population <= 0
         ? null
-        : (transportCount / 2).clamp(35, 100).toDouble();
+        : ((transportCount / population * 10000) * 100)
+              .clamp(0, 100)
+              .toDouble();
 
     return AreaData(
       id: canonicalProfile.areaId,
@@ -119,25 +400,50 @@ class AreaData {
       state: canonicalProfile.state,
       population: population,
       populationGrowth: null,
-      medianIncome: profile.medianHouseholdIncome?.round(),
+      medianIncome: canonicalProfile.medianHouseholdIncome?.round(),
       safetyScore: safetyScore,
-      connectivityScore: null,
+      connectivityScore: transportScore,
       transportScore: transportScore,
-      schools: profile.educationInstitutionCount,
+      schools: canonicalProfile.educationInstitutionCount,
       hospitals: null,
+      hospitalBeds: canonicalProfile.hospitalBedCount,
+      transportStopCount: canonicalProfile.transportStopCount,
       averagePricePsf: null,
       rentalYield: null,
-      priceGrowth: null,
-      priceHistory: const [],
-      snapshotDate: profile.dataYear?.toString() ?? fallback?.snapshotDate,
-      source: profile.source ?? 'OpenDOSM; data.gov.my',
-      sourceUrl: profile.sourceUrl,
-      populationYear: profile.populationYear,
-      incomeYear: profile.incomeYear,
-      crimeYear: profile.crimeYear,
-      educationYear: profile.educationYear,
-      transportYear: profile.transportYear,
-      retrievedAt: profile.retrievedAt,
+      priceGrowth: canonicalProfile.marketPriceHistory.isEmpty
+          ? null
+          : _marketGrowth(canonicalProfile),
+      priceHistory: canonicalProfile.marketPriceHistory,
+      snapshotDate:
+          canonicalProfile.dataYear?.toString() ?? fallback?.snapshotDate,
+      source: canonicalProfile.source ?? 'OpenDOSM; data.gov.my',
+      sourceUrl: canonicalProfile.sourceUrl,
+      populationYear: canonicalProfile.populationYear,
+      incomeYear: canonicalProfile.incomeYear,
+      crimeYear: canonicalProfile.crimeCount == null
+          ? null
+          : canonicalProfile.crimeYear,
+      educationYear: canonicalProfile.educationYear,
+      hospitalYear: canonicalProfile.hospitalYear,
+      transportYear: canonicalProfile.transportYear,
+      marketPricePeriods: canonicalProfile.marketPricePeriods,
+      marketPriceHistoryByType: canonicalProfile.marketPriceHistoryByType,
+      marketPricePeriodsByType: canonicalProfile.marketPricePeriodsByType,
+      marketAreaPriceHistoryByType:
+          canonicalProfile.marketAreaPriceHistoryByType,
+      marketAreaPricePeriodsByType:
+          canonicalProfile.marketAreaPricePeriodsByType,
+      medianResidentialPrice: canonicalProfile.medianResidentialPrice,
+      marketPriceYear: canonicalProfile.marketPriceYear,
+      transactionCount: canonicalProfile.transactionCount,
+      previousTransactionCount: canonicalProfile.previousTransactionCount,
+      transactionValueMillion: canonicalProfile.transactionValueMillion,
+      previousTransactionValueMillion:
+          canonicalProfile.previousTransactionValueMillion,
+      marketPeriod: canonicalProfile.marketPeriod,
+      marketSourceUrl: canonicalProfile.marketSourceUrl,
+      marketRetrievedAt: canonicalProfile.marketRetrievedAt,
+      retrievedAt: canonicalProfile.retrievedAt,
       isGovernmentProfile: true,
     );
   }
@@ -148,6 +454,14 @@ class AreaData {
         ? 'Unknown area'
         : parts.map(_titleCase).join(' ');
     return AreaData(id: areaId, name: name, state: 'Unknown');
+  }
+
+  static double? _marketGrowth(AreaProfile profile) {
+    final values = profile.marketPriceHistory;
+    if (values.length < 2 || values[values.length - 2] == 0) return null;
+    return (values.last - values[values.length - 2]) /
+        values[values.length - 2] *
+        100;
   }
 
   static int? _intFromJson(Object? value) {
@@ -171,6 +485,59 @@ class AreaData {
       return value.toDouble();
     }
     return double.tryParse(value.toString().replaceAll(',', '').trim());
+  }
+
+  static List<double> _doubleListFromJson(Object? value) {
+    if (value is! List) return const [];
+    return value.map(_doubleFromJson).whereType<double>().toList();
+  }
+
+  static List<String> _stringListFromJson(Object? value) {
+    if (value is! List) return const [];
+    return value.map((item) => item.toString()).toList();
+  }
+
+  static Map<String, List<double>> _doubleListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _doubleListFromJson(entry.value),
+    };
+  }
+
+  static Map<String, List<String>> _stringListMapFromJson(Object? value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _stringListFromJson(entry.value),
+    };
+  }
+
+  static Map<String, Map<String, List<double>>> _nestedDoubleListMapFromJson(
+    Object? value,
+  ) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _doubleListMapFromJson(entry.value),
+    };
+  }
+
+  static Map<String, Map<String, List<String>>> _nestedStringListMapFromJson(
+    Object? value,
+  ) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _stringListMapFromJson(entry.value),
+    };
+  }
+
+  static DateTime? _dateTimeFromJson(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    return DateTime.tryParse(value.toString());
   }
 
   static String _titleCase(String value) {

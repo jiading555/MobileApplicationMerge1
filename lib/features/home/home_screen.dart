@@ -19,17 +19,47 @@ class HomeScreen extends StatelessWidget {
     final state = AppScope.of(context);
     final selectDestination = AppNavigationScope.of(context);
     final featured = state.properties.take(4).toList();
-    final topAreas = [...state.areas]
+    final marketAreas = state.areas
+        .where(
+          (area) =>
+              area.isGovernmentProfile &&
+              area.hasMarketHistory &&
+              area.medianResidentialPrice != null,
+        )
+        .toList();
+    final topAreas = [...marketAreas]
       ..sort(
-        (left, right) =>
-            (right.population ?? -1).compareTo(left.population ?? -1),
+        (left, right) => (right.priceGrowth ?? double.negativeInfinity)
+            .compareTo(left.priceGrowth ?? double.negativeInfinity),
       );
-    final populatedAreas = state.areas
-        .where((area) => area.population != null)
-        .length;
-    final incomeAreas = state.areas
-        .where((area) => area.medianIncome != null)
-        .length;
+    final trendingAreas = topAreas
+        .where((area) => area.priceGrowth != null)
+        .take(5)
+        .toList();
+    final growthValues = marketAreas
+        .map((area) => area.priceGrowth)
+        .whereType<double>()
+        .toList();
+    final averagePrice = marketAreas.isEmpty
+        ? null
+        : marketAreas
+                  .map((area) => area.medianResidentialPrice!)
+                  .reduce((left, right) => left + right) /
+              marketAreas.length;
+    final averageGrowth = growthValues.isEmpty
+        ? null
+        : growthValues.reduce((left, right) => left + right) /
+              growthValues.length;
+    final latestMarketYear = marketAreas
+        .map((area) => area.marketPriceYear)
+        .whereType<int>()
+        .fold<int?>(null, (latest, year) {
+          if (latest == null || year > latest) {
+            return year;
+          }
+          return latest;
+        });
+
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
@@ -47,8 +77,9 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 30),
                     SectionHeader(
                       title: 'Market snapshot',
-                      subtitle:
-                          'Supabase-backed official data currently loaded',
+                      subtitle: latestMarketYear == null
+                          ? 'NAPIC residential market data'
+                          : 'NAPIC residential market snapshot - $latestMarketYear',
                       actionLabel: 'View analysis',
                       onAction: () => selectDestination(4),
                     ),
@@ -68,44 +99,55 @@ class HomeScreen extends StatelessWidget {
                             SizedBox(
                               width: width,
                               child: MetricCard(
-                                label: 'Properties',
-                                value: formatCount(state.properties.length),
-                                trend: state.isUsingCloudProperties
-                                    ? 'Supabase / TEDUH'
-                                    : 'Unavailable',
+                                label: 'Average district price',
+                                value: averagePrice == null
+                                    ? 'Unavailable'
+                                    : formatRinggit(averagePrice),
+                                trend: averagePrice == null
+                                    ? 'No NAPIC price data'
+                                    : 'Mean district median price',
                                 icon: Icons.home_work_outlined,
                               ),
                             ),
                             SizedBox(
                               width: width,
                               child: MetricCard(
-                                label: 'Area profiles',
-                                value: formatCount(state.areas.length),
-                                trend: state.isUsingCloudAreaProfiles
-                                    ? 'Supabase'
-                                    : 'Unavailable',
-                                icon: Icons.groups_2_outlined,
-                                color: AppTheme.teal,
+                                label: 'Average price change',
+                                value: averageGrowth == null
+                                    ? 'Unavailable'
+                                    : '${_signedPercentage(averageGrowth)}%',
+                                trend: averageGrowth == null
+                                    ? 'No comparable periods'
+                                    : 'Latest period vs previous period',
+                                icon: averageGrowth != null && averageGrowth < 0
+                                    ? Icons.trending_down_rounded
+                                    : Icons.trending_up_rounded,
+                                color:
+                                    averageGrowth != null && averageGrowth < 0
+                                    ? const Color(0xFFB42318)
+                                    : AppTheme.teal,
                               ),
                             ),
                             SizedBox(
                               width: width,
                               child: MetricCard(
-                                label: 'Population coverage',
-                                value: formatCount(populatedAreas),
-                                trend: 'Official districts',
-                                icon: Icons.percent_rounded,
+                                label: 'Latest price year',
+                                value:
+                                    latestMarketYear?.toString() ??
+                                    'Unavailable',
+                                trend: 'Latest available NAPIC year',
+                                icon: Icons.calendar_month_outlined,
                                 color: AppTheme.green,
                               ),
                             ),
                             SizedBox(
                               width: width,
                               child: MetricCard(
-                                label: 'Income coverage',
-                                value: formatCount(incomeAreas),
-                                trend: 'Matched profiles',
+                                label: 'Areas compared',
+                                value: formatCount(marketAreas.length),
+                                trend: 'Districts with price history',
                                 icon: Icons.compare_arrows_rounded,
-                                color: Color(0xFF7758C8),
+                                color: const Color(0xFF7758C8),
                               ),
                             ),
                           ],
@@ -116,31 +158,34 @@ class HomeScreen extends StatelessWidget {
                     const SectionHeader(
                       title: 'Trending areas',
                       subtitle:
-                          'Ranked by latest available official population',
+                          'Top 5 districts by latest-period NAPIC price change',
                     ),
                     const SizedBox(height: 14),
-                    SizedBox(
-                      height: 136,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: topAreas.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 12),
-                        itemBuilder: (context, index) {
-                          final area = topAreas[index];
-                          return _AreaCard(
-                            name: area.name,
-                            state: area.state,
-                            population: area.population,
-                            position: index + 1,
-                            onTap: () => selectDestination(4),
-                          );
-                        },
+                    if (trendingAreas.isEmpty)
+                      const _NoMarketDataCard()
+                    else
+                      SizedBox(
+                        height: 136,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: trendingAreas.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 12),
+                          itemBuilder: (context, index) {
+                            final area = trendingAreas[index];
+                            return _AreaCard(
+                              name: area.name,
+                              state: area.state,
+                              growth: area.priceGrowth!,
+                              position: index + 1,
+                              onTap: () => selectDestination(4),
+                            );
+                          },
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 30),
                     SectionHeader(
                       title: 'Recommended for you',
-                      subtitle: 'Based on your current own-stay preferences',
+                      subtitle: 'Based on your current property preferences',
                       actionLabel: 'Ask advisor',
                       onAction: () => selectDestination(3),
                     ),
@@ -174,10 +219,7 @@ class HomeScreen extends StatelessWidget {
                                     ResponsiveLayout.isDesktop(context) ? 4 : 2,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
-                                childAspectRatio:
-                                    ResponsiveLayout.isDesktop(context)
-                                    ? 0.82
-                                    : 1.02,
+                                mainAxisExtent: 370,
                               ),
                           itemBuilder: (context, index) => PropertyCard(
                             property: featured[index],
@@ -195,6 +237,11 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String _signedPercentage(double value) {
+    final prefix = value > 0 ? '+' : '';
+    return '$prefix${value.toStringAsFixed(1)}';
   }
 
   void _openProperty(BuildContext context, String propertyId) {
@@ -293,14 +340,12 @@ class _ModuleHub extends StatelessWidget {
         subtitle: 'Search by area, address, type and budget',
         icon: Icons.apartment_rounded,
         destination: 1,
-        highlighted: true,
       ),
       _ModuleEntry(
         title: 'Map & Facilities',
         subtitle: 'Inspect locations with nearby amenities',
         icon: Icons.map_rounded,
         destination: 2,
-        highlighted: true,
       ),
       _ModuleEntry(
         title: 'Smart Advisor',
@@ -321,13 +366,14 @@ class _ModuleHub extends StatelessWidget {
         destination: 5,
       ),
     ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('App hub', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 5),
         const Text(
-          'Jump into each module from one place. Property and location tools use the official app data loaded from Supabase when configured.',
+          'Jump into each module from one place. Property and location tools use official app data loaded from Supabase when configured.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 14),
@@ -337,6 +383,7 @@ class _ModuleHub extends StatelessWidget {
                 ? (constraints.maxWidth >= 980 ? 3 : 2)
                 : 1;
             final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+
             return Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -367,7 +414,6 @@ class _ModuleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = module.highlighted ? AppTheme.blue : AppTheme.ink;
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(8),
@@ -379,11 +425,7 @@ class _ModuleTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: module.highlighted
-                  ? const Color(0xFFB7D6FF)
-                  : const Color(0xFFE5EAF1),
-            ),
+            border: Border.all(color: const Color(0xFFB7D6FF)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,10 +434,10 @@ class _ModuleTile extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
+                  color: AppTheme.blue.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(module.icon, color: color),
+                child: Icon(module.icon, color: AppTheme.blue),
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -408,13 +450,17 @@ class _ModuleTile extends StatelessWidget {
                         Expanded(
                           child: Text(
                             module.title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: AppTheme.blue,
+                                  fontWeight: FontWeight.w800,
+                                ),
                           ),
                         ),
                         const Icon(
                           Icons.arrow_forward_rounded,
                           size: 18,
-                          color: AppTheme.muted,
+                          color: AppTheme.blue,
                         ),
                       ],
                     ),
@@ -426,17 +472,6 @@ class _ModuleTile extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
-                    if (module.highlighted) ...[
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Area module',
-                        style: TextStyle(
-                          color: AppTheme.blue,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -454,33 +489,36 @@ class _ModuleEntry {
     required this.subtitle,
     required this.icon,
     required this.destination,
-    this.highlighted = false,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
   final int destination;
-  final bool highlighted;
 }
 
 class _AreaCard extends StatelessWidget {
   const _AreaCard({
     required this.name,
     required this.state,
-    required this.population,
+    required this.growth,
     required this.position,
     required this.onTap,
   });
 
   final String name;
   final String state;
-  final int? population;
+  final double growth;
   final int position;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final isNegative = growth < 0;
+    final growthColor = isNegative ? const Color(0xFFB42318) : AppTheme.green;
+    final growthText =
+        '${growth > 0 ? '+' : ''}${growth.toStringAsFixed(1)}% price change';
+
     return SizedBox(
       width: 190,
       child: Card(
@@ -507,25 +545,32 @@ class _AreaCard extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    const Icon(
-                      Icons.trending_up_rounded,
-                      color: AppTheme.green,
+                    Icon(
+                      isNegative
+                          ? Icons.trending_down_rounded
+                          : Icons.trending_up_rounded,
+                      color: growthColor,
                     ),
                   ],
                 ),
                 const Spacer(),
-                Text(name, style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 Text(
                   state,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  population == null
-                      ? 'Population unavailable'
-                      : '${formatCount(population!)} population',
-                  style: const TextStyle(
-                    color: AppTheme.green,
+                  growthText,
+                  style: TextStyle(
+                    color: growthColor,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
@@ -533,6 +578,33 @@ class _AreaCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoMarketDataCard extends StatelessWidget {
+  const _NoMarketDataCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.info_outline_rounded, color: AppTheme.muted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No valid NAPIC price history is available yet. Refresh market data and try again.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+              ),
+            ),
+          ],
         ),
       ),
     );

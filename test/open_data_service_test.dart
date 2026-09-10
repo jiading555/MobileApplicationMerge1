@@ -35,7 +35,16 @@ void main() {
     final profiles = await OpenDataService(client: client).fetchAreaProfiles();
     final byId = {for (final profile in profiles) profile.areaId: profile};
 
-    expect(requested, hasLength(4));
+    final requestedText = requested.map((uri) => uri.toString()).toList();
+    expect(requestedText, anyElement(contains('population_district.csv')));
+    expect(requestedText, anyElement(contains('id=hh_income_district')));
+    expect(requestedText, anyElement(contains('id=schools_district')));
+    expect(requestedText, anyElement(contains('crime_district.csv')));
+    expect(requestedText, anyElement(contains('id=hospital_beds')));
+    expect(
+      requestedText,
+      anyElement(contains('administrative_2_district.geojson')),
+    );
     expect(profiles, hasLength(7));
     expect(byId, contains('selangor_petaling'));
     expect(byId, contains('selangor_klang'));

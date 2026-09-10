@@ -37,13 +37,53 @@ class LocationNormalizer {
     'wilayah persekutuan putrajaya': 'Putrajaya',
   };
 
+  static const Map<String, String> _districtAliases = {
+    'hulu langat': 'Ulu Langat',
+    'ulu langat': 'Ulu Langat',
+    'larut matang': 'Larut dan Matang',
+    'larut dan matang': 'Larut dan Matang',
+    'w p kuala lumpur': 'W.P. Kuala Lumpur',
+    'wp kuala lumpur': 'W.P. Kuala Lumpur',
+    'wilayah persekutuan kuala lumpur': 'W.P. Kuala Lumpur',
+    'w p putrajaya': 'W.P. Putrajaya',
+    'wp putrajaya': 'W.P. Putrajaya',
+    'wilayah persekutuan putrajaya': 'W.P. Putrajaya',
+    'w p labuan': 'W.P. Labuan',
+    'wp labuan': 'W.P. Labuan',
+    'wilayah persekutuan labuan': 'W.P. Labuan',
+  };
+
+  static const Map<String, Map<String, String>> _districtAliasesByState = {
+    'kuala_lumpur': {
+      'kuala lumpur': 'W.P. Kuala Lumpur',
+      'kl': 'W.P. Kuala Lumpur',
+      'w p kuala lumpur': 'W.P. Kuala Lumpur',
+      'wp kuala lumpur': 'W.P. Kuala Lumpur',
+      'wilayah persekutuan kuala lumpur': 'W.P. Kuala Lumpur',
+    },
+    'putrajaya': {
+      'putrajaya': 'W.P. Putrajaya',
+      'w p putrajaya': 'W.P. Putrajaya',
+      'wp putrajaya': 'W.P. Putrajaya',
+      'wilayah persekutuan putrajaya': 'W.P. Putrajaya',
+    },
+    'labuan': {
+      'labuan': 'W.P. Labuan',
+      'w p labuan': 'W.P. Labuan',
+      'wp labuan': 'W.P. Labuan',
+      'wilayah persekutuan labuan': 'W.P. Labuan',
+    },
+    'selangor': {'hulu langat': 'Ulu Langat', 'ulu langat': 'Ulu Langat'},
+  };
+
   static final List<String> _stateAliasKeysByLength =
       _stateAliases.keys.toList()
         ..sort((left, right) => right.length.compareTo(left.length));
 
   static String canonicalAreaId(Object? state, Object? district) {
-    final stateId = canonicalStateId(state);
-    final districtId = canonicalDistrictId(district);
+    final displayState = displayStateName(state);
+    final stateId = canonicalStateId(displayState);
+    final districtId = canonicalDistrictIdForState(displayState, district);
     if (stateId.isEmpty && districtId.isEmpty) {
       return 'unknown';
     }
@@ -62,7 +102,11 @@ class LocationNormalizer {
   }
 
   static String canonicalDistrictId(Object? value) {
-    return _slug(_cleanLocationText(value));
+    return _slug(displayDistrictName(value));
+  }
+
+  static String canonicalDistrictIdForState(Object? state, Object? district) {
+    return _slug(displayDistrictName(district, state: state));
   }
 
   static String canonicalAreaIdFromExisting(Object? value) {
@@ -97,9 +141,15 @@ class LocationNormalizer {
     return display.isEmpty ? null : display;
   }
 
-  static String displayDistrictName(Object? value) {
+  static String displayDistrictName(Object? value, {Object? state}) {
     final words = _normaliseWords(value);
-    return words.isEmpty ? '' : _titleCase(words);
+    if (words.isEmpty) {
+      return '';
+    }
+    final stateId = canonicalStateId(state);
+    return _districtAliasesByState[stateId]?[words] ??
+        _districtAliases[words] ??
+        _titleCase(words);
   }
 
   static String? nullableDisplayDistrictName(Object? value) {
@@ -135,8 +185,9 @@ class LocationNormalizer {
     return canonicalStateId(left) == canonicalStateId(right);
   }
 
-  static bool districtMatches(Object? left, Object? right) {
-    return canonicalDistrictId(left) == canonicalDistrictId(right);
+  static bool districtMatches(Object? left, Object? right, {Object? state}) {
+    return canonicalDistrictIdForState(state, left) ==
+        canonicalDistrictIdForState(state, right);
   }
 
   static bool areaIdMatches(Object? left, Object? right) {
@@ -145,7 +196,8 @@ class LocationNormalizer {
   }
 
   static String stateDistrictKey(Object? state, Object? district) {
-    return '${canonicalStateId(state)}|${canonicalDistrictId(district)}';
+    return '${canonicalStateId(state)}|'
+        '${canonicalDistrictIdForState(state, district)}';
   }
 
   static StateSuffixMatch? matchStateSuffix(Object? value) {

@@ -20,24 +20,68 @@ class AnalysisScreen extends StatefulWidget {
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
   String? selectedAreaId;
+  String? selectedState;
+  String selectedMarketArea = 'Overall';
+  String selectedPropertyType = 'All residential';
+  String comparisonPropertyType = 'All residential';
   String selectedView = 'Overview';
+  bool _initialRefreshScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialRefreshScheduled) return;
+    _initialRefreshScheduled = true;
+    final state = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      state.ensureInitialMarketData();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
     if (state.areas.isEmpty) {
-      selectedAreaId = null;
-    } else if (selectedAreaId == null ||
-        !state.areas.any((area) => area.id == selectedAreaId)) {
-      selectedAreaId = state.areas.first.id;
+      return const Scaffold(
+        appBar: _AnalysisAppBar(),
+        body: SafeArea(child: _NoAreasAvailable()),
+      );
     }
-    final area = selectedAreaId == null ? null : state.areaFor(selectedAreaId!);
-    final sourceMode = state.isUsingCloudAreaProfiles
-        ? 'Supabase'
-        : 'Supabase unavailable';
+    selectedAreaId ??= state.areas.first.id;
+    var area = state.areaFor(selectedAreaId!);
+    final states = state.areas.map((item) => item.state).toSet().toList()
+      ..sort();
+    selectedState ??= area.state;
+    var stateDistricts =
+        state.areas.where((item) => item.state == selectedState).toList()
+          ..sort((left, right) => left.name.compareTo(right.name));
+    if (!stateDistricts.any((item) => item.id == selectedAreaId)) {
+      selectedAreaId = stateDistricts.first.id;
+      area = state.areaFor(selectedAreaId!);
+    }
+    final sourceMode = state.isUsingLiveAreaProfiles
+        ? 'data.gov.my API'
+        : state.isUsingMarketTrendCache
+        ? 'SQLite cache'
+        : state.isUsingCloudAreaProfiles
+        ? 'Supabase snapshot'
+        : state.isUsingProcessedAreaProfiles
+        ? 'processed JSON'
+        : 'local sample';
+    final refreshMessage = state.governmentDataSyncMessage;
+    final refreshFailed =
+        refreshMessage?.startsWith('Refresh failed.') ?? false;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Market trend & analytics'),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Market trend & analytics',
+            maxLines: 1,
+            style: TextStyle(fontSize: 18),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: () => _showSources(context),
@@ -45,11 +89,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             icon: const Icon(Icons.dataset_outlined),
           ),
           IconButton(
-            onPressed: state.isRefreshingGovernmentData
+            onPressed: state.isSyncingGovernmentData
                 ? null
                 : () => _refreshGovernmentData(state),
-            tooltip: 'Reload latest data',
-            icon: state.isRefreshingGovernmentData
+            tooltip: 'Reload latest government data',
+            icon: state.isSyncingGovernmentData
                 ? const SizedBox(
                     width: 18,
                     height: 18,
@@ -65,119 +109,222 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (area == null)
-                const _NoAreasAvailable()
-              else ...[
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final select = DropdownButtonFormField<String>(
-                      initialValue: selectedAreaId,
-                      decoration: const InputDecoration(
-                        labelText: 'Selected district',
-                        prefixIcon: Icon(Icons.location_on_outlined),
-                      ),
-                      items: state.areas
-                          .map(
-                            (item) => DropdownMenuItem(
-                              value: item.id,
-                              child: Text('${item.name}, ${item.state}'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => selectedAreaId = value),
-                    );
-                    final stamp = Container(
-                      padding: const EdgeInsets.all(13),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F6EF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.verified_outlined,
-                            color: AppTheme.green,
-                            size: 19,
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stateSelect = DropdownButtonFormField<String>(
+                    initialValue: selectedState,
+                    isExpanded: true,
+                    menuMaxHeight: 420,
+                    decoration: const InputDecoration(
+                      labelText: 'State',
+                      prefixIcon: Icon(Icons.map_outlined),
+                    ),
+                    items: states
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
                             child: Text(
-                              area.isGovernmentProfile
-                                  ? 'Government data via $sourceMode'
-                                  : 'Official area profiles not loaded',
+                              value,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.green,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                    return ResponsiveLayout.isTablet(context)
-                        ? Row(
-                            children: [
-                              Expanded(child: select),
-                              const SizedBox(width: 12),
-                              stamp,
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              select,
-                              const SizedBox(height: 10),
-                              stamp,
-                            ],
-                          );
-                  },
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: state.isRefreshingGovernmentData
-                      ? null
-                      : () => _refreshGovernmentData(state),
-                  icon: state.isRefreshingGovernmentData
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.cloud_sync_outlined),
-                  label: const Text('Reload Latest Data'),
-                ),
-                const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: ['Overview', 'Price trend', 'District comparison']
-                        .map(
-                          (label) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(label),
-                              selected: selectedView == label,
-                              onSelected: (_) =>
-                                  setState(() => selectedView = label),
                             ),
                           ),
                         )
                         .toList(),
+                    onChanged: (value) {
+                      if (value == null || value == selectedState) return;
+                      final districts =
+                          state.areas
+                              .where((item) => item.state == value)
+                              .toList()
+                            ..sort(
+                              (left, right) => left.name.compareTo(right.name),
+                            );
+                      setState(() {
+                        selectedState = value;
+                        selectedAreaId = districts.first.id;
+                        selectedMarketArea = 'Overall';
+                        selectedPropertyType = 'All residential';
+                      });
+                    },
+                  );
+                  final districtSelect = DropdownButtonFormField<String>(
+                    key: ValueKey(selectedState),
+                    initialValue: selectedAreaId,
+                    isExpanded: true,
+                    menuMaxHeight: 420,
+                    decoration: const InputDecoration(
+                      labelText: 'District',
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                    ),
+                    items: stateDistricts
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item.id,
+                            child: Text(
+                              item.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setState(() {
+                      selectedAreaId = value;
+                      selectedMarketArea = 'Overall';
+                      selectedPropertyType = 'All residential';
+                    }),
+                  );
+                  final stamp = Container(
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F6EF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.verified_outlined,
+                          color: AppTheme.green,
+                          size: 19,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            state.isSyncingGovernmentData
+                                ? 'Loading latest government data...'
+                                : refreshMessage?.startsWith('Data years:') ==
+                                      true
+                                ? refreshMessage!
+                                : area.isGovernmentProfile
+                                ? 'Government data via $sourceMode'
+                                : 'Local sample snapshot ${area.snapshotDate}',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.green,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  return ResponsiveLayout.isTablet(context)
+                      ? Row(
+                          children: [
+                            Expanded(flex: 2, child: stateSelect),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 3, child: districtSelect),
+                            const SizedBox(width: 12),
+                            stamp,
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            stateSelect,
+                            const SizedBox(height: 10),
+                            districtSelect,
+                            const SizedBox(height: 10),
+                            stamp,
+                          ],
+                        );
+                },
+              ),
+              if (refreshFailed) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFECEC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFF2B8B5)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline, color: Color(0xFFB3261E)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          refreshMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFFB3261E),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 22),
-                if (selectedView == 'Overview')
-                  _Overview(area: area, sourceMode: sourceMode),
-                if (selectedView == 'Price trend') _PriceTrend(area: area),
-                if (selectedView == 'District comparison')
-                  _DistrictComparison(areas: state.areas),
-                const SizedBox(height: 22),
-                const _DataCaveat(),
               ],
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: ['Overview', 'Price trend', 'District comparison']
+                      .map(
+                        (label) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(label),
+                            selected: selectedView == label,
+                            showCheckmark: false,
+                            backgroundColor: Colors.white,
+                            selectedColor: const Color(0xFFDCEBFF),
+                            side: const BorderSide(color: Color(0xFFB8C7DA)),
+                            labelStyle: TextStyle(
+                              color: selectedView == label
+                                  ? AppTheme.blue
+                                  : AppTheme.ink,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            onSelected: (_) =>
+                                setState(() => selectedView = label),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              const SizedBox(height: 22),
+              if (selectedView == 'Overview')
+                _Overview(
+                  area: area,
+                  sourceMode: sourceMode,
+                  marketArea: selectedMarketArea,
+                  onMarketAreaChanged: (value) => setState(() {
+                    selectedMarketArea = value;
+                    selectedPropertyType = 'All residential';
+                  }),
+                  propertyType: selectedPropertyType,
+                  onPropertyTypeChanged: (value) =>
+                      setState(() => selectedPropertyType = value),
+                ),
+              if (selectedView == 'Price trend')
+                _PriceTrend(
+                  area: area,
+                  marketArea: selectedMarketArea,
+                  onMarketAreaChanged: (value) => setState(() {
+                    selectedMarketArea = value;
+                    selectedPropertyType = 'All residential';
+                  }),
+                  propertyType: selectedPropertyType,
+                  onPropertyTypeChanged: (value) =>
+                      setState(() => selectedPropertyType = value),
+                ),
+              if (selectedView == 'District comparison')
+                _DistrictComparison(
+                  areas: state.areas,
+                  selectedState: area.state,
+                  propertyType: comparisonPropertyType,
+                  onPropertyTypeChanged: (value) =>
+                      setState(() => comparisonPropertyType = value),
+                ),
+              const SizedBox(height: 22),
+              const _DataCaveat(),
             ],
           ),
         ),
@@ -189,35 +336,65 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     const sources = [
       _DataSource(
         'Population by district',
-        'OpenDOSM - Data as of 2025',
+        'data.gov.my - latest available release',
         'https://open.dosm.gov.my/data-catalogue/population_district',
       ),
       _DataSource(
         'Household income by district',
-        'OpenDOSM - Data as of 2024',
+        'data.gov.my - latest available release',
         'https://open.dosm.gov.my/data-catalogue/hh_income_district',
       ),
       _DataSource(
         'Crimes by district and crime type',
-        'data.gov.my - Data as of 2023',
+        'data.gov.my - latest available release',
         'https://data.gov.my/data-catalogue/crime_district',
       ),
       _DataSource(
         'Public education institutions',
-        'data.gov.my - Data as of 2022',
+        'data.gov.my - latest available release',
         'https://data.gov.my/data-catalogue/schools_district',
+      ),
+      _DataSource(
+        'Public hospital beds',
+        'data.gov.my - latest available release',
+        'https://data.gov.my/data-catalogue/hospital_beds',
+      ),
+      _DataSource(
+        'Public transport stops and routes',
+        'data.gov.my official GTFS - KTMB and Prasarana',
+        'https://developer.data.gov.my/realtime-api/gtfs-static',
+      ),
+      _DataSource(
+        'District residential prices and transactions',
+        'NAPIC / JPPH quarterly XLSX publications',
+        'https://napic.jpph.gov.my/en/latest-publication',
+      ),
+      _DataSource(
+        'Administrative district boundaries',
+        'DOSM official district GeoJSON',
+        'https://github.com/dosm-malaysia/data-open/blob/main/datasets/geodata/administrative_2_district.geojson',
       ),
     ];
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 2, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      useSafeArea: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.78,
+        minChildSize: 0.42,
+        maxChildSize: 0.96,
+        builder: (context, scrollController) => SafeArea(
+          top: false,
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              2,
+              20,
+              24 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
             children: [
               Text(
                 'Official data sources',
@@ -225,6 +402,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
+                'Drag the sheet or scroll to view every source. '
                 'Tap a source to copy its official URL.',
                 style: TextStyle(color: AppTheme.muted),
               ),
@@ -240,7 +418,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   trailing: const Icon(Icons.copy_rounded),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: source.url));
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
                       SnackBar(content: Text('${source.name} URL copied')),
                     );
                   },
@@ -261,7 +439,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          state.governmentDataRefreshMessage ?? 'Latest data reload done.',
+          state.governmentDataSyncMessage ?? 'Government data refresh done.',
         ),
       ),
     );
@@ -276,126 +454,153 @@ class _DataSource {
   final String url;
 }
 
+class _AnalysisAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _AnalysisAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: const FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Market trend & analytics',
+          maxLines: 1,
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
+}
+
 class _NoAreasAvailable extends StatelessWidget {
   const _NoAreasAvailable();
 
   @override
   Widget build(BuildContext context) {
-    return const Card(
-      child: Padding(
-        padding: EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Icon(Icons.dataset_linked_outlined, color: AppTheme.muted),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'No Supabase area profiles are loaded yet. Refresh government data after Supabase is configured.',
-              ),
+    return PageContainer(
+      child: Center(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded, color: AppTheme.muted),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'No area profiles are available yet. Refresh official data or check the Supabase configuration.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _UnavailableCard extends StatelessWidget {
-  const _UnavailableCard({
-    required this.title,
-    required this.message,
-    this.large = false,
-  });
-
-  final String title;
-  final String message;
-  final bool large;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: SizedBox(
-        width: double.infinity,
-        height: large ? 360 : null,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: large
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 10),
-              _UnavailableInline(message: message),
-            ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _UnavailableInline extends StatelessWidget {
-  const _UnavailableInline({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.info_outline_rounded, color: AppTheme.muted, size: 18),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            message,
-            style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-          ),
-        ),
-      ],
     );
   }
 }
 
 class _Overview extends StatelessWidget {
-  const _Overview({required this.area, required this.sourceMode});
+  const _Overview({
+    required this.area,
+    required this.sourceMode,
+    required this.marketArea,
+    required this.onMarketAreaChanged,
+    required this.propertyType,
+    required this.onPropertyTypeChanged,
+  });
 
   final AreaData area;
   final String sourceMode;
+  final String marketArea;
+  final ValueChanged<String> onMarketAreaChanged;
+  final String propertyType;
+  final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
+    final marketAreas = <String>{'Overall', ...area.marketAreas}.toList();
+    final activeMarketArea = marketAreas.contains(marketArea)
+        ? marketArea
+        : 'Overall';
+    final priceTypes = <String>{
+      'All residential',
+      ...area.propertyTypesForMarketArea(activeMarketArea),
+    }.toList();
+    final activeType = priceTypes.contains(propertyType)
+        ? propertyType
+        : 'All residential';
+    final latestPrice = area.latestPriceFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final priceValues = area.priceHistoryFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final pricePeriods = area.pricePeriodsFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final priceGrowth = area.priceGrowthFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final infrastructureScore = area.infrastructureScore;
     final cards = [
       MetricCard(
         label: 'Population',
-        value: _formatCountOrUnavailable(area.population),
+        value: area.population == null
+            ? 'Unavailable'
+            : formatCount(area.population!),
         trend: _yearLabel('Year', area.populationYear),
         icon: Icons.groups_2_outlined,
       ),
       MetricCard(
         label: 'Median household income',
-        value: _formatRinggitOrUnavailable(area.medianIncome),
+        value: area.medianIncome == null
+            ? 'Unavailable'
+            : formatRinggit(area.medianIncome!),
         trend: _yearLabel('Year', area.incomeYear),
         icon: Icons.account_balance_wallet_outlined,
         color: AppTheme.teal,
       ),
       MetricCard(
         label: 'Normalized safety',
-        value: _formatScoreOrUnavailable(area.safetyScore),
+        value: area.safetyScore == null
+            ? 'Unavailable'
+            : '${area.safetyScore!.round()}/100',
         trend: area.crimeYear == null
-            ? 'Crime data unavailable'
+            ? 'No crime data reference'
             : 'Crime data ${area.crimeYear}',
         icon: Icons.shield_outlined,
         color: const Color(0xFF7758C8),
       ),
       MetricCard(
-        label: 'Education institutions',
-        value: _formatCountOrUnavailable(area.schools),
-        trend: area.educationYear == null
-            ? 'School data unavailable'
-            : 'Year ${area.educationYear}',
+        label: 'Infrastructure',
+        value: infrastructureScore == null
+            ? 'Unavailable'
+            : '${infrastructureScore.round()}/100',
+        trend: [
+          area.schools == null
+              ? 'schools unavailable'
+              : '${area.schools} schools (${area.educationYear})',
+          area.hospitalBeds == null
+              ? 'hospital beds unavailable'
+              : '${area.hospitalBeds} beds (${area.hospitalYear})',
+          area.transportStopCount == null
+              ? 'transport unavailable'
+              : '${area.transportStopCount} transport stops '
+                    '(${area.transportYear})',
+        ].join(', '),
         icon: Icons.hub_outlined,
         color: AppTheme.green,
       ),
@@ -415,8 +620,12 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = ResponsiveLayout.isTablet(context) ? 4 : 2;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final columns = ResponsiveLayout.isTablet(context) ? 4 : 1;
+            final width =
+                (constraints.maxWidth - (columns - 1) * 12)
+                    .clamp(0.0, double.infinity)
+                    .toDouble() /
+                columns;
             return Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -429,20 +638,35 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 14),
         _SourceSummary(area: area, sourceMode: sourceMode),
         const SizedBox(height: 22),
+        _PriceFilters(
+          marketArea: activeMarketArea,
+          marketAreas: marketAreas,
+          onMarketAreaChanged: onMarketAreaChanged,
+          propertyType: activeType,
+          propertyTypes: priceTypes,
+          onPropertyTypeChanged: onPropertyTypeChanged,
+        ),
+        const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final price = area.hasPriceHistory && area.averagePricePsf != null
+            final price = latestPrice != null
                 ? _ChartCard(
                     title: 'Historical price indicator',
-                    subtitle: 'Average RM per square foot',
-                    value: '${formatRinggit(area.averagePricePsf!)} psf',
-                    trend: _formatPercentOrUnavailable(area.priceGrowth),
-                    values: area.priceHistory,
+                    subtitle:
+                        'NAPIC $activeMarketArea - $activeType median (RM/unit)',
+                    value: formatRinggit(latestPrice.round()),
+                    trend: priceGrowth == null
+                        ? 'More quarters required'
+                        : '${priceGrowth >= 0 ? '+' : ''}'
+                              '${priceGrowth.toStringAsFixed(1)}%',
+                    values: priceValues,
+                    labels: pricePeriods,
                   )
                 : const _UnavailableCard(
                     title: 'Historical price indicator',
                     message:
-                        'No real historical market-price dataset is currently implemented for this area.',
+                        'No NAPIC property-type data reference is available '
+                        'for this district.',
                   );
             final demand = _DemandCard(area: area);
             return ResponsiveLayout.isTablet(context)
@@ -454,7 +678,10 @@ class _Overview extends StatelessWidget {
                       Expanded(flex: 2, child: demand),
                     ],
                   )
-                : Column(children: [price, const SizedBox(height: 14), demand]);
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [price, const SizedBox(height: 14), demand],
+                  );
           },
         ),
       ],
@@ -463,6 +690,120 @@ class _Overview extends StatelessWidget {
 
   String _yearLabel(String label, int? year) {
     return year == null ? 'Year unavailable' : '$label $year';
+  }
+}
+
+class _PriceFilters extends StatelessWidget {
+  const _PriceFilters({
+    required this.marketArea,
+    required this.marketAreas,
+    required this.onMarketAreaChanged,
+    required this.propertyType,
+    required this.propertyTypes,
+    required this.onPropertyTypeChanged,
+  });
+
+  final String marketArea;
+  final List<String> marketAreas;
+  final ValueChanged<String> onMarketAreaChanged;
+  final String propertyType;
+  final List<String> propertyTypes;
+  final ValueChanged<String> onPropertyTypeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final marketFilter = DropdownButtonFormField<String>(
+      key: ValueKey('market-area-$marketArea'),
+      initialValue: marketArea,
+      isExpanded: true,
+      menuMaxHeight: 420,
+      decoration: const InputDecoration(
+        labelText: 'NAPIC market area',
+        prefixIcon: Icon(Icons.location_city_outlined),
+      ),
+      disabledHint: Text(
+        marketArea,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.ink),
+      ),
+      items: marketAreas
+          .map(
+            (option) => DropdownMenuItem(
+              value: option,
+              child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
+      onChanged: marketAreas.length <= 1
+          ? null
+          : (selected) {
+              if (selected != null) onMarketAreaChanged(selected);
+            },
+    );
+    final typeFilter = _PropertyTypeFilter(
+      value: propertyType,
+      options: propertyTypes,
+      onChanged: onPropertyTypeChanged,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => ResponsiveLayout.isTablet(context)
+          ? Row(
+              children: [
+                Expanded(child: marketFilter),
+                const SizedBox(width: 12),
+                Expanded(child: typeFilter),
+              ],
+            )
+          : Column(
+              children: [marketFilter, const SizedBox(height: 12), typeFilter],
+            ),
+    );
+  }
+}
+
+class _PropertyTypeFilter extends StatelessWidget {
+  const _PropertyTypeFilter({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String value;
+  final List<String> options;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      key: ValueKey('property-type-$value'),
+      initialValue: value,
+      isExpanded: true,
+      menuMaxHeight: 420,
+      decoration: const InputDecoration(
+        labelText: 'Property type',
+        prefixIcon: Icon(Icons.home_work_outlined),
+      ),
+      disabledHint: Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.ink),
+      ),
+      items: options
+          .map(
+            (option) => DropdownMenuItem(
+              value: option,
+              child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          )
+          .toList(),
+      onChanged: options.length <= 1
+          ? null
+          : (selected) {
+              if (selected != null) onChanged(selected);
+            },
+    );
   }
 }
 
@@ -536,32 +877,52 @@ class _SourceItem extends StatelessWidget {
 }
 
 class _PriceTrend extends StatelessWidget {
-  const _PriceTrend({required this.area});
+  const _PriceTrend({
+    required this.area,
+    required this.marketArea,
+    required this.onMarketAreaChanged,
+    required this.propertyType,
+    required this.onPropertyTypeChanged,
+  });
 
   final AreaData area;
+  final String marketArea;
+  final ValueChanged<String> onMarketAreaChanged;
+  final String propertyType;
+  final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
-    if (!area.hasPriceHistory || area.averagePricePsf == null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${area.name} price trend',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 16),
-          const _UnavailableCard(
-            title: 'Market price trend',
-            message:
-                'Not available. No real historical transaction-price source is implemented yet.',
-            large: true,
-          ),
-        ],
-      );
-    }
-    final change = area.priceHistory.last - area.priceHistory.first;
-    final changePercent = change / area.priceHistory.first * 100;
+    final marketAreas = <String>{'Overall', ...area.marketAreas}.toList();
+    final activeMarketArea = marketAreas.contains(marketArea)
+        ? marketArea
+        : 'Overall';
+    final options = <String>{
+      'All residential',
+      ...area.propertyTypesForMarketArea(activeMarketArea),
+    }.toList();
+    final activeType = options.contains(propertyType)
+        ? propertyType
+        : 'All residential';
+    final values = area.priceHistoryFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final periods = area.pricePeriodsFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final latestPrice = area.latestPriceFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
+    final changePercent = values.length >= 2 && values.first != 0
+        ? (values.last - values.first) / values.first * 100
+        : null;
+    final latestGrowth = area.priceGrowthFor(
+      activeType,
+      marketArea: activeMarketArea,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -571,52 +932,101 @@ class _PriceTrend extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Historical market series normalized to RM per square foot.',
+          'Official NAPIC quarterly district price snapshots.',
           style: TextStyle(color: AppTheme.muted),
         ),
         const SizedBox(height: 16),
-        _ChartCard(
-          title: 'Average transacted-price indicator',
-          subtitle: 'Official market series',
-          value: '${formatRinggit(area.averagePricePsf!)} psf',
-          trend: '+${changePercent.toStringAsFixed(1)}% over the period',
-          values: area.priceHistory,
-          large: true,
+        _PriceFilters(
+          marketArea: activeMarketArea,
+          marketAreas: marketAreas,
+          onMarketAreaChanged: onMarketAreaChanged,
+          propertyType: activeType,
+          propertyTypes: options,
+          onPropertyTypeChanged: onPropertyTypeChanged,
         ),
         const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _SmallStat(
-                label: 'Latest annual signal',
-                value: _formatPercentOrUnavailable(area.priceGrowth),
+        if (latestPrice == null)
+          const _UnavailableCard(
+            title: 'Historical price indicator',
+            message:
+                'No NAPIC property-type data reference is available for '
+                'this district.',
+          )
+        else ...[
+          _ChartCard(
+            title: 'Historical price indicator',
+            subtitle: 'NAPIC $activeMarketArea - $activeType median (RM/unit)',
+            value: formatRinggit(latestPrice.round()),
+            trend: changePercent == null
+                ? 'More quarters required'
+                : '${changePercent >= 0 ? '+' : ''}'
+                      '${changePercent.toStringAsFixed(1)}% over the period',
+            values: values,
+            labels: periods,
+            large: true,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _SmallStat(
+                  label: 'Latest quarterly price signal',
+                  value: latestGrowth == null
+                      ? 'Unavailable'
+                      : '${latestGrowth >= 0 ? '+' : ''}'
+                            '${latestGrowth.toStringAsFixed(1)}%',
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _SmallStat(
-                label: 'Rental yield estimate',
-                value: _formatPercentOrUnavailable(area.rentalYield),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SmallStat(
+                  label: 'Latest NAPIC price period',
+                  value: periods.isEmpty ? 'Unavailable' : periods.last,
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ],
     );
   }
 }
 
 class _DistrictComparison extends StatelessWidget {
-  const _DistrictComparison({required this.areas});
+  const _DistrictComparison({
+    required this.areas,
+    required this.selectedState,
+    required this.propertyType,
+    required this.onPropertyTypeChanged,
+  });
 
   final List<AreaData> areas;
+  final String selectedState;
+  final String propertyType;
+  final ValueChanged<String> onPropertyTypeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final ranked = [...areas]
+    final stateAreas = areas
+        .where((area) => area.state == selectedState)
+        .toList();
+    final typeOptions =
+        <String>{
+          'All residential',
+          for (final area in stateAreas) ...area.marketPropertyTypes,
+        }.toList()..sort((left, right) {
+          if (left == 'All residential') return -1;
+          if (right == 'All residential') return 1;
+          return left.compareTo(right);
+        });
+    final activeType = typeOptions.contains(propertyType)
+        ? propertyType
+        : 'All residential';
+    final ranked = [...stateAreas]
       ..sort(
-        (left, right) =>
-            (right.priceGrowth ?? -1).compareTo(left.priceGrowth ?? -1),
+        (left, right) => (right.priceGrowthFor(activeType) ?? -999).compareTo(
+          left.priceGrowthFor(activeType) ?? -999,
+        ),
       );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -627,8 +1037,14 @@ class _DistrictComparison extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Compare available official area indicators on the same normalized scale.',
+          'Compare districts in the selected state by residential property type.',
           style: TextStyle(color: AppTheme.muted),
+        ),
+        const SizedBox(height: 16),
+        _PropertyTypeFilter(
+          value: activeType,
+          options: typeOptions,
+          onChanged: onPropertyTypeChanged,
         ),
         const SizedBox(height: 16),
         Card(
@@ -638,7 +1054,9 @@ class _DistrictComparison extends StatelessWidget {
               children: [
                 const _ComparisonLegend(),
                 const SizedBox(height: 18),
-                ...ranked.map((area) => _AreaBars(area: area)),
+                ...ranked.map(
+                  (area) => _AreaBars(area: area, propertyType: activeType),
+                ),
               ],
             ),
           ),
@@ -650,41 +1068,49 @@ class _DistrictComparison extends StatelessWidget {
             child: DataTable(
               columns: const [
                 DataColumn(label: Text('District')),
-                DataColumn(label: Text('Avg. price')),
-                DataColumn(label: Text('Rental yield')),
+                DataColumn(label: Text('Price indicator')),
+                DataColumn(label: Text('Price period')),
                 DataColumn(label: Text('Population')),
                 DataColumn(label: Text('Median income')),
               ],
-              rows: ranked
-                  .map(
-                    (area) => DataRow(
-                      cells: [
-                        DataCell(
-                          Text(
-                            area.name,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            area.averagePricePsf == null
-                                ? 'Not available'
-                                : '${formatRinggit(area.averagePricePsf!)} psf',
-                          ),
-                        ),
-                        DataCell(
-                          Text(_formatPercentOrUnavailable(area.rentalYield)),
-                        ),
-                        DataCell(
-                          Text(_formatCountOrUnavailable(area.population)),
-                        ),
-                        DataCell(
-                          Text(_formatRinggitOrUnavailable(area.medianIncome)),
-                        ),
-                      ],
+              rows: ranked.map((area) {
+                final price = area.latestPriceFor(activeType);
+                final periods = area.pricePeriodsFor(activeType);
+                return DataRow(
+                  cells: [
+                    DataCell(
+                      Text(
+                        area.name,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                  )
-                  .toList(),
+                    DataCell(
+                      Text(
+                        price == null
+                            ? 'Unavailable'
+                            : formatRinggit(price.round()),
+                      ),
+                    ),
+                    DataCell(
+                      Text(periods.isEmpty ? 'Unavailable' : periods.last),
+                    ),
+                    DataCell(
+                      Text(
+                        area.population == null
+                            ? 'Unavailable'
+                            : formatCount(area.population!),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        area.medianIncome == null
+                            ? 'Unavailable'
+                            : formatRinggit(area.medianIncome!),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -701,6 +1127,7 @@ class _ChartCard extends StatelessWidget {
     required this.trend,
     required this.values,
     this.large = false,
+    this.labels = const [],
   });
 
   final String title;
@@ -709,6 +1136,7 @@ class _ChartCard extends StatelessWidget {
   final String trend;
   final List<double> values;
   final bool large;
+  final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
@@ -749,7 +1177,31 @@ class _ChartCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SimpleLineChart(values: values, height: large ? 300 : 205),
+            if (values.length >= 2)
+              SimpleLineChart(
+                values: values,
+                labels: labels,
+                height: large ? 300 : 205,
+              )
+            else
+              Container(
+                height: large ? 150 : 110,
+                width: double.infinity,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F8FB),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'At least two quarterly snapshots are required '
+                    'to draw a price trend.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.muted),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -764,6 +1216,14 @@ class _DemandCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final demand = area.marketDemandScore;
+    if (demand == null) {
+      return const _UnavailableCard(
+        title: 'Market demand signal',
+        message:
+            'No complete NAPIC district transaction reference is available.',
+      );
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -775,27 +1235,191 @@ class _DemandCard extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 18),
-            const _UnavailableInline(
-              message:
-                  'Not available. Market price, yield, and population-growth sources are not implemented.',
+            Center(
+              child: SizedBox(
+                width: 150,
+                height: 150,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: demand / 100,
+                      strokeWidth: 14,
+                      backgroundColor: const Color(0xFFE6ECF3),
+                      color: AppTheme.teal,
+                    ),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${demand.round()}',
+                            style: const TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const Text(
+                            'out of 100',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+            const SizedBox(height: 16),
+            _DemandInterpretation(score: demand),
             const SizedBox(height: 20),
             _SignalRow(
-              label: 'Population growth',
-              value: area.populationGrowth == null
-                  ? null
-                  : area.populationGrowth! / 6,
+              label:
+                  'Transaction volume '
+                  '(${_signed(area.transactionVolumeGrowth)} YoY)',
+              value: _growthSignal(area.transactionVolumeGrowth),
             ),
             _SignalRow(
-              label: 'Rental yield',
-              value: area.rentalYield == null ? null : area.rentalYield! / 6,
+              label:
+                  'Transaction value '
+                  '(${_signed(area.transactionValueGrowth)} YoY)',
+              value: _growthSignal(area.transactionValueGrowth),
             ),
-            _SignalRow(
-              label: 'Connectivity',
-              value: area.connectivityScore == null
-                  ? null
-                  : area.connectivityScore! / 100,
+            const Text(
+              'Score: 60% volume growth + 40% value growth. '
+              'Each growth rate is capped from -20% to +20%.',
+              style: TextStyle(color: AppTheme.muted, fontSize: 10),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _signed(double? value) {
+    if (value == null) return 'Unavailable';
+    return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+  }
+
+  double _growthSignal(double? value) {
+    if (value == null) return 0;
+    return ((value.clamp(-20, 20) + 20) / 40).toDouble();
+  }
+}
+
+class _DemandInterpretation extends StatelessWidget {
+  const _DemandInterpretation({required this.score});
+
+  final double score;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _meaningFor(score);
+    const ranges = [
+      ('0-24', 'Significant demand decline'),
+      ('25-44', 'Weak demand'),
+      ('45-55', 'Broadly stable'),
+      ('56-74', 'Growing demand'),
+      ('75-100', 'Strong demand growth'),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE3E9F2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'How to read this score',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Current signal: $current',
+            style: const TextStyle(
+              color: AppTheme.teal,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'It measures year-over-year residential transaction activity. '
+            'A score near 50 means activity is broadly unchanged.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          ...ranges.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 58,
+                    child: Text(
+                      item.$1,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'This is a market activity indicator, not an investment guarantee.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _meaningFor(double value) {
+    if (value <= 24) return 'Significant demand decline';
+    if (value <= 44) return 'Weak demand';
+    if (value <= 55) return 'Broadly stable';
+    if (value <= 74) return 'Growing demand';
+    return 'Strong demand growth';
+  }
+}
+
+class _UnavailableCard extends StatelessWidget {
+  const _UnavailableCard({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            Text(message, style: const TextStyle(color: AppTheme.muted)),
           ],
         ),
       ),
@@ -807,7 +1431,7 @@ class _SignalRow extends StatelessWidget {
   const _SignalRow({required this.label, required this.value});
 
   final String label;
-  final double? value;
+  final double value;
 
   @override
   Widget build(BuildContext context) {
@@ -818,19 +1442,13 @@ class _SignalRow extends StatelessWidget {
         children: [
           Text(label, style: const TextStyle(fontSize: 11)),
           const SizedBox(height: 5),
-          if (value == null)
-            const Text(
-              'Not available',
-              style: TextStyle(color: AppTheme.muted, fontSize: 11),
-            )
-          else
-            LinearProgressIndicator(
-              value: value!.clamp(0, 1).toDouble(),
-              minHeight: 7,
-              color: AppTheme.teal,
-              backgroundColor: const Color(0xFFE6ECF3),
-              borderRadius: BorderRadius.circular(7),
-            ),
+          LinearProgressIndicator(
+            value: value.clamp(0, 1).toDouble(),
+            minHeight: 7,
+            color: AppTheme.teal,
+            backgroundColor: const Color(0xFFE6ECF3),
+            borderRadius: BorderRadius.circular(7),
+          ),
         ],
       ),
     );
@@ -908,9 +1526,10 @@ class _Legend extends StatelessWidget {
 }
 
 class _AreaBars extends StatelessWidget {
-  const _AreaBars({required this.area});
+  const _AreaBars({required this.area, required this.propertyType});
 
   final AreaData area;
+  final String propertyType;
 
   @override
   Widget build(BuildContext context) {
@@ -929,26 +1548,68 @@ class _AreaBars extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                _Bar(
-                  value: area.priceGrowth == null
-                      ? null
-                      : area.priceGrowth! / 10,
-                  color: AppTheme.blue,
-                ),
+                area.priceGrowthFor(propertyType) == null
+                    ? const SizedBox(
+                        height: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Price unavailable',
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 8,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _Bar(
+                        value: area.priceGrowthFor(propertyType)! / 10,
+                        color: AppTheme.blue,
+                      ),
                 const SizedBox(height: 4),
-                _Bar(
-                  value: area.safetyScore == null
-                      ? null
-                      : area.safetyScore! / 100,
-                  color: AppTheme.green,
-                ),
+                area.crimeYear == null
+                    ? const SizedBox(
+                        height: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Safety unavailable - no data reference',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 8,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _Bar(
+                        value: area.safetyScore == null
+                            ? 0
+                            : area.safetyScore! / 100,
+                        color: AppTheme.green,
+                      ),
                 const SizedBox(height: 4),
-                _Bar(
-                  value: area.infrastructureScore == null
-                      ? null
-                      : area.infrastructureScore! / 100,
-                  color: AppTheme.teal,
-                ),
+                area.infrastructureScore == null
+                    ? const SizedBox(
+                        height: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Infrastructure unavailable',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 8,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _Bar(
+                        value: area.infrastructureScore! / 100,
+                        color: AppTheme.teal,
+                      ),
               ],
             ),
           ),
@@ -961,22 +1622,17 @@ class _AreaBars extends StatelessWidget {
 class _Bar extends StatelessWidget {
   const _Bar({required this.value, required this.color});
 
-  final double? value;
+  final double value;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.centerLeft,
-      children: [
-        LinearProgressIndicator(
-          value: value == null ? 0 : value!.clamp(0, 1).toDouble(),
-          minHeight: 8,
-          borderRadius: BorderRadius.circular(8),
-          color: value == null ? const Color(0xFFE7ECF3) : color,
-          backgroundColor: const Color(0xFFE7ECF3),
-        ),
-      ],
+    return LinearProgressIndicator(
+      value: value.clamp(0, 1).toDouble(),
+      minHeight: 8,
+      borderRadius: BorderRadius.circular(8),
+      color: color,
+      backgroundColor: const Color(0xFFE7ECF3),
     );
   }
 }
@@ -999,7 +1655,7 @@ class _DataCaveat extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Police districts and administrative districts are not always identical. Smart Property Advisor normalizes selected official indicators for comparison and leaves unavailable metrics unfilled.',
+              'Police districts and administrative districts are not always identical. Infrastructure combines schools (35%), hospital beds (35%), and official GTFS public-transport stops (30%), adjusted per 10,000 residents. Missing sources are excluded and the available weights are rescaled.',
               style: TextStyle(color: AppTheme.navy, fontSize: 12),
             ),
           ),
@@ -1007,20 +1663,4 @@ class _DataCaveat extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatCountOrUnavailable(int? value) {
-  return value == null ? 'Not available' : formatCount(value);
-}
-
-String _formatRinggitOrUnavailable(int? value) {
-  return value == null ? 'Not available' : formatRinggit(value);
-}
-
-String _formatScoreOrUnavailable(double? value) {
-  return value == null ? 'Not available' : '${value.round()}/100';
-}
-
-String _formatPercentOrUnavailable(double? value) {
-  return value == null ? 'Not available' : '${value.toStringAsFixed(1)}%';
 }

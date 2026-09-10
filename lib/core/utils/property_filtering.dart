@@ -121,6 +121,14 @@ class PropertyFilterNormalizer {
     if (_clean(property.verifiedPropertyType).isNotEmpty) {
       return [property.verifiedPropertyType!];
     }
+    final unitOptionTypes = property.unitOptions
+        .map((option) => option.unitType)
+        .where((type) => _clean(type).isNotEmpty)
+        .cast<String>()
+        .toList();
+    if (unitOptionTypes.isNotEmpty) {
+      return unitOptionTypes;
+    }
     if (property.unitTypes.isNotEmpty) {
       return property.unitTypes;
     }
