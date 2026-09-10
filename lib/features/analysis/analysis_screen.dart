@@ -590,13 +590,13 @@ class _Overview extends StatelessWidget {
             ? 'Unavailable'
             : '${infrastructureScore.round()}/100',
         trend: [
-          area.schools == null
+          area.schools == null || area.educationYear == null
               ? 'schools unavailable'
               : '${area.schools} schools (${area.educationYear})',
-          area.hospitalBeds == null
+          area.hospitalBeds == null || area.hospitalYear == null
               ? 'hospital beds unavailable'
               : '${area.hospitalBeds} beds (${area.hospitalYear})',
-          area.transportStopCount == null
+          area.transportStopCount == null || area.transportYear == null
               ? 'transport unavailable'
               : '${area.transportStopCount} transport stops '
                     '(${area.transportYear})',
@@ -1395,8 +1395,9 @@ class _DemandCard extends StatelessWidget {
               value: _growthSignal(area.transactionValueGrowth),
             ),
             const Text(
-              'Score: 60% volume growth + 40% value growth. '
-              'Each growth rate is capped from -20% to +20%.',
+              'Momentum score: 60% transaction-volume growth + 40% '
+              'transaction-value growth. Each rate is capped from -20% '
+              'to +20%; it does not measure market size.',
               style: TextStyle(color: AppTheme.muted, fontSize: 10),
             ),
           ],
@@ -1456,8 +1457,9 @@ class _DemandInterpretation extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            'It measures year-over-year residential transaction activity. '
-            'A score near 50 means activity is broadly unchanged.',
+            'It measures year-over-year residential transaction momentum, '
+            'not total market demand or market size. A score near 50 means '
+            'activity is broadly unchanged.',
             style: TextStyle(color: AppTheme.muted, fontSize: 11),
           ),
           const SizedBox(height: 10),
@@ -1761,7 +1763,13 @@ class _DataCaveat extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Police districts and administrative districts are not always identical. Infrastructure combines schools (35%), hospital beds (35%), and official GTFS public-transport stops (30%), adjusted per 10,000 residents. Missing sources are excluded and the available weights are rescaled.',
+              'Safety converts annual reported crimes per 100,000 '
+              'residents to a 0-100 indicator (0 crimes = 100; 2,000 or '
+              'more = 0). Police and administrative districts may not match '
+              'exactly. Infrastructure combines schools (35%), public '
+              'hospital beds (35%), and official GTFS stops (30%), all per '
+              '10,000 residents. A total is shown only when all three dated '
+              'sources are available.',
               style: TextStyle(color: AppTheme.navy, fontSize: 12),
             ),
           ),
