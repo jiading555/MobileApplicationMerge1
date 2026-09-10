@@ -11,7 +11,7 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.byKey(const ValueKey('compact-side-navigation')), findsNothing);
+    expect(find.byKey(const ValueKey('compact-side-navigation')), findsOneWidget);
   });
 
   testWidgets('landscape phone uses scrollable compact side navigation', (
@@ -23,7 +23,7 @@ void main() {
     expect(find.byKey(const ValueKey('compact-side-navigation')), findsOneWidget);
     expect(find.byType(ListView), findsWidgets);
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
   });
 
   testWidgets('compact side navigation changes destination without overflow', (
