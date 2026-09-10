@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/config/supabase_config.dart';
+import '../core/utils/auth_validators.dart';
+import '../core/utils/location_normalizer.dart';
+import '../core/utils/property_area_resolver.dart';
 import '../data/asset_repository.dart';
 import '../data/repositories/area_profile_repository.dart';
 import '../data/repositories/property_repository.dart';
 import '../data/repositories/user_account_repository.dart';
-import '../core/config/supabase_config.dart';
-import '../core/constants/property_preference_options.dart';
-import '../core/utils/auth_validators.dart';
 import '../models/app_user.dart';
 import '../models/area_data.dart';
 import '../models/area_profile.dart';
@@ -19,13 +20,29 @@ import '../services/recommendation_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState({
-    this._repository = const AssetRepository(),
-    this._areaProfileRepository = const AreaProfileRepository(),
-    this._propertyRepository = const PropertyRepository(),
-    this._recommendationService = const RecommendationService(),
-    this._userAccountRepository = const UserAccountRepository(),
+    AssetRepository repository = const AssetRepository(),
+    AreaProfileRepository areaProfileRepository = const AreaProfileRepository(),
+    PropertyRepository propertyRepository = const PropertyRepository(),
+    RecommendationService recommendationService = const RecommendationService(),
+    UserAccountRepository userAccountRepository = const UserAccountRepository(),
     MarketTrendCache? marketTrendCache,
-  }) : _marketTrendCache = marketTrendCache ?? MarketTrendCache();
+  }) : this._(
+         repository,
+         areaProfileRepository,
+         propertyRepository,
+         recommendationService,
+         userAccountRepository,
+         marketTrendCache,
+       );
+
+  AppState._(
+    this._repository,
+    this._areaProfileRepository,
+    this._propertyRepository,
+    this._recommendationService,
+    this._userAccountRepository,
+    MarketTrendCache? marketTrendCache,
+  ) : _marketTrendCache = marketTrendCache ?? MarketTrendCache();
 
   final AssetRepository _repository;
   final AreaProfileRepository _areaProfileRepository;
@@ -34,16 +51,13 @@ class AppState extends ChangeNotifier {
   final UserAccountRepository _userAccountRepository;
   final MarketTrendCache _marketTrendCache;
   final Set<String> _favouriteIds = <String>{};
+  final ValueNotifier<Set<String>> _favouriteIdsNotifier =
+      ValueNotifier<Set<String>>(const {});
 
   bool isLoading = true;
   String? loadError;
   bool isAuthenticated = false;
-  int selectedIndex = 0;
-  AppUser user = const AppUser(
-    id: '',
-    name: '',
-    email: '',
-  );
+  AppUser user = const AppUser(id: '', name: '', email: '');
   UserPreferences preferences = const UserPreferences();
   List<AreaData> areas = const [];
   List<Property> properties = const [];
@@ -53,86 +67,81 @@ class AppState extends ChangeNotifier {
   bool isUsingLiveAreaProfiles = false;
   bool isUsingCloudProperties = false;
   bool isUsingProcessedTeduhProperties = false;
-  bool isSyncingGovernmentData = false;
+  bool isRefreshingLatestData = false;
+  bool isRefreshingGovernmentData = false;
   bool hasAttemptedInitialMarketRefresh = false;
   DateTime? marketTrendCacheUpdatedAt;
   String? openDataLoadMessage;
-  String? governmentDataSyncMessage;
+  String? latestDataRefreshMessage;
+  String? governmentDataRefreshMessage;
   bool isAccountBusy = false;
   bool registrationNeedsConfirmation = false;
   String? accountError;
   bool isPasswordRecovery = false;
   String? accountNotice;
 
+  bool get isSyncingGovernmentData => isRefreshingGovernmentData;
+  String? get governmentDataSyncMessage => governmentDataRefreshMessage;
+
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
+  ValueListenable<Set<String>> get favouriteIdsListenable =>
+      _favouriteIdsNotifier;
 
-  List<Property> get favouriteProperties => properties
-      .where((property) => _favouriteIds.contains(property.id))
-      .toList();
+  List<Property> _cachedFavouriteProperties = const [];
+  String _favouriteCacheKey = '';
+  List<PropertyRecommendation> _cachedRecommendations = const [];
+  String _recommendationCacheKey = '';
+  Map<String, AreaData> _cachedAreaById = const {};
+  List<AreaData>? _cachedAreaSource;
+  int _cachedAreaLength = -1;
 
-  List<PropertyRecommendation> get recommendations => _recommendationService
-      .rank(properties: properties, areas: areas, preferences: preferences);
+  List<Property> get favouriteProperties {
+    final sortedFavouriteIds = _favouriteIds.toList()..sort();
+    final cacheKey =
+        '${identityHashCode(properties)}|${properties.length}|'
+        '${sortedFavouriteIds.join(',')}';
+    if (_favouriteCacheKey != cacheKey) {
+      _cachedFavouriteProperties = properties
+          .where((property) => _favouriteIds.contains(property.id))
+          .toList();
+      _favouriteCacheKey = cacheKey;
+    }
+    return _cachedFavouriteProperties;
+  }
+
+  List<PropertyRecommendation> get recommendations {
+    final cacheKey =
+        '${identityHashCode(properties)}|${properties.length}|'
+        '${identityHashCode(areas)}|${areas.length}|'
+        '${preferences.goal}|${preferences.budget}|'
+        '${preferences.preferredAreaId}|${preferences.propertyType}|'
+        '${preferences.preferredState}|${preferences.preferredDistrict}|'
+        '${preferences.minimumBudget}|${preferences.maximumBudget}|'
+        '${preferences.ownStaySafetyPriority}|'
+        '${preferences.ownStayEducationPriority}|'
+        '${preferences.ownStayTransportPriority}|'
+        '${preferences.investmentIncomePriority}|'
+        '${preferences.investmentTransportPriority}|'
+        '${preferences.investmentAffordabilityPriority}|'
+        '${preferences.safetyPriority}|${preferences.transportPriority}|'
+        '${preferences.facilitiesPriority}';
+    if (_recommendationCacheKey != cacheKey) {
+      _cachedRecommendations = _recommendationService.rank(
+        properties: properties,
+        areas: areas,
+        preferences: preferences,
+      );
+      _recommendationCacheKey = cacheKey;
+    }
+    return _cachedRecommendations;
+  }
 
   Future<void> initialise() async {
     try {
-      final results = await Future.wait([
-        _repository.loadAreas(),
-        _repository.loadProperties(),
-      ]);
-      final localAreas = results[0] as List<AreaData>;
-      final localProperties = results[1] as List<Property>;
-      areas = localAreas;
-      properties = localProperties;
-
-      final cachedMarketTrend = await _loadMarketTrendCache();
-      if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
-        areas = cachedMarketTrend.areas;
-        marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
-        isUsingMarketTrendCache = true;
-      } else {
-        final cloudProfiles = await _loadCloudAreaProfiles();
-        if (cloudProfiles.isNotEmpty) {
-          areas = _areasFromProfiles(cloudProfiles, localAreas);
-          isUsingCloudAreaProfiles = true;
-        } else {
-          final processedProfiles = await _repository.loadProcessedAreaProfiles();
-          if (processedProfiles.isNotEmpty) {
-            areas = _areasFromProfiles(processedProfiles, localAreas);
-            isUsingProcessedAreaProfiles = true;
-          }
-        }
-      }
-
-      final districtCountBeforeExpansion = areas.length;
-      areas = _withAllMalaysiaDistricts(areas);
-      if (cachedMarketTrend != null &&
-          areas.length > districtCountBeforeExpansion) {
-        marketTrendCacheUpdatedAt = null;
-      }
-
-      final cloudProperties = await _loadCloudProperties(areas);
-      if (cloudProperties.isNotEmpty) {
-        properties = cloudProperties;
-        isUsingCloudProperties = true;
-      } else {
-        final teduhFallback = await _repository.loadProcessedTeduhProjects(
-          areas,
-        );
-        if (teduhFallback.isNotEmpty) {
-          properties = teduhFallback;
-          isUsingProcessedTeduhProperties = true;
-        }
-      }
-
-      if (SupabaseConfig.isConfigured) {
-        final authUser = Supabase.instance.client.auth.currentUser;
-        if (authUser != null) {
-          await _loadAccount(authUser);
-          isAuthenticated = true;
-        }
-      }
+      await _reloadVisibleData(allowMarketCacheFallback: true);
+      await _loadCurrentAuthSession();
     } catch (error) {
-      loadError = error.toString();
+      loadError = 'Failed to load official app data: $error';
     } finally {
       isLoading = false;
       notifyListeners();
@@ -142,46 +151,94 @@ class AppState extends ChangeNotifier {
   Future<void> ensureInitialMarketData() async {
     if (hasAttemptedInitialMarketRefresh) return;
     hasAttemptedInitialMarketRefresh = true;
+    if (!SupabaseConfig.isConfigured ||
+        isRefreshingGovernmentData ||
+        areas.any((area) => area.hasMarketHistory)) {
+      return;
+    }
     await refreshGovernmentData();
   }
 
-  Future<void> refreshGovernmentData() async {
-    if (isSyncingGovernmentData) return;
+  Future<void> refreshLatestData() async {
+    if (!SupabaseConfig.isConfigured) {
+      latestDataRefreshMessage =
+          'Supabase is not configured. Add the project URL and client-safe '
+          'publishable key to load latest data.';
+      notifyListeners();
+      return;
+    }
 
-    isSyncingGovernmentData = true;
-    governmentDataSyncMessage = null;
+    if (isRefreshingLatestData) {
+      return;
+    }
+
+    isRefreshingLatestData = true;
+    latestDataRefreshMessage = null;
     notifyListeners();
 
     try {
-      if (!SupabaseConfig.isConfigured) {
-        throw Exception('Supabase is not configured.');
-      }
-      final latestCloudProfiles =
-          await _areaProfileRepository.getAreaProfiles();
-      if (latestCloudProfiles.isEmpty) {
-        throw Exception('No government snapshot was returned by Supabase.');
-      }
-
-      final refreshedAreas = _withAllMalaysiaDistricts(
-        _areasFromProfiles(latestCloudProfiles, areas),
-      );
-      final cachedAt = DateTime.now().toUtc();
-      await _saveMarketTrendCache(refreshedAreas, cachedAt);
-      areas = refreshedAreas;
-      marketTrendCacheUpdatedAt = cachedAt;
-      isUsingLiveAreaProfiles = false;
-      isUsingCloudAreaProfiles = true;
-      isUsingProcessedAreaProfiles = false;
-      isUsingMarketTrendCache = false;
-      final years = _dataYears(refreshedAreas);
-      governmentDataSyncMessage = years.isEmpty
-          ? 'Government snapshot refreshed.'
-          : 'Data years: ${years.join(', ')}';
+      await _reloadVisibleData();
+      latestDataRefreshMessage =
+          'Latest data refreshed: ${properties.length} properties and '
+          '${areas.length} areas loaded.';
     } catch (error) {
-      final detail = error.toString().replaceFirst('Exception: ', '');
-      governmentDataSyncMessage = 'Refresh failed. $detail';
+      latestDataRefreshMessage = 'Latest data refresh failed: $error';
     } finally {
-      isSyncingGovernmentData = false;
+      isRefreshingLatestData = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshGovernmentData() async {
+    if (!SupabaseConfig.isConfigured) {
+      governmentDataRefreshMessage =
+          'Supabase is not configured. Add the project URL and client-safe '
+          'publishable key before reloading latest data.';
+      notifyListeners();
+      return;
+    }
+
+    if (isRefreshingGovernmentData) {
+      return;
+    }
+
+    final previousAreas = areas;
+    final previousProperties = properties;
+    final previousCloudAreaProfiles = isUsingCloudAreaProfiles;
+    final previousProcessedAreaProfiles = isUsingProcessedAreaProfiles;
+    final previousMarketTrendCache = isUsingMarketTrendCache;
+    final previousLiveAreaProfiles = isUsingLiveAreaProfiles;
+    final previousCloudProperties = isUsingCloudProperties;
+    final previousProcessedTeduhProperties = isUsingProcessedTeduhProperties;
+    final previousCacheUpdatedAt = marketTrendCacheUpdatedAt;
+
+    isRefreshingGovernmentData = true;
+    governmentDataRefreshMessage = null;
+    notifyListeners();
+
+    try {
+      await _reloadVisibleData();
+      final years = _dataYears(areas);
+      final yearSuffix = years.isEmpty
+          ? ''
+          : ' Data years: ${years.join(', ')}.';
+      governmentDataRefreshMessage =
+          'Latest data reloaded: ${properties.length} properties and '
+          '${areas.length} areas loaded from Supabase.$yearSuffix';
+    } catch (error) {
+      areas = previousAreas;
+      properties = previousProperties;
+      isUsingCloudAreaProfiles = previousCloudAreaProfiles;
+      isUsingProcessedAreaProfiles = previousProcessedAreaProfiles;
+      isUsingMarketTrendCache = previousMarketTrendCache;
+      isUsingLiveAreaProfiles = previousLiveAreaProfiles;
+      isUsingCloudProperties = previousCloudProperties;
+      isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
+      marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
+      _invalidateDataCaches();
+      governmentDataRefreshMessage = 'Latest data reload failed: $error';
+    } finally {
+      isRefreshingGovernmentData = false;
       notifyListeners();
     }
   }
@@ -273,6 +330,7 @@ class AppState extends ChangeNotifier {
         email: authUser.email ?? email.trim(),
       );
       preferences = const UserPreferences();
+      _recommendationCacheKey = '';
       registrationNeedsConfirmation = response.session == null;
       isAuthenticated = response.session != null;
       if (response.session != null) {
@@ -293,14 +351,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void continueAsDemo() {
+    user = const AppUser(
+      id: 'demo',
+      name: 'Alex Tan',
+      email: 'alex@smartadvisor.demo',
+      phone: '+60 12-345 6789',
+      isDemo: true,
+    );
+    isAuthenticated = true;
+    accountNotice = null;
+    notifyListeners();
+  }
+
   Future<void> handleAuthDeepLink(Uri uri) async {
     if (uri.scheme != 'smartpropertyadvisor') return;
 
     if (uri.host == 'email-confirmed') {
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (SupabaseConfig.isConfigured) {
-        await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
-      }
+      await _signOutLocalSession();
       isPasswordRecovery = false;
       isAuthenticated = false;
       accountNotice = 'Email confirmed successfully. Please sign in.';
@@ -323,8 +392,10 @@ class AppState extends ChangeNotifier {
   }) async {
     final passwordError = AuthValidators.registrationPassword(password);
     if (passwordError != null) return passwordError;
-    final confirmationError =
-        AuthValidators.confirmPassword(confirmation, password);
+    final confirmationError = AuthValidators.confirmPassword(
+      confirmation,
+      password,
+    );
     if (confirmationError != null) return confirmationError;
 
     isAccountBusy = true;
@@ -333,7 +404,7 @@ class AppState extends ChangeNotifier {
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: password),
       );
-      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      await _signOutLocalSession();
       isPasswordRecovery = false;
       isAuthenticated = false;
       accountNotice = 'Password updated successfully. Please sign in.';
@@ -349,21 +420,19 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> cancelPasswordRecovery() async {
-    if (SupabaseConfig.isConfigured) {
-      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
-    }
+    await _signOutLocalSession();
     isPasswordRecovery = false;
     isAuthenticated = false;
     notifyListeners();
   }
 
   Future<void> logout() async {
-    if (!user.isDemo && SupabaseConfig.isConfigured) {
-      await Supabase.instance.client.auth.signOut();
+    if (!user.isDemo) {
+      await _signOutLocalSession();
     }
     isAuthenticated = false;
-    selectedIndex = 0;
     _favouriteIds.clear();
+    _publishFavouriteIds();
     notifyListeners();
   }
 
@@ -388,26 +457,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void selectDestination(int index) {
-    selectedIndex = index;
-    notifyListeners();
-  }
-
   void updatePreferences(UserPreferences value) {
     preferences = value;
+    _recommendationCacheKey = '';
     notifyListeners();
   }
 
   Future<void> toggleFavourite(String propertyId) async {
-    if (!isAuthenticated || user.id.isEmpty) return;
-
     final wasFavourite = _favouriteIds.contains(propertyId);
     if (wasFavourite) {
       _favouriteIds.remove(propertyId);
     } else {
       _favouriteIds.add(propertyId);
     }
+    _publishFavouriteIds();
     notifyListeners();
+
+    if (!isAuthenticated || user.id.isEmpty || user.isDemo) {
+      return;
+    }
 
     try {
       await _userAccountRepository.setFavourite(
@@ -422,6 +490,7 @@ class AppState extends ChangeNotifier {
         _favouriteIds.remove(propertyId);
       }
       accountError = 'Unable to update favourite. Please try again.';
+      _publishFavouriteIds();
       notifyListeners();
     }
   }
@@ -429,10 +498,34 @@ class AppState extends ChangeNotifier {
   bool isFavourite(String propertyId) => _favouriteIds.contains(propertyId);
 
   AreaData areaFor(String areaId) {
-    return areas.firstWhere(
-      (area) => area.id == areaId,
-      orElse: () => areas.first,
-    );
+    final lookup = areaLookup;
+    return lookup[LocationNormalizer.canonicalAreaIdFromExisting(areaId)] ??
+        AreaData.unavailable(areaId);
+  }
+
+  AreaData? matchedAreaFor(Property property) {
+    return PropertyAreaResolver.resolve(property: property, areas: areas);
+  }
+
+  Map<String, AreaData> get areaLookup {
+    if (identical(_cachedAreaSource, areas) &&
+        _cachedAreaLength == areas.length) {
+      return _cachedAreaById;
+    }
+    final lookup = <String, AreaData>{};
+    for (final area in areas) {
+      lookup[LocationNormalizer.canonicalAreaIdFromExisting(area.id)] = area;
+      lookup[LocationNormalizer.canonicalAreaId(area.state, area.name)] = area;
+    }
+    _cachedAreaSource = areas;
+    _cachedAreaLength = areas.length;
+    _cachedAreaById = lookup;
+    return _cachedAreaById;
+  }
+
+  void updateUser(AppUser value) {
+    user = value;
+    notifyListeners();
   }
 
   Future<String?> saveUser(AppUser value) async {
@@ -458,6 +551,7 @@ class AppState extends ChangeNotifier {
   Future<String?> saveAccountPreferences(UserPreferences value) async {
     if (user.isDemo) {
       preferences = value;
+      _recommendationCacheKey = '';
       notifyListeners();
       return null;
     }
@@ -478,6 +572,7 @@ class AppState extends ChangeNotifier {
     try {
       await _userAccountRepository.savePreferences(user.id, value);
       preferences = value;
+      _recommendationCacheKey = '';
       return null;
     } catch (_) {
       return 'Unable to save preferences. Please try again.';
@@ -501,7 +596,7 @@ class AppState extends ChangeNotifier {
       return 'New password must be different from the current password.';
     }
 
-    final email = Supabase.instance.client.auth.currentUser?.email;
+    final email = _currentAuthEmail();
     if (email == null) return 'Your sign-in session has expired.';
 
     isAccountBusy = true;
@@ -552,10 +647,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> uploadAvatar(
-    Uint8List bytes,
-    String extension,
-  ) async {
+  Future<String?> uploadAvatar(Uint8List bytes, String extension) async {
     if (user.isDemo) return 'Avatar upload is unavailable in sample mode.';
     isAccountBusy = true;
     notifyListeners();
@@ -577,14 +669,152 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadAccount(User authUser) async {
-    user = await _userAccountRepository.loadProfile(authUser);
-    preferences = await _userAccountRepository.loadPreferences(authUser.id);
-    final favouriteIds =
-        await _userAccountRepository.loadFavouritePropertyIds(authUser.id);
-    _favouriteIds
-      ..clear()
-      ..addAll(favouriteIds);
+  @override
+  void dispose() {
+    _favouriteIdsNotifier.dispose();
+    super.dispose();
+  }
+
+  Future<void> _reloadVisibleData({
+    bool allowMarketCacheFallback = false,
+  }) async {
+    final localAreas = await _loadStaticAreaMetadata();
+
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingMarketTrendCache = false;
+    isUsingLiveAreaProfiles = false;
+    isUsingCloudProperties = false;
+    isUsingProcessedTeduhProperties = false;
+    marketTrendCacheUpdatedAt = null;
+    areas = const [];
+    properties = const [];
+    openDataLoadMessage = null;
+    _invalidateDataCaches();
+
+    if (!SupabaseConfig.isConfigured) {
+      openDataLoadMessage =
+          'Supabase is not configured. Add the project URL and publishable key '
+          'to load official property and area data.';
+      return;
+    }
+
+    final cloudProfiles = await _loadCloudAreaProfiles();
+    if (cloudProfiles.isNotEmpty) {
+      areas = _areasFromProfiles(cloudProfiles, localAreas);
+      isUsingCloudAreaProfiles = true;
+    } else if (allowMarketCacheFallback) {
+      final cachedMarketTrend = await _loadMarketTrendCache();
+      if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
+        areas = _canonicalAreas(cachedMarketTrend.areas);
+        marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+        isUsingMarketTrendCache = true;
+      }
+    }
+
+    final cloudProperties = await _loadCloudProperties(areas);
+    if (cloudProperties.isNotEmpty) {
+      properties = cloudProperties;
+      isUsingCloudProperties = true;
+    }
+
+    if (areas.isNotEmpty && isUsingCloudAreaProfiles) {
+      final cachedAt = DateTime.now().toUtc();
+      await _saveMarketTrendCache(areas, cachedAt);
+      marketTrendCacheUpdatedAt = cachedAt;
+    }
+    _invalidateDataCaches();
+  }
+
+  Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
+    try {
+      return await _areaProfileRepository.getAreaProfiles();
+    } on AreaProfileRepositoryException catch (error) {
+      openDataLoadMessage = error.toString();
+      return const [];
+    }
+  }
+
+  Future<List<Property>> _loadCloudProperties(List<AreaData> areas) async {
+    try {
+      return await _propertyRepository.getProperties(areas);
+    } on PropertyRepositoryException catch (error) {
+      openDataLoadMessage = error.toString();
+      return const [];
+    }
+  }
+
+  List<AreaData> _areasFromProfiles(
+    List<AreaProfile> profiles,
+    List<AreaData> localAreas,
+  ) {
+    final localById = {
+      for (final area in localAreas)
+        LocationNormalizer.canonicalAreaIdFromExisting(area.id): area,
+    };
+    final localByLocation = {
+      for (final area in localAreas)
+        LocationNormalizer.stateDistrictKey(area.state, area.name): area,
+    };
+    final canonicalProfiles = AreaProfileRepository.mergeProfileData(
+      profiles,
+    ).values;
+    final converted =
+        canonicalProfiles.map((profile) {
+          final canonical = profile.canonicalized();
+          final fallback =
+              localById[canonical.areaId] ??
+              localByLocation[LocationNormalizer.stateDistrictKey(
+                canonical.state,
+                canonical.district,
+              )];
+          return AreaData.fromProfile(canonical, fallback: fallback);
+        }).toList()..sort((left, right) {
+          final byState = left.state.compareTo(right.state);
+          return byState == 0 ? left.name.compareTo(right.name) : byState;
+        });
+    return converted;
+  }
+
+  List<AreaData> _canonicalAreas(List<AreaData> source) {
+    final byKey = <String, AreaData>{};
+    for (final area in source) {
+      final key = LocationNormalizer.stateDistrictKey(area.state, area.name);
+      final existing = byKey[key];
+      if (existing == null || _areaScore(area) > _areaScore(existing)) {
+        byKey[key] = area;
+      }
+    }
+    final areas = byKey.values.toList()
+      ..sort((left, right) {
+        final byState = left.state.compareTo(right.state);
+        return byState == 0 ? left.name.compareTo(right.name) : byState;
+      });
+    return areas;
+  }
+
+  int _areaScore(AreaData area) {
+    return [
+          area.population,
+          area.medianIncome,
+          area.safetyScore,
+          area.schools,
+          area.hospitalBeds,
+          area.transportStopCount,
+          area.medianResidentialPrice,
+          area.transactionCount,
+        ].where((value) => value != null).length +
+        area.priceHistory.length +
+        area.marketPriceHistoryByType.length +
+        area.marketAreaPriceHistoryByType.length;
+  }
+
+  Future<List<AreaData>> _loadStaticAreaMetadata() async {
+    try {
+      return await _repository.loadAreas();
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<MarketTrendCacheEntry?> _loadMarketTrendCache() async {
@@ -606,149 +836,63 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
+  Future<void> _loadCurrentAuthSession() async {
     if (!SupabaseConfig.isConfigured) {
-      return const [];
+      return;
     }
     try {
-      return await _areaProfileRepository.getAreaProfiles();
-    } on AreaProfileRepositoryException catch (error) {
-      openDataLoadMessage = error.toString();
-      return const [];
+      final authUser = Supabase.instance.client.auth.currentUser;
+      if (authUser != null) {
+        await _loadAccount(authUser);
+        isAuthenticated = true;
+      }
+    } catch (_) {
+      // Unit tests and uninitialized local tooling may not have Supabase ready.
     }
   }
 
-  Future<List<Property>> _loadCloudProperties(List<AreaData> areas) async {
+  Future<void> _loadAccount(User authUser) async {
+    user = await _userAccountRepository.loadProfile(authUser);
+    preferences = await _userAccountRepository.loadPreferences(authUser.id);
+    final favouriteIds = await _userAccountRepository.loadFavouritePropertyIds(
+      authUser.id,
+    );
+    _favouriteIds
+      ..clear()
+      ..addAll(favouriteIds);
+    _publishFavouriteIds();
+    _recommendationCacheKey = '';
+  }
+
+  Future<void> _signOutLocalSession() async {
     if (!SupabaseConfig.isConfigured) {
-      return const [];
+      return;
     }
     try {
-      return await _propertyRepository.getProperties(areas);
-    } on PropertyRepositoryException catch (error) {
-      openDataLoadMessage = error.toString();
-      return const [];
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+    } catch (_) {
+      // Signing out should not block local state cleanup.
     }
   }
 
-  List<AreaData> _withAllMalaysiaDistricts(
-    List<AreaData> currentAreas,
-  ) {
-    final areasByLocation = {
-      for (final area in currentAreas)
-        _locationKey(area.state, area.name): area,
-    };
-    for (final stateEntry
-        in PropertyPreferenceOptions.districtsByState.entries) {
-      for (final district in stateEntry.value) {
-        final key = _locationKey(stateEntry.key, district);
-        areasByLocation.putIfAbsent(
-          key,
-          () => AreaData(
-            id: _normaliseId(district),
-            name: district,
-            state: stateEntry.key,
-            population: 0,
-            populationGrowth: 0,
-            medianIncome: 0,
-            safetyScore: 0,
-            connectivityScore: 0,
-            transportScore: 0,
-            schools: 0,
-            hospitals: 0,
-            averagePricePsf: 0,
-            rentalYield: 0,
-            priceGrowth: 0,
-            priceHistory: const [],
-            snapshotDate: '',
-            source: 'Government data pending',
-          ),
-        );
-      }
+  String? _currentAuthEmail() {
+    try {
+      return Supabase.instance.client.auth.currentUser?.email;
+    } catch (_) {
+      return null;
     }
-    final expanded = areasByLocation.values.toList()
-      ..sort((left, right) {
-        final stateComparison = left.state.compareTo(right.state);
-        return stateComparison != 0
-            ? stateComparison
-            : left.name.compareTo(right.name);
-      });
-    return expanded;
   }
 
-  List<AreaData> _areasFromProfiles(
-    List<AreaProfile> profiles,
-    List<AreaData> localAreas,
-  ) {
-    final localById = {for (final area in localAreas) area.id: area};
-    final bestByLocation = <String, AreaProfile>{};
-    for (final profile in profiles) {
-      final key = _locationKey(profile.state, profile.district);
-      final current = bestByLocation[key];
-      if (current == null || _profileScore(profile) > _profileScore(current)) {
-        bestByLocation[key] = profile;
-      } else if (_profileScore(profile) == _profileScore(current) &&
-          (profile.retrievedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-              .isAfter(
-                current.retrievedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
-              )) {
-        bestByLocation[key] = profile;
-      }
-    }
-    final converted = bestByLocation.values.map((profile) {
-      final id = _normaliseId(profile.district);
-      return AreaData.fromProfile(profile, fallback: localById[id]);
-    }).toList();
-    final convertedLocations = converted
-        .map((area) => _locationKey(area.state, area.name))
-        .toSet();
-    return [
-      ...converted,
-      ...localAreas.where(
-        (area) => !convertedLocations.contains(
-          _locationKey(area.state, area.name),
-        ),
-      ),
-    ];
+  void _publishFavouriteIds() {
+    _favouriteCacheKey = '';
+    _favouriteIdsNotifier.value = Set.unmodifiable(_favouriteIds);
   }
 
-  int _profileScore(AreaProfile profile) {
-    return [
-          profile.population,
-          profile.medianHouseholdIncome,
-          profile.crimeCount,
-          profile.educationInstitutionCount,
-          profile.hospitalBedCount,
-          profile.transportStopCount,
-          profile.medianResidentialPrice,
-          profile.transactionCount,
-        ].where((value) => value != null).length +
-        profile.marketPriceHistory.length +
-        profile.marketPriceHistoryByType.length +
-        profile.marketAreaPriceHistoryByType.length;
-  }
-
-  String _locationKey(String state, String district) {
-    var stateId = _normaliseId(state);
-    var districtId = _normaliseId(district);
-    if (stateId == 'kuala_lumpur' || stateId == 'wp_kuala_lumpur') {
-      stateId = 'w_p_kuala_lumpur';
-      if (districtId == 'kuala_lumpur' || districtId == 'wp_kuala_lumpur') {
-        districtId = 'w_p_kuala_lumpur';
-      }
-    }
-    if (stateId == 'putrajaya' || stateId == 'wp_putrajaya') {
-      stateId = 'w_p_putrajaya';
-      districtId = 'w_p_putrajaya';
-    }
-    if (stateId == 'labuan' || stateId == 'wp_labuan') {
-      stateId = 'w_p_labuan';
-      districtId = 'w_p_labuan';
-    }
-    return '$stateId|$districtId';
-  }
-
-  String _normaliseId(String value) {
-    return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+  void _invalidateDataCaches() {
+    _cachedAreaSource = null;
+    _cachedAreaLength = -1;
+    _cachedAreaById = const {};
+    _favouriteCacheKey = '';
+    _recommendationCacheKey = '';
   }
 }
-

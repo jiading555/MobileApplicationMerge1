@@ -5,10 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/auth_validators.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
-  const ResetPasswordScreen({
-    super.key,
-    this.recoveryMode = false,
-  });
+  const ResetPasswordScreen({super.key, this.recoveryMode = false});
 
   final bool recoveryMode;
 
@@ -42,9 +39,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       loading = true;
       error = null;
     });
-    final result = await AppScope.of(context).resetPassword(
-      emailController.text,
-    );
+    final result = await AppScope.of(
+      context,
+    ).resetPassword(emailController.text);
     if (!mounted) return;
     setState(() {
       loading = false;
@@ -93,8 +90,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       recovery
                           ? Icons.password_rounded
                           : sent
-                              ? Icons.mark_email_read_rounded
-                              : Icons.lock_reset_rounded,
+                          ? Icons.mark_email_read_rounded
+                          : Icons.lock_reset_rounded,
                       size: 64,
                       color: AppTheme.blue,
                     ),
@@ -103,8 +100,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       recovery
                           ? 'Choose a new password'
                           : sent
-                              ? 'Check your inbox'
-                              : 'Forgot your password?',
+                          ? 'Check your inbox'
+                          : 'Forgot your password?',
                       style: Theme.of(context).textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
@@ -113,8 +110,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       recovery
                           ? 'Use at least 8 characters with uppercase, lowercase and a special character.'
                           : sent
-                              ? 'A password reset link was sent to ${emailController.text}.'
-                              : 'Enter your account email to request a reset link.',
+                          ? 'A password reset link was sent to ${emailController.text}.'
+                          : 'Enter your account email to request a reset link.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: AppTheme.muted),
                     ),
@@ -175,8 +172,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Update password'),
                         ),
@@ -185,8 +183,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       TextButton(
                         onPressed: loading
                             ? null
-                            : () => AppScope.of(context)
-                                .cancelPasswordRecovery(),
+                            : () =>
+                                  AppScope.of(context).cancelPasswordRecovery(),
                         child: const Text('Cancel'),
                       ),
                     ] else if (!sent) ...[
@@ -210,8 +208,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Send reset link'),
                         ),

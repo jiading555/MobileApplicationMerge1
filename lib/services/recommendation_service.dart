@@ -1,3 +1,6 @@
+import '../core/utils/location_normalizer.dart';
+import '../core/utils/property_area_resolver.dart';
+import '../core/utils/property_filtering.dart';
 import '../models/area_data.dart';
 import '../models/property.dart';
 import '../models/recommendation.dart';
@@ -11,82 +14,92 @@ class RecommendationService {
     required List<AreaData> areas,
     required UserPreferences preferences,
   }) {
-    final areaIndex = {for (final area in areas) area.id: area};
+    final results = <PropertyRecommendation>[];
 
-    final results = properties
-        .where((property) {
-          final price = property.price;
+    for (final property in properties) {
+      final price = property.price ?? property.priceMin ?? property.priceMax;
+      final area = PropertyAreaResolver.resolve(
+        property: property,
+        areas: areas,
+      );
+      if (price == null || area == null) {
+        continue;
+      }
+      if (!_matchesPreferences(
+        property: property,
+        price: price,
+        area: area,
+        areas: areas,
+        preferences: preferences,
+      )) {
+        continue;
+      }
 
-          if (price == null) {
-            return false;
-          }
+      results.add(
+        _score(
+          property: property,
+          price: price,
+          area: area,
+          areas: areas,
+          preferences: preferences,
+        ),
+      );
+    }
 
-          // Property must have a valid matching AreaData record.
-          if (!areaIndex.containsKey(property.areaId)) {
-            return false;
-          }
-
-          final propertyArea = areaIndex[property.areaId];
-
-          // Property Type uses normalized unit_types.
-          final typeMatches = property.matchesPropertyType(
-            preferences.propertyType,
-          );
-
-          // Advisor preferred area.
-          final areaMatches =
-              preferences.preferredAreaId == 'any' ||
-              property.areaId == preferences.preferredAreaId;
-
-          // Maximum budget selected in Smart Advisor.
-          final budgetMatches = price <= preferences.budget;
-
-          // Keep teammate's new State preference compatible.
-          final stateMatches =
-              preferences.preferredState.isEmpty ||
-              _normalise(property.state ?? propertyArea?.state) ==
-                  _normalise(preferences.preferredState);
-
-          // Keep teammate's new District preference compatible.
-          final districtMatches =
-              preferences.preferredDistrict.isEmpty ||
-              _normalise(property.district ?? propertyArea?.name) ==
-                  _normalise(preferences.preferredDistrict);
-
-          return typeMatches &&
-              areaMatches &&
-              budgetMatches &&
-              stateMatches &&
-              districtMatches;
-        })
-        .map((property) {
-          return _score(
-            property: property,
-            price: property.price!,
-            area: areaIndex[property.areaId]!,
-            areas: areas,
-            preferences: preferences,
-          );
-        })
-        .toList();
-
-    // Highest suitability score first.
-    // If scores tie, cheaper property appears first.
-    results.sort((a, b) {
-      final scoreCompare = b.score.compareTo(a.score);
-
+    results.sort((left, right) {
+      final scoreCompare = right.score.compareTo(left.score);
       if (scoreCompare != 0) {
         return scoreCompare;
       }
-
-      final aPrice = a.property.price ?? 999999999;
-
-      final bPrice = b.property.price ?? 999999999;
-
-      return aPrice.compareTo(bPrice);
+      final leftPrice =
+          left.property.price ??
+          left.property.priceMin ??
+          left.property.priceMax;
+      final rightPrice =
+          right.property.price ??
+          right.property.priceMin ??
+          right.property.priceMax;
+      return (leftPrice ?? 999999999).compareTo(rightPrice ?? 999999999);
     });
 
     return results;
+  }
+
+  bool _matchesPreferences({
+    required Property property,
+    required int price,
+    required AreaData area,
+    required Iterable<AreaData> areas,
+    required UserPreferences preferences,
+  }) {
+    final typeMatches =
+        preferences.propertyType == 'Any' ||
+        PropertyFilterNormalizer.propertyTypeMatches(
+          property,
+          preferences.propertyType,
+        );
+    final areaMatches = PropertyAreaResolver.matchesSelectedArea(
+      property: property,
+      selectedAreaId: preferences.preferredAreaId,
+      areas: areas,
+    );
+    final budgetMatches = price <= _effectiveBudget(preferences);
+    final stateMatches =
+        preferences.preferredState.trim().isEmpty ||
+        LocationNormalizer.stateMatches(area.state, preferences.preferredState);
+    final districtMatches =
+        preferences.preferredDistrict.trim().isEmpty ||
+        LocationNormalizer.districtMatches(
+          area.name,
+          preferences.preferredDistrict,
+          state: area.state,
+        );
+
+    return typeMatches &&
+        areaMatches &&
+        budgetMatches &&
+        stateMatches &&
+        districtMatches;
   }
 
   PropertyRecommendation _score({
@@ -96,17 +109,20 @@ class RecommendationService {
     required List<AreaData> areas,
     required UserPreferences preferences,
   }) {
-    final affordability = _affordability(price, preferences.budget);
-
+    final affordability = _affordability(price, _effectiveBudget(preferences));
     final factors = preferences.goal == PropertyGoal.ownStay
-        ? _ownStayFactors(area: area, areas: areas, preferences: preferences)
+        ? _ownStayFactors(
+            area: area,
+            areas: areas,
+            affordability: affordability,
+            preferences: preferences,
+          )
         : _investmentFactors(
             area: area,
             areas: areas,
             affordability: affordability,
             preferences: preferences,
           );
-
     final score = factors.fold<double>(
       0,
       (sum, factor) => sum + factor.contribution,
@@ -120,9 +136,7 @@ class RecommendationService {
       affordability: affordability,
       preferences: preferences,
     );
-
     final cautions = _buildCautions(
-      property: property,
       price: price,
       area: area,
       areas: areas,
@@ -142,27 +156,31 @@ class RecommendationService {
   List<ScoreFactor> _ownStayFactors({
     required AreaData area,
     required List<AreaData> areas,
+    required double affordability,
     required UserPreferences preferences,
   }) {
-    final weights = _normalisePriorities([
-      preferences.ownStaySafetyPriority,
-      preferences.ownStayEducationPriority,
-      preferences.ownStayTransportPriority,
-    ]);
-
-    return [
-      ScoreFactor(label: 'Safety', score: area.safetyScore, weight: weights[0]),
-      ScoreFactor(
+    return _weightedFactors([
+      _WeightedScore(
+        label: 'Safety',
+        score: area.safetyScore,
+        priority: preferences.ownStaySafetyPriority,
+      ),
+      _WeightedScore(
         label: 'Education facilities',
         score: _educationScore(area, areas),
-        weight: weights[1],
+        priority: preferences.ownStayEducationPriority,
       ),
-      ScoreFactor(
+      _WeightedScore(
         label: 'Transportation',
         score: area.transportScore,
-        weight: weights[2],
+        priority: preferences.ownStayTransportPriority,
       ),
-    ];
+      _WeightedScore(
+        label: 'Affordability',
+        score: affordability,
+        priority: 10,
+      ),
+    ]);
   }
 
   List<ScoreFactor> _investmentFactors({
@@ -171,28 +189,52 @@ class RecommendationService {
     required double affordability,
     required UserPreferences preferences,
   }) {
-    final weights = _normalisePriorities([
-      preferences.investmentIncomePriority,
-      preferences.investmentTransportPriority,
-      preferences.investmentAffordabilityPriority,
-    ]);
-
-    return [
-      ScoreFactor(
+    return _weightedFactors([
+      _WeightedScore(
         label: 'Income / economic indicator',
         score: _incomeScore(area, areas),
-        weight: weights[0],
+        priority: preferences.investmentIncomePriority,
       ),
-      ScoreFactor(
+      _WeightedScore(
         label: 'Transportation',
         score: area.transportScore,
-        weight: weights[1],
+        priority: preferences.investmentTransportPriority,
       ),
-      ScoreFactor(
+      _WeightedScore(
         label: 'Property affordability',
         score: affordability,
-        weight: weights[2],
+        priority: preferences.investmentAffordabilityPriority,
       ),
+      _WeightedScore(
+        label: 'Price growth',
+        score: _percentageSignal(area.priceGrowth, multiplier: 10),
+        priority: 8,
+      ),
+      _WeightedScore(
+        label: 'Rental yield',
+        score: _percentageSignal(area.rentalYield, multiplier: 18),
+        priority: 8,
+      ),
+    ]);
+  }
+
+  List<ScoreFactor> _weightedFactors(List<_WeightedScore> candidates) {
+    final available = candidates
+        .where((item) => item.score != null && item.priority > 0)
+        .toList(growable: false);
+    if (available.isEmpty) {
+      return const [ScoreFactor(label: 'Available data', score: 50, weight: 1)];
+    }
+    final weights = _normalisePriorities(
+      available.map((item) => item.priority).toList(),
+    );
+    return [
+      for (var index = 0; index < available.length; index++)
+        ScoreFactor(
+          label: available[index].label,
+          score: available[index].score!.clamp(0, 100).toDouble(),
+          weight: weights[index],
+        ),
     ];
   }
 
@@ -200,29 +242,39 @@ class RecommendationService {
     final values = priorities
         .map((value) => value.clamp(0, 100).toDouble())
         .toList();
-
     final total = values.fold<double>(0, (sum, value) => sum + value);
-
     if (total <= 0) {
       final equal = 1.0 / values.length;
-
       return List<double>.filled(values.length, equal);
     }
-
     return values.map((value) => value / total).toList();
   }
 
-  double _educationScore(AreaData area, List<AreaData> areas) {
+  double? _educationScore(AreaData area, List<AreaData> areas) {
+    final schools = area.schools;
+    if (schools == null) {
+      return null;
+    }
     return _normalize(
-      area.schools.toDouble(),
-      areas.map((item) => item.schools.toDouble()).toList(),
+      schools.toDouble(),
+      areas
+          .map((item) => item.schools?.toDouble())
+          .whereType<double>()
+          .toList(),
     );
   }
 
-  double _incomeScore(AreaData area, List<AreaData> areas) {
+  double? _incomeScore(AreaData area, List<AreaData> areas) {
+    final income = area.medianIncome;
+    if (income == null) {
+      return null;
+    }
     return _normalize(
-      area.medianIncome.toDouble(),
-      areas.map((item) => item.medianIncome.toDouble()).toList(),
+      income.toDouble(),
+      areas
+          .map((item) => item.medianIncome?.toDouble())
+          .whereType<double>()
+          .toList(),
     );
   }
 
@@ -230,15 +282,15 @@ class RecommendationService {
     if (values.isEmpty) {
       return 50;
     }
-
-    final minValue = values.reduce((a, b) => a < b ? a : b);
-
-    final maxValue = values.reduce((a, b) => a > b ? a : b);
-
+    final minValue = values.reduce(
+      (left, right) => left < right ? left : right,
+    );
+    final maxValue = values.reduce(
+      (left, right) => left > right ? left : right,
+    );
     if (maxValue == minValue) {
       return 50;
     }
-
     return ((value - minValue) / (maxValue - minValue) * 100)
         .clamp(0, 100)
         .toDouble();
@@ -248,10 +300,25 @@ class RecommendationService {
     if (budget <= 0) {
       return 0;
     }
-
     final ratio = price / budget;
-
     return ((1 - ratio) * 100 + 75).clamp(0, 100).toDouble();
+  }
+
+  double _effectiveBudget(UserPreferences preferences) {
+    if (preferences.budget > 0) {
+      return preferences.budget;
+    }
+    if (preferences.maximumBudget > 0) {
+      return preferences.maximumBudget;
+    }
+    return 0;
+  }
+
+  double? _percentageSignal(double? value, {required double multiplier}) {
+    if (value == null) {
+      return null;
+    }
+    return (value * multiplier).clamp(0, 100).toDouble();
   }
 
   List<String> _buildReasons({
@@ -266,54 +333,54 @@ class RecommendationService {
 
     if (preferences.goal == PropertyGoal.ownStay) {
       final education = _educationScore(area, areas);
+      final safetyScore = area.safetyScore;
+      final transportScore = area.transportScore;
 
-      if (area.safetyScore >= 75) {
+      if (safetyScore != null && safetyScore >= 75) {
         reasons.add('Good safety performance for own-stay living');
       }
-
-      if (education >= 65) {
+      if (education != null && education >= 65) {
         reasons.add('Strong education facility availability');
       }
-
-      if (area.transportScore >= 80) {
+      if (transportScore != null && transportScore >= 80) {
         reasons.add('Good transportation accessibility');
       }
-
-      if (price <= preferences.budget * 0.85) {
+      if (price <= _effectiveBudget(preferences) * 0.85) {
         reasons.add('Comfortably within your selected budget');
       }
     } else {
       final income = _incomeScore(area, areas);
+      final transportScore = area.transportScore;
 
-      if (income >= 65) {
+      if (income != null && income >= 65) {
         reasons.add('Strong household income and economic indicator');
       }
-
-      if (area.transportScore >= 80) {
+      if (transportScore != null && transportScore >= 80) {
         reasons.add('Good transportation accessibility');
       }
-
       if (affordability >= 80) {
         reasons.add('Good affordability within your investment budget');
+      }
+      if (area.priceGrowth != null && area.priceGrowth! >= 7) {
+        reasons.add('Strong historical price-growth signal');
+      }
+      if (area.rentalYield != null && area.rentalYield! >= 4.3) {
+        reasons.add('Competitive estimated rental yield');
       }
     }
 
     if (property.normalizedPropertyTypes.isNotEmpty) {
       reasons.add(
-        'Available unit type: '
-        '${property.normalizedPropertyTypes.join(', ')}',
+        'Available unit type: ${property.normalizedPropertyTypes.join(', ')}',
       );
     }
-
     if (reasons.isEmpty) {
       reasons.add('Balanced performance across the selected indicators');
     }
-
     return reasons;
   }
 
   List<String> _buildCautions({
-    required Property property,
     required int price,
     required AreaData area,
     required List<AreaData> areas,
@@ -324,64 +391,62 @@ class RecommendationService {
 
     if (preferences.goal == PropertyGoal.ownStay) {
       final education = _educationScore(area, areas);
+      final safetyScore = area.safetyScore;
+      final transportScore = area.transportScore;
 
-      if (area.safetyScore < 70) {
+      if (safetyScore != null && safetyScore < 70) {
         cautions.add('Safety indicator is relatively low');
       }
-
-      if (education < 45) {
+      if (education != null && education < 45) {
         cautions.add(
           'Education facility availability is lower than stronger compared areas',
         );
       }
-
-      if (area.transportScore < 70) {
+      if (transportScore != null && transportScore < 70) {
         cautions.add('Transportation accessibility is relatively limited');
       }
-
-      if (price > preferences.budget * 0.95) {
+      if (price > _effectiveBudget(preferences) * 0.95) {
         cautions.add('Property price is close to your maximum budget');
       }
     } else {
       final income = _incomeScore(area, areas);
+      final transportScore = area.transportScore;
 
-      if (income < 40) {
+      if (income != null && income < 40) {
         cautions.add('Household income indicator is relatively low');
       }
-
-      if (area.transportScore < 70) {
+      if (transportScore != null && transportScore < 70) {
         cautions.add(
           'Transportation accessibility indicator is relatively low',
         );
       }
-
       if (affordability < 70) {
         cautions.add(
           'Property uses a large portion of the selected investment budget',
         );
       }
+      if (area.rentalYield != null && area.rentalYield! < 4.0) {
+        cautions.add('Rental yield is modest compared with other areas');
+      }
     }
 
-    // Important:
-    // Do not invent financing, tenure or property-condition cautions
-    // because those values are not currently part of the Advisor data.
     if (cautions.isEmpty) {
       cautions.add(
         'No major caution was identified from the currently available scoring indicators',
       );
     }
-
     return cautions;
   }
+}
 
-  String _normalise(Object? value) {
-    if (value == null) {
-      return '';
-    }
+class _WeightedScore {
+  const _WeightedScore({
+    required this.label,
+    required this.score,
+    required this.priority,
+  });
 
-    return value.toString().trim().toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]+'),
-      ' ',
-    );
-  }
+  final String label;
+  final double? score;
+  final double priority;
 }

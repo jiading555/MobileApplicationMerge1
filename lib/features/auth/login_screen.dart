@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/auth_validators.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/advisor_brand.dart';
 import 'register_screen.dart';
 
@@ -44,18 +45,24 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> sendPasswordReset() async {
     final emailError = AuthValidators.email(emailController.text);
     if (emailError != null) {
-      setState(() => error = 'Enter your email address to reset your password.');
+      setState(
+        () => error = 'Enter your email address to reset your password.',
+      );
       return;
     }
 
-    final result = await AppScope.of(context).resetPassword(emailController.text);
+    final result = await AppScope.of(
+      context,
+    ).resetPassword(emailController.text);
     if (!mounted) return;
     if (result != null) {
       setState(() => error = result);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Password reset link sent. Check your email.')),
+      const SnackBar(
+        content: Text('Password reset link sent. Check your email.'),
+      ),
     );
   }
 
@@ -65,8 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 850;
+          builder: (context, _) {
+            final wide = ResponsiveLayout.isTablet(context);
             return Row(
               children: [
                 if (wide) const Expanded(child: _LoginHero()),
@@ -189,7 +196,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? null
                                     : submit,
                                 child: AppScope.of(context).isAccountBusy
-                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Text('Sign in'),
                               ),
                               const SizedBox(height: 22),
@@ -229,48 +242,62 @@ class _LoginHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppTheme.navy, AppTheme.blue, AppTheme.teal],
-        ),
-      ),
-      padding: const EdgeInsets.all(56),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdvisorBrand(light: true),
-          Spacer(),
-          Icon(Icons.location_city_rounded, size: 76, color: Colors.white),
-          SizedBox(height: 24),
-          Text(
-            'Property decisions,\ngrounded in data.',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 38,
-              height: 1.15,
-              fontWeight: FontWeight.w800,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 620;
+        return Container(
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppTheme.navy, AppTheme.blue, AppTheme.teal],
             ),
           ),
-          SizedBox(height: 16),
-          Text(
-            'Explore Malaysian areas, compare market signals and understand every recommendation.',
-            style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5),
+          padding: EdgeInsets.all(compact ? 32 : 56),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AdvisorBrand(light: true),
+              SizedBox(height: compact ? 32 : 0),
+              if (!compact) const Spacer(),
+              Icon(
+                Icons.location_city_rounded,
+                size: compact ? 48 : 76,
+                color: Colors.white,
+              ),
+              SizedBox(height: compact ? 16 : 24),
+              Text(
+                'Property decisions,\ngrounded in data.',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 30 : 38,
+                  height: 1.15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: compact ? 10 : 16),
+              Text(
+                'Explore Malaysian areas, compare market signals and understand every recommendation.',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: compact ? 14 : 16,
+                  height: compact ? 1.35 : 1.5,
+                ),
+              ),
+              SizedBox(height: compact ? 24 : 0),
+              if (!compact) const Spacer(),
+              const Text(
+                'Built with Malaysian open data - SDG 9',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-          Spacer(),
-          Text(
-            'Built with Malaysian open data - SDG 9',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
-

@@ -54,11 +54,10 @@ class _SimpleLineChartState extends State<SimpleLineChart> {
                       ((details.localPosition.dx - horizontalPadding) /
                               chartWidth)
                           .clamp(0.0, 1.0);
-                  final index =
-                      (ratio * (widget.values.length - 1))
-                          .round()
-                          .clamp(0, widget.values.length - 1)
-                          .toInt();
+                  final index = (ratio * (widget.values.length - 1))
+                      .round()
+                      .clamp(0, widget.values.length - 1)
+                      .toInt();
                   setState(() => selectedIndex = index);
                 },
           child: Stack(
@@ -117,10 +116,7 @@ class _SimpleLineChartState extends State<SimpleLineChart> {
 
   String _formatValue(double value) {
     final digits = value.round().toString();
-    return digits.replaceAllMapped(
-      RegExp(r'\B(?=(\d{3})+(?!\d))'),
-      (_) => ',',
-    );
+    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
   }
 }
 
@@ -213,7 +209,11 @@ class _LineChartPainter extends CustomPainter {
           Paint()..color = color.withValues(alpha: 0.22),
         );
       }
-      canvas.drawCircle(points[index], selected ? 5 : 3.5, Paint()..color = color);
+      canvas.drawCircle(
+        points[index],
+        selected ? 5 : 3.5,
+        Paint()..color = color,
+      );
       canvas.drawCircle(
         points[index],
         selected ? 2.4 : 1.7,

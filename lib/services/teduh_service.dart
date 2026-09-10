@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
+import '../core/utils/location_normalizer.dart';
 import '../models/property.dart';
 
 class TeduhService {
@@ -32,55 +33,32 @@ class TeduhService {
     'Terengganu',
   ];
 
-  Future<List<Property>> fetchProjects({
-    int maxRecords = 24,
-    int maxPerState = 10,
-    bool sampleByState = true,
-    String? scheme,
-  }) async {
+  Future<List<Property>> fetchProjects({String? scheme}) async {
     final retrievedAt = DateTime.now().toUtc();
     final stateLookup = await _fetchStateLookup();
+    final params = <String, String>{
+      if (scheme != null && scheme.trim().isNotEmpty) 'scheme': scheme.trim(),
+    };
 
+    try {
+      final rawRecords = await _fetchProjectPages(params);
+      if (rawRecords.isNotEmpty) {
+        return _buildProperties(rawRecords, stateLookup, retrievedAt);
+      }
+    } on Exception {
+      return _fetchFallbackProjects(retrievedAt);
+    }
+
+    return _fetchFallbackProjects(retrievedAt);
+  }
+
+  Future<List<Property>> _fetchFallbackProjects(DateTime retrievedAt) async {
     final htmlProjects = await _fetchProjectsFromHtml(retrievedAt);
     if (htmlProjects.isNotEmpty) {
-      return _dedupe(htmlProjects).take(maxRecords).toList();
+      return _dedupe(htmlProjects);
     }
 
-    final rawRecords = <Map<String, dynamic>>[];
-    if (sampleByState) {
-      final stateCodes = await _fetchStateCodeLookup();
-      for (final state in targetStates) {
-        rawRecords.addAll(
-          await _fetchProjectPages(maxPerState, {
-            'state': stateCodes[_normalise(state)] ?? state,
-            if (scheme != null && scheme.trim().isNotEmpty)
-              'scheme': scheme.trim(),
-          }),
-        );
-      }
-    } else {
-      rawRecords.addAll(
-        await _fetchProjectPages(maxRecords, {
-          if (scheme != null && scheme.trim().isNotEmpty)
-            'scheme': scheme.trim(),
-        }),
-      );
-    }
-
-    final cleaned = <Property>[];
-    for (final raw in rawRecords) {
-      final row = _cleanProject(raw, stateLookup, retrievedAt);
-      if (row != null) {
-        cleaned.add(
-          Property.fromTeduhJson(
-            row,
-            areaId: 'unknown',
-            palette: (cleaned.length + 10) % 12,
-          ),
-        );
-      }
-    }
-    return _dedupe(cleaned).take(maxRecords).toList();
+    return const [];
   }
 
   Future<List<Property>> _fetchProjectsFromHtml(DateTime retrievedAt) async {
@@ -110,7 +88,7 @@ class TeduhService {
       }
       final location = _cleanText(card.querySelector('.footer-loc')?.text);
       final price = _parseNumber(card.querySelector('.price-pill')?.text);
-      final state = _titleText(location);
+      final (state, district) = _splitLocation(location, const {});
       final sourceId = _htmlSourceId(name, location);
       projects.add(
         Property.fromTeduhJson(
@@ -118,7 +96,7 @@ class TeduhService {
             'source_id': sourceId,
             'project_name': name,
             'state': state,
-            'district': null,
+            'district': district,
             'scheme': null,
             'price_min': price,
             'price_max': price,
@@ -138,14 +116,15 @@ class TeduhService {
   }
 
   Future<List<Map<String, dynamic>>> _fetchProjectPages(
-    int maxRecords,
     Map<String, String> params,
   ) async {
     final records = <Map<String, dynamic>>[];
+    final seenKeys = <String>{};
     var page = 1;
     var lastPage = 1;
+    var previousPageSignature = '';
 
-    while (records.length < maxRecords && page <= lastPage && page <= 50) {
+    while (page <= lastPage) {
       final payload = await _getJson(_projectsPath, {
         ...params,
         'page': '$page',
@@ -157,12 +136,46 @@ class TeduhService {
       if (data.isEmpty) {
         break;
       }
-      records.addAll(data.whereType<Map>().map(Map<String, dynamic>.from));
+
+      final batch = data
+          .whereType<Map>()
+          .map(Map<String, dynamic>.from)
+          .toList();
+      final uniqueBatch = <Map<String, dynamic>>[];
+      for (final item in batch) {
+        final key =
+            _cleanText(item['id']) ??
+            _fallbackSourceId(item, _cleanText(item['location']));
+        if (seenKeys.add(key)) {
+          uniqueBatch.add(item);
+        }
+      }
+
+      if (uniqueBatch.isEmpty) {
+        break;
+      }
+
+      final batchSignature = uniqueBatch
+          .map(
+            (item) =>
+                _cleanText(item['id']) ??
+                _fallbackSourceId(item, _cleanText(item['location'])),
+          )
+          .join('|');
+      if (batchSignature == previousPageSignature) {
+        break;
+      }
+      previousPageSignature = batchSignature;
+
+      records.addAll(uniqueBatch);
       lastPage = _parseNumber(payload['last_page'])?.toInt() ?? page;
+      if (page >= lastPage) {
+        break;
+      }
       page += 1;
     }
 
-    return records.take(maxRecords).toList();
+    return records;
   }
 
   Future<Map<String, String>> _fetchStateLookup() async {
@@ -173,23 +186,9 @@ class TeduhService {
       for (final state in states.whereType<Map>()) {
         final name = _cleanText(state['name']);
         if (name != null) {
-          lookup[name.toUpperCase()] = _titleText(name)!;
-        }
-      }
-    }
-    return lookup;
-  }
-
-  Future<Map<String, String>> _fetchStateCodeLookup() async {
-    final filters = await _getJson(_filtersPath);
-    final states = filters['states'];
-    final lookup = <String, String>{};
-    if (states is List) {
-      for (final state in states.whereType<Map>()) {
-        final name = _cleanText(state['name']);
-        final id = _cleanText(state['id'] ?? state['value']);
-        if (name != null && id != null) {
-          lookup[_normalise(name)] = id;
+          lookup[name.toUpperCase()] = LocationNormalizer.displayStateName(
+            name,
+          );
         }
       }
     }
@@ -225,6 +224,7 @@ class TeduhService {
     final (state, district) = _splitLocation(location, stateLookup);
     final prices = _collectPrices(record);
     final unitTypes = _collectUnitTypes(record);
+    final unitOptions = _collectUnitOptions(record);
     final developer = record['developer'] is Map
         ? Map<String, dynamic>.from(record['developer'] as Map)
         : <String, dynamic>{};
@@ -237,7 +237,7 @@ class TeduhService {
       'scheme': _normaliseScheme(record),
       'price_min': prices.$1,
       'price_max': prices.$2,
-      'property_type': unitTypes.isEmpty ? null : unitTypes.join('; '),
+      'property_type': null,
       'project_status': _cleanText(record['status']),
       'developer_name': _cleanText(developer['name']),
       'address': _cleanText(record['address']),
@@ -249,6 +249,7 @@ class TeduhService {
       'total_units': _parseNumber(record['total_unit'])?.toInt(),
       'available_units': _parseNumber(record['baki_unit'])?.toInt(),
       'unit_types': unitTypes,
+      'unit_options': unitOptions,
       'external_project_url': _cleanText(record['web_url']),
       'developer_address': _cleanText(developer['full_address']),
       'raw_location': location,
@@ -302,6 +303,51 @@ class TeduhService {
     return types;
   }
 
+  List<Map<String, dynamic>> _collectUnitOptions(Map<String, dynamic> record) {
+    final options = <Map<String, dynamic>>[];
+    final units = record['units'];
+    if (units is! List) {
+      return options;
+    }
+    for (final unit in units.whereType<Map>()) {
+      final row = Map<String, dynamic>.from(unit);
+      final sourceUnitId = _cleanText(row['id']);
+      final unitType =
+          _cleanText(row['unit_type']) ?? _cleanText(row['house_type']);
+      final priceStart = _parseNumber(row['price_start']);
+      final priceFromText = _cleanText(row['price_from_text']);
+      final sizeSqft = _parseNumber(row['base_area']);
+      final sizeText = _cleanText(row['size_text']);
+      final imageUrl = _absoluteTeduhUrl(_cleanText(row['img_url']));
+      final option = <String, dynamic>{};
+      if (sourceUnitId != null) {
+        option['source_unit_id'] = sourceUnitId;
+      }
+      if (unitType != null) {
+        option['unit_type'] = unitType;
+      }
+      if (priceStart != null) {
+        option['price_start'] = priceStart.round();
+      }
+      if (priceFromText != null) {
+        option['price_from_text'] = priceFromText;
+      }
+      if (sizeSqft != null) {
+        option['size_sqft'] = sizeSqft.round();
+      }
+      if (sizeText != null) {
+        option['size_text'] = sizeText;
+      }
+      if (imageUrl != null) {
+        option['image_url'] = imageUrl;
+      }
+      if (option.isNotEmpty) {
+        options.add(option);
+      }
+    }
+    return options;
+  }
+
   String? _normaliseScheme(Map<String, dynamic> record) {
     final raw = _cleanText(record['scheme_name']);
     if (raw != null) {
@@ -344,29 +390,77 @@ class TeduhService {
       return (stateLookup[upper], null);
     }
 
-    final parts = upper
+    if (LocationNormalizer.hasConflictingKnownStates(text)) {
+      return (null, null);
+    }
+
+    final parts = text
         .split(',')
         .map((part) => part.trim())
         .where((part) => part.isNotEmpty)
         .toList();
-    if (parts.length >= 2 && stateLookup.containsKey(parts.last)) {
-      return (stateLookup[parts.last], _titleText(parts[parts.length - 2]));
-    }
-
-    for (final entry in stateLookup.entries) {
-      if (upper.endsWith(entry.key)) {
-        final beforeState = upper
-            .substring(0, upper.length - entry.key.length)
-            .trim()
-            .replaceAll(RegExp(r',$'), '');
-        final district = beforeState.isEmpty
+    for (var index = 0; index < parts.length; index++) {
+      final state =
+          stateLookup[parts[index].toUpperCase()] ??
+          LocationNormalizer.nullableDisplayStateName(parts[index]);
+      if (state != null && LocationNormalizer.isKnownState(state)) {
+        final districtIndex = index > 0
+            ? index - 1
+            : (parts.length > 1 ? index + 1 : -1);
+        final district = districtIndex == -1
             ? null
-            : _titleText(beforeState.split(',').last);
-        return (entry.value, district);
+            : LocationNormalizer.nullableDisplayDistrictName(
+                parts[districtIndex],
+              );
+        if (_districtConflictsWithState(district, state)) {
+          return (null, null);
+        }
+        return (state, district);
       }
     }
 
-    return (_titleText(text), null);
+    final suffixMatch = LocationNormalizer.matchStateSuffix(text);
+    if (suffixMatch != null) {
+      final district = suffixMatch.beforeState.isEmpty
+          ? null
+          : LocationNormalizer.nullableDisplayDistrictName(
+              suffixMatch.beforeState.split(',').last,
+            );
+      if (_districtConflictsWithState(district, suffixMatch.state)) {
+        return (null, null);
+      }
+      return (suffixMatch.state, district);
+    }
+
+    return (LocationNormalizer.nullableDisplayStateName(text), null);
+  }
+
+  bool _districtConflictsWithState(String? district, String state) {
+    final stateId = LocationNormalizer.canonicalStateId(state);
+    return LocationNormalizer.recognizedStateIds(
+      district,
+    ).any((districtStateId) => districtStateId != stateId);
+  }
+
+  List<Property> _buildProperties(
+    List<Map<String, dynamic>> rawRecords,
+    Map<String, String> stateLookup,
+    DateTime retrievedAt,
+  ) {
+    final cleaned = <Property>[];
+    for (final raw in rawRecords) {
+      final row = _cleanProject(raw, stateLookup, retrievedAt);
+      if (row != null) {
+        cleaned.add(
+          Property.fromTeduhJson(
+            row,
+            areaId: 'unknown',
+            palette: (cleaned.length + 10) % 12,
+          ),
+        );
+      }
+    }
+    return _dedupe(cleaned);
   }
 
   List<Property> _dedupe(List<Property> records) {
@@ -382,9 +476,24 @@ class TeduhService {
   }
 
   String _sourceUrl() {
-    return Uri.https(_host, _projectsPagePath, {
-      'source': 'Perumahan Awam',
-    }).toString();
+    return Uri.https(_host, _projectsPath).toString();
+  }
+
+  String? _absoluteTeduhUrl(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null) {
+      return null;
+    }
+    if (uri.hasScheme && uri.host.isNotEmpty) {
+      return uri.toString();
+    }
+    return Uri.https(
+      _host,
+      value.startsWith('/') ? value : '/$value',
+    ).toString();
   }
 
   String _fallbackSourceId(Map<String, dynamic> record, String? state) {
@@ -452,32 +561,6 @@ class TeduhService {
       return null;
     }
     return text;
-  }
-
-  String? _titleText(Object? value) {
-    final text = _cleanText(value);
-    if (text == null) {
-      return null;
-    }
-    return text
-        .toLowerCase()
-        .split(' ')
-        .map(
-          (part) => part.isEmpty
-              ? part
-              : '${part[0].toUpperCase()}${part.substring(1)}',
-        )
-        .join(' ');
-  }
-
-  String _normalise(Object? value) {
-    return value
-        .toString()
-        .trim()
-        .toLowerCase()
-        .replaceAll('-', ' ')
-        .replaceAll('_', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ');
   }
 
   String get _host => Uri.parse(_baseUrl).host;

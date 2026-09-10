@@ -16,9 +16,7 @@ class AiAdvisorChatService {
     List<Map<String, String>> conversationHistory = const [],
   }) async {
     if (question.trim().isEmpty) {
-      throw Exception(
-        'Question cannot be empty.',
-      );
+      throw Exception('Question cannot be empty.');
     }
 
     if (recommendations.isEmpty) {
@@ -36,30 +34,18 @@ class AiAdvisorChatService {
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke(
-        GeminiConfig.edgeFunctionName,
-        body: {
-          'prompt': prompt,
-        },
-      )
-          .timeout(
-        const Duration(seconds: 90),
-      );
+          .invoke(GeminiConfig.edgeFunctionName, body: {'prompt': prompt})
+          .timeout(const Duration(seconds: 90));
 
       final data = response.data;
 
       if (data is! Map) {
-        throw Exception(
-          'Gemini returned an invalid response.',
-        );
+        throw Exception('Gemini returned an invalid response.');
       }
 
-      final error = data['error']
-          ?.toString()
-          .trim();
+      final error = data['error']?.toString().trim();
 
-      if (response.status != 200 ||
-          (error != null && error.isNotEmpty)) {
+      if (response.status != 200 || (error != null && error.isNotEmpty)) {
         throw Exception(
           error == null || error.isEmpty
               ? 'Gemini API error: ${response.status}'
@@ -67,130 +53,90 @@ class AiAdvisorChatService {
         );
       }
 
-      final text =
-          data['text']?.toString().trim() ?? '';
+      final text = data['text']?.toString().trim() ?? '';
 
       if (text.isEmpty) {
-        throw Exception(
-          'Gemini returned an empty advisor response.',
-        );
+        throw Exception('Gemini returned an empty advisor response.');
       }
 
       return text;
     } on TimeoutException {
       throw Exception(
         'The AI advisor is taking longer than expected. '
-            'Please check your internet connection and try again.',
+        'Please check your internet connection and try again.',
       );
     } catch (error) {
       final message = error.toString();
 
       // Avoid wrapping our own friendly errors repeatedly.
-      if (message.contains(
-        'AI request limit reached',
-      ) ||
-          message.contains(
-            'AI service is temporarily busy',
-          ) ||
-          message.contains(
-            'Gemini API error',
-          ) ||
-          message.contains(
-            'Gemini returned',
-          )) {
+      if (message.contains('AI request limit reached') ||
+          message.contains('AI service is temporarily busy') ||
+          message.contains('Gemini API error') ||
+          message.contains('Gemini returned')) {
         rethrow;
       }
 
       throw Exception(
         'Failed to get AI advisor response. '
-            'Please try again.',
+        'Please try again.',
       );
     }
   }
 
   String buildPrompt({
     required String question,
-    required List<PropertyRecommendation>
-    recommendations,
+    required List<PropertyRecommendation> recommendations,
     required UserPreferences preferences,
-    List<Map<String, String>>
-    conversationHistory = const [],
+    List<Map<String, String>> conversationHistory = const [],
   }) {
-    final topRecommendations =
-    recommendations.take(3).toList();
+    final topRecommendations = recommendations.take(3).toList();
 
-    final recommendationContext =
-    topRecommendations
+    final recommendationContext = topRecommendations
         .asMap()
         .entries
         .map((entry) {
-      final index = entry.key + 1;
+          final index = entry.key + 1;
 
-      final recommendation =
-          entry.value;
+          final recommendation = entry.value;
 
-      final property =
-          recommendation.property;
+          final property = recommendation.property;
 
-      final sortedFactors =
-      List<ScoreFactor>.from(
-        recommendation.factors,
-      )..sort(
-            (a, b) =>
-            b.weight.compareTo(
-              a.weight,
-            ),
-      );
+          final sortedFactors = List<ScoreFactor>.from(recommendation.factors)
+            ..sort((a, b) => b.weight.compareTo(a.weight));
 
-      final factors =
-      sortedFactors
-          .map(
-            (factor) =>
-        '- ${factor.label}: '
-            '${factor.score.toStringAsFixed(1)}/100, '
-            'applied weight '
-            '${(factor.weight * 100).toStringAsFixed(1)}%, '
-            'contribution '
-            '${factor.contribution.toStringAsFixed(1)} points',
-      )
-          .join('\n');
+          final factors = sortedFactors
+              .map(
+                (factor) =>
+                    '- ${factor.label}: '
+                    '${factor.score.toStringAsFixed(1)}/100, '
+                    'applied weight '
+                    '${(factor.weight * 100).toStringAsFixed(1)}%, '
+                    'contribution '
+                    '${factor.contribution.toStringAsFixed(1)} points',
+              )
+              .join('\n');
 
-      final advantages =
-      recommendation.reasons.isEmpty
-          ? 'None supplied'
-          : recommendation.reasons
-          .map(
-            (item) =>
-        '- $item',
-      )
-          .join('\n');
+          final advantages = recommendation.reasons.isEmpty
+              ? 'None supplied'
+              : recommendation.reasons.map((item) => '- $item').join('\n');
 
-      final cautions =
-      recommendation.cautions.isEmpty
-          ? 'None supplied'
-          : recommendation.cautions
-          .map(
-            (item) =>
-        '- $item',
-      )
-          .join('\n');
+          final cautions = recommendation.cautions.isEmpty
+              ? 'None supplied'
+              : recommendation.cautions.map((item) => '- $item').join('\n');
 
-      final price =
-      property.price == null
-          ? 'Unavailable'
-          : 'RM ${property.price}';
+          final price = _priceText(
+            property.price,
+            property.priceMin,
+            property.priceMax,
+          );
 
-      final normalizedTypes =
-          property.normalizedPropertyTypes;
+          final normalizedTypes = property.normalizedPropertyTypes;
 
-      final propertyType =
-      normalizedTypes.isEmpty
-          ? 'Unavailable'
-          : normalizedTypes.join(
-        ', ',
-      );
+          final propertyType = normalizedTypes.isEmpty
+              ? 'Unavailable'
+              : normalizedTypes.join(', ');
 
-      return '''
+          return '''
 PROPERTY $index
 
 Recommendation rank:
@@ -220,34 +166,26 @@ $advantages
 Cautions identified by the deterministic recommendation system:
 $cautions
 ''';
-    }).join(
-      '\n-----------------------------\n',
-    );
+        })
+        .join('\n-----------------------------\n');
 
-    final historyText =
-    conversationHistory.isEmpty
+    final historyText = conversationHistory.isEmpty
         ? 'No previous conversation.'
         : conversationHistory
-        .map((message) {
-      final role =
-          message['role'] ??
-              'unknown';
+              .map((message) {
+                final role = message['role'] ?? 'unknown';
 
-      final text =
-          message['text'] ?? '';
+                final text = message['text'] ?? '';
 
-      return '$role: $text';
-    }).join('\n');
+                return '$role: $text';
+              })
+              .join('\n');
 
-    final goal =
-    preferences.goal ==
-        PropertyGoal.ownStay
+    final goal = preferences.goal == PropertyGoal.ownStay
         ? 'Own Stay'
         : 'Investment';
 
-    final preferredArea =
-    preferences.preferredAreaId ==
-        'any'
+    final preferredArea = preferences.preferredAreaId == 'any'
         ? 'Any area'
         : preferences.preferredAreaId;
 
@@ -503,5 +441,13 @@ Remember:
 - If the user wants another location, budget, property type or other properties, tell them to update the Smart Property Advisor preferences and generate new matches.
 - Return plain text only.
 ''';
+  }
+
+  String _priceText(int? price, int? priceMin, int? priceMax) {
+    if (priceMin != null && priceMax != null && priceMin != priceMax) {
+      return 'RM $priceMin - RM $priceMax';
+    }
+    final displayPrice = price ?? priceMin ?? priceMax;
+    return displayPrice == null ? 'Unavailable' : 'RM $displayPrice';
   }
 }

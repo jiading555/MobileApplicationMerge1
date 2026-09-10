@@ -112,14 +112,16 @@ class UserAccountRepository {
   }) async {
     final safeExtension = extension.toLowerCase() == 'png' ? 'png' : 'jpg';
     final path = '$userId/avatar.$safeExtension';
-    await _client.storage.from('avatars').uploadBinary(
-      path,
-      bytes,
-      fileOptions: FileOptions(
-        upsert: true,
-        contentType: safeExtension == 'png' ? 'image/png' : 'image/jpeg',
-      ),
-    );
+    await _client.storage
+        .from('avatars')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            contentType: safeExtension == 'png' ? 'image/png' : 'image/jpeg',
+          ),
+        );
     return '${_client.storage.from('avatars').getPublicUrl(path)}?v=${DateTime.now().millisecondsSinceEpoch}';
   }
 }

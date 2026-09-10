@@ -6,10 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/area_data.dart';
 
 class MarketTrendCacheEntry {
-  const MarketTrendCacheEntry({
-    required this.areas,
-    required this.updatedAt,
-  });
+  const MarketTrendCacheEntry({required this.areas, required this.updatedAt});
 
   final List<AreaData> areas;
   final DateTime updatedAt;
@@ -63,30 +60,17 @@ class MarketTrendCache {
 
     final areas = decoded
         .whereType<Map>()
-        .map(
-          (item) => AreaData.fromCacheJson(
-            Map<String, dynamic>.from(item),
-          ),
-        )
+        .map((item) => AreaData.fromCacheJson(Map<String, dynamic>.from(item)))
         .toList();
     return MarketTrendCacheEntry(areas: areas, updatedAt: updatedAt);
   }
 
-  Future<void> save(
-    List<AreaData> areas, {
-    required DateTime updatedAt,
-  }) async {
+  Future<void> save(List<AreaData> areas, {required DateTime updatedAt}) async {
     final database = await _openDatabase();
-    await database.insert(
-      _tableName,
-      {
-        'id': _snapshotId,
-        'payload': jsonEncode(
-          areas.map((area) => area.toCacheJson()).toList(),
-        ),
-        'updated_at': updatedAt.toUtc().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await database.insert(_tableName, {
+      'id': _snapshotId,
+      'payload': jsonEncode(areas.map((area) => area.toCacheJson()).toList()),
+      'updated_at': updatedAt.toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

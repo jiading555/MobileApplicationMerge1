@@ -12,24 +12,15 @@ class AiComparisonService {
     required List<PropertyRecommendation> recommendations,
     required PropertyGoal goal,
   }) async {
-    if (recommendations.length < 2 ||
-        recommendations.length > 3) {
-      throw Exception(
-        'Please compare between 2 and 3 properties.',
-      );
+    if (recommendations.length < 2 || recommendations.length > 3) {
+      throw Exception('Please compare between 2 and 3 properties.');
     }
 
-    final prompt = buildPrompt(
-      recommendations: recommendations,
-      goal: goal,
-    );
+    final prompt = buildPrompt(recommendations: recommendations, goal: goal);
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke(
-            GeminiConfig.edgeFunctionName,
-            body: {'prompt': prompt},
-          )
+          .invoke(GeminiConfig.edgeFunctionName, body: {'prompt': prompt})
           .timeout(const Duration(seconds: 90));
 
       final data = response.data;
@@ -70,100 +61,74 @@ class AiComparisonService {
   }
 
   String buildPrompt({
-    required List<PropertyRecommendation>
-    recommendations,
+    required List<PropertyRecommendation> recommendations,
     required PropertyGoal goal,
   }) {
-    final firstFactors =
-        recommendations.first.factors;
+    final firstFactors = recommendations.first.factors;
 
     if (firstFactors.isEmpty) {
       throw Exception(
         'No scoring factors are available '
-            'for comparison.',
+        'for comparison.',
       );
     }
 
-    final sortedWeights =
-    List<ScoreFactor>.from(
-      firstFactors,
-    )..sort(
-          (a, b) =>
-          b.weight.compareTo(a.weight),
-    );
+    final sortedWeights = List<ScoreFactor>.from(firstFactors)
+      ..sort((a, b) => b.weight.compareTo(a.weight));
 
-    final highestFactor =
-        sortedWeights.first;
+    final highestFactor = sortedWeights.first;
 
-    final appliedWeights =
-    sortedWeights
+    final appliedWeights = sortedWeights
         .map(
           (factor) =>
-      '${factor.label}: '
-          '${(factor.weight * 100).toStringAsFixed(1)}%',
-    )
+              '${factor.label}: '
+              '${(factor.weight * 100).toStringAsFixed(1)}%',
+        )
         .join('\n');
 
-    final propertyText =
-    recommendations
+    final propertyText = recommendations
         .asMap()
         .entries
         .map((entry) {
-      final index =
-          entry.key + 1;
+          final index = entry.key + 1;
 
-      final recommendation =
-          entry.value;
+          final recommendation = entry.value;
 
-      final property =
-          recommendation.property;
+          final property = recommendation.property;
 
-      final price =
-      property.price == null
-          ? 'Unavailable'
-          : 'RM ${property.price}';
+          final price = _priceText(
+            property.price,
+            property.priceMin,
+            property.priceMax,
+          );
 
-      final normalizedTypes =
-          property
-              .normalizedPropertyTypes;
+          final normalizedTypes = property.normalizedPropertyTypes;
 
-      final propertyType =
-      normalizedTypes.isEmpty
-          ? 'Unavailable'
-          : normalizedTypes.join(
-        ', ',
-      );
+          final propertyType = normalizedTypes.isEmpty
+              ? 'Unavailable'
+              : normalizedTypes.join(', ');
 
-      final factors =
-      recommendation.factors
-          .map(
-            (factor) =>
-        '${factor.label}: '
-            '${factor.score.toStringAsFixed(1)}/100, '
-            'weight '
-            '${(factor.weight * 100).toStringAsFixed(1)}%, '
-            'contribution '
-            '${factor.contribution.toStringAsFixed(1)} points',
-      )
-          .join('\n');
+          final factors = recommendation.factors
+              .map(
+                (factor) =>
+                    '${factor.label}: '
+                    '${factor.score.toStringAsFixed(1)}/100, '
+                    'weight '
+                    '${(factor.weight * 100).toStringAsFixed(1)}%, '
+                    'contribution '
+                    '${factor.contribution.toStringAsFixed(1)} points',
+              )
+              .join('\n');
 
-      final advantages =
-      recommendation.reasons
-          .map(
-            (item) =>
-        '- $item',
-      )
-          .join('\n');
+          final advantages = recommendation.reasons
+              .map((item) => '- $item')
+              .join('\n');
 
-      final cautions =
-      recommendation.cautions
-          .map(
-            (item) =>
-        '- $item',
-      )
-          .join('\n');
+          final cautions = recommendation.cautions
+              .map((item) => '- $item')
+              .join('\n');
 
-      return '''
+          return '''
 PROPERTY $index
 
 Name:
@@ -190,7 +155,7 @@ $advantages
 Cautions:
 $cautions
 ''';
-    })
+        })
         .join('\n');
 
     return '''
@@ -239,5 +204,13 @@ IMPORTANT COMPARISON RULES:
 
 Finish with a recommendation that respects the user's selected priorities.
 ''';
+  }
+
+  String _priceText(int? price, int? priceMin, int? priceMax) {
+    if (priceMin != null && priceMax != null && priceMin != priceMax) {
+      return 'RM $priceMin - RM $priceMax';
+    }
+    final displayPrice = price ?? priceMin ?? priceMax;
+    return displayPrice == null ? 'Unavailable' : 'RM $displayPrice';
   }
 }

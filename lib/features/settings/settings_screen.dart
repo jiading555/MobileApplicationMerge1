@@ -82,10 +82,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'About',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('About', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Card(
               child: Column(

@@ -4,6 +4,7 @@ import '../../app/app_scope.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/location_normalizer.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
@@ -15,66 +16,38 @@ import 'ai_advisor_chat_screen.dart';
 import 'comparison_screen.dart';
 import 'saved_recommendations_screen.dart';
 
-
-String _normaliseAdvisorLocation(Object? value) {
-  if (value == null) {
-    return '';
-  }
-
-  return value
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim();
-}
-
-bool _isUsableAdvisorProperty(
-    AppState state,
-    Property property,
-    ) {
-  final district = property.district?.trim();
-  final propertyState = property.state?.trim();
-
-  if (district == null ||
-      district.isEmpty ||
-      propertyState == null ||
-      propertyState.isEmpty) {
+bool _isUsableAdvisorProperty(AppState state, Property property) {
+  final area = state.matchedAreaFor(property);
+  if (area == null) {
     return false;
   }
-
-  for (final area in state.areas) {
-    if (area.id != property.areaId) {
-      continue;
-    }
-
-    final districtMatches =
-        _normaliseAdvisorLocation(area.name) ==
-            _normaliseAdvisorLocation(district);
-
-    final stateMatches =
-        _normaliseAdvisorLocation(area.state) ==
-            _normaliseAdvisorLocation(propertyState);
-
-    if (districtMatches && stateMatches) {
-      return true;
-    }
+  final propertyState = property.state?.trim();
+  if (propertyState != null &&
+      propertyState.isNotEmpty &&
+      !LocationNormalizer.stateMatches(area.state, propertyState)) {
+    return false;
   }
-
-  return false;
+  final district = property.district?.trim();
+  if (district != null &&
+      district.isNotEmpty &&
+      !LocationNormalizer.districtMatches(
+        area.name,
+        district,
+        state: area.state,
+      )) {
+    return false;
+  }
+  return true;
 }
 
-List<Property> _advisorProperties(
-    AppState state,
-    ) {
+List<Property> _advisorProperties(AppState state) {
   return state.properties
-      .where(
-        (property) => _isUsableAdvisorProperty(
-      state,
-      property,
-    ),
-  )
+      .where((property) => _isUsableAdvisorProperty(state, property))
       .toList();
+}
+
+int? _advisorComparablePrice(Property property) {
+  return property.price ?? property.priceMin ?? property.priceMax;
 }
 
 class AdvisorScreen extends StatefulWidget {
@@ -107,8 +80,9 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
   final Set<String> selectedComparisonIds = {};
 
-  final PageController _recommendationPageController =
-  PageController(viewportFraction: 0.90);
+  final PageController _recommendationPageController = PageController(
+    viewportFraction: 0.90,
+  );
 
   int _recommendationPageIndex = 0;
 
@@ -134,9 +108,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
           ? preferences.maximumBudget
           : preferences.budget;
 
-      budget = savedMaximumBudget
-          .clamp(350000.0, 1600000.0)
-          .toDouble();
+      budget = savedMaximumBudget.clamp(350000.0, 1600000.0).toDouble();
 
       // Start from the saved User Management property preferences.
       selectedState = preferences.preferredState.trim().isEmpty
@@ -153,8 +125,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         targetBudget: budget,
       );
 
-      if (selectedState != 'any' &&
-          !availableStates.contains(selectedState)) {
+      if (selectedState != 'any' && !availableStates.contains(selectedState)) {
         selectedState = 'any';
       }
 
@@ -165,13 +136,15 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         final savedDistrict = preferences.preferredDistrict.trim();
 
         for (final area in appState.areas) {
-          final sameState =
-              _normaliseAdvisorLocation(area.state) ==
-                  _normaliseAdvisorLocation(selectedState);
-
-          final sameDistrict =
-              _normaliseAdvisorLocation(area.name) ==
-                  _normaliseAdvisorLocation(savedDistrict);
+          final sameState = LocationNormalizer.stateMatches(
+            area.state,
+            selectedState,
+          );
+          final sameDistrict = LocationNormalizer.districtMatches(
+            area.name,
+            savedDistrict,
+            state: area.state,
+          );
 
           if (sameState &&
               sameDistrict &&
@@ -188,17 +161,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
       // Compatibility with older Advisor data that already stored
       // preferredAreaId directly.
-      if (areaId == 'any' &&
-          preferences.preferredAreaId != 'any') {
+      if (areaId == 'any' && preferences.preferredAreaId != 'any') {
         for (final area in appState.areas) {
-          if (area.id != preferences.preferredAreaId) {
+          if (!LocationNormalizer.areaIdMatches(
+            area.id,
+            preferences.preferredAreaId,
+          )) {
             continue;
           }
 
           final stateMatches =
               selectedState == 'any' ||
-                  _normaliseAdvisorLocation(area.state) ==
-                      _normaliseAdvisorLocation(selectedState);
+              LocationNormalizer.stateMatches(area.state, selectedState);
 
           if (stateMatches &&
               _areaHasPropertyWithinBudget(
@@ -232,20 +206,15 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         }
       }
 
-      ownStaySafetyPriority =
-          preferences.ownStaySafetyPriority;
+      ownStaySafetyPriority = preferences.ownStaySafetyPriority;
 
-      ownStayEducationPriority =
-          preferences.ownStayEducationPriority;
+      ownStayEducationPriority = preferences.ownStayEducationPriority;
 
-      ownStayTransportPriority =
-          preferences.ownStayTransportPriority;
+      ownStayTransportPriority = preferences.ownStayTransportPriority;
 
-      investmentIncomePriority =
-          preferences.investmentIncomePriority;
+      investmentIncomePriority = preferences.investmentIncomePriority;
 
-      investmentTransportPriority =
-          preferences.investmentTransportPriority;
+      investmentTransportPriority = preferences.investmentTransportPriority;
 
       investmentAffordabilityPriority =
           preferences.investmentAffordabilityPriority;
@@ -266,41 +235,29 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
     final advisorProperties = _advisorProperties(state);
 
-    final recommendations =
-    const RecommendationService().rank(
+    final recommendations = const RecommendationService().rank(
       properties: advisorProperties,
       areas: state.areas,
       preferences: state.preferences,
     );
 
-    final visibleRecommendations =
-    recommendations.take(3).toList();
+    final visibleRecommendations = recommendations.take(3).toList();
 
-    final selectedRecommendations =
-    visibleRecommendations
-        .where(
-          (item) => selectedComparisonIds.contains(
-        item.property.id,
-      ),
-    )
+    final selectedRecommendations = visibleRecommendations
+        .where((item) => selectedComparisonIds.contains(item.property.id))
         .toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Smart property advisor',
-        ),
+        title: const Text('Smart property advisor'),
         actions: [
           IconButton(
             tooltip: 'Saved Recommendations',
-            icon: const Icon(
-              Icons.bookmarks_outlined,
-            ),
+            icon: const Icon(Icons.bookmarks_outlined),
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                  const SavedRecommendationsScreen(),
+                  builder: (_) => const SavedRecommendationsScreen(),
                 ),
               );
             },
@@ -308,9 +265,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
           IconButton(
             onPressed: () => _showMethod(context),
             tooltip: 'How scoring works',
-            icon: const Icon(
-              Icons.info_outline_rounded,
-            ),
+            icon: const Icon(Icons.info_outline_rounded),
           ),
           const SizedBox(width: 8),
         ],
@@ -319,12 +274,9 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         child: PageContainer(
           maxWidth: 1100,
           child: Column(
-            crossAxisAlignment:
-            CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _AdvisorIntro(
-                goal: goal,
-              ),
+              _AdvisorIntro(goal: goal),
 
               const SizedBox(height: 22),
 
@@ -339,23 +291,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
                 appliedWeights: appliedWeights,
 
-                ownStaySafetyPriority:
-                ownStaySafetyPriority,
+                ownStaySafetyPriority: ownStaySafetyPriority,
 
-                ownStayEducationPriority:
-                ownStayEducationPriority,
+                ownStayEducationPriority: ownStayEducationPriority,
 
-                ownStayTransportPriority:
-                ownStayTransportPriority,
+                ownStayTransportPriority: ownStayTransportPriority,
 
-                investmentIncomePriority:
-                investmentIncomePriority,
+                investmentIncomePriority: investmentIncomePriority,
 
-                investmentTransportPriority:
-                investmentTransportPriority,
+                investmentTransportPriority: investmentTransportPriority,
 
                 investmentAffordabilityPriority:
-                investmentAffordabilityPriority,
+                    investmentAffordabilityPriority,
 
                 onGoalChanged: _changeGoal,
 
@@ -385,8 +332,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                         areaId = 'any';
                         propertyType = 'Any';
                       } else if (areaId != 'any') {
-                        final availableTypes =
-                        _availablePropertyTypes(
+                        final availableTypes = _availablePropertyTypes(
                           state: appState,
                           targetBudget: value,
                           targetAreaId: areaId,
@@ -422,8 +368,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                     if (areaId == 'any') {
                       propertyType = 'Any';
                     } else {
-                      final availableTypes =
-                      _availablePropertyTypes(
+                      final availableTypes = _availablePropertyTypes(
                         state: appState,
                         targetBudget: budget,
                         targetAreaId: areaId,
@@ -481,23 +426,19 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   });
                 },
 
-                onInvestmentTransportChanged:
-                    (value) {
+                onInvestmentTransportChanged: (value) {
                   if (scoringLocked) return;
 
                   setState(() {
-                    investmentTransportPriority =
-                        value;
+                    investmentTransportPriority = value;
                   });
                 },
 
-                onInvestmentAffordabilityChanged:
-                    (value) {
+                onInvestmentAffordabilityChanged: (value) {
                   if (scoringLocked) return;
 
                   setState(() {
-                    investmentAffordabilityPriority =
-                        value;
+                    investmentAffordabilityPriority = value;
                   });
                 },
 
@@ -511,18 +452,14 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
                 Text(
                   'Top matches from your preferences',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
 
                 const SizedBox(height: 4),
 
                 Text(
                   '${recommendations.length} matches ranked with a transparent weighted score',
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                  ),
+                  style: const TextStyle(color: AppTheme.muted),
                 ),
 
                 const SizedBox(height: 16),
@@ -531,21 +468,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
                   const _NoMatches()
                 else ...[
                   _ComparisonSelectionBar(
-                    selectedCount:
-                    selectedComparisonIds.length,
+                    selectedCount: selectedComparisonIds.length,
 
                     canCompare:
-                    selectedRecommendations.length >= 2 &&
+                        selectedRecommendations.length >= 2 &&
                         selectedRecommendations.length <= 3,
 
                     onCompare: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) =>
-                              ComparisonScreen(
-                                recommendations:
-                                selectedRecommendations,
-                              ),
+                          builder: (_) => ComparisonScreen(
+                            recommendations: selectedRecommendations,
+                          ),
                         ),
                       );
                     },
@@ -555,18 +489,11 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
                   const Row(
                     children: [
-                      Icon(
-                        Icons.swipe_rounded,
-                        size: 18,
-                        color: AppTheme.blue,
-                      ),
+                      Icon(Icons.swipe_rounded, size: 18, color: AppTheme.blue),
                       SizedBox(width: 7),
                       Text(
                         'Swipe to view your Top 3 matches',
-                        style: TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: AppTheme.muted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -608,31 +535,27 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      visibleRecommendations.length,
-                          (index) {
-                        final active =
-                            index == _recommendationPageIndex;
+                    children: List.generate(visibleRecommendations.length, (
+                      index,
+                    ) {
+                      final active = index == _recommendationPageIndex;
 
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: active ? 20 : 7,
-                          height: 7,
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          decoration: BoxDecoration(
-                            color: active
-                                ? AppTheme.blue
-                                : AppTheme.muted.withValues(alpha: 0.30),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        );
-                      },
-                    ),
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: active ? 20 : 7,
+                        height: 7,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? AppTheme.blue
+                              : AppTheme.muted.withValues(alpha: 0.30),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      );
+                    }),
                   ),
 
                   const SizedBox(height: 16),
-
-
 
                   const SizedBox(height: 14),
 
@@ -662,9 +585,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     );
   }
 
-  void _changeGoal(
-      PropertyGoal value,
-      ) {
+  void _changeGoal(PropertyGoal value) {
     setState(() {
       goal = value;
 
@@ -710,20 +631,18 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     required String targetAreaId,
     required double targetBudget,
   }) {
-    final validAreaIds = state.areas.map((area) => area.id).toSet();
-
     return _advisorProperties(state).any((property) {
-      final price = property.price;
-
+      final price = _advisorComparablePrice(property);
+      final area = state.matchedAreaFor(property);
       if (price == null) {
         return false;
       }
 
-      if (!validAreaIds.contains(property.areaId)) {
+      if (area == null) {
         return false;
       }
 
-      return property.areaId == targetAreaId &&
+      return LocationNormalizer.areaIdMatches(area.id, targetAreaId) &&
           price <= targetBudget;
     });
   }
@@ -732,26 +651,24 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     required AppState state,
     required double targetBudget,
   }) {
-    final validAreaIds = state.areas.map((area) => area.id).toSet();
-
     final areaIdsWithProperties = _advisorProperties(state)
         .where((property) {
-      final price = property.price;
-
-      return price != null &&
-          price <= targetBudget &&
-          validAreaIds.contains(property.areaId);
-    })
-        .map((property) => property.areaId)
+          final price = _advisorComparablePrice(property);
+          return price != null &&
+              price <= targetBudget &&
+              state.matchedAreaFor(property) != null;
+        })
+        .map((property) => state.matchedAreaFor(property)!.id)
         .toSet();
 
-    final states = state.areas
-        .where((area) => areaIdsWithProperties.contains(area.id))
-        .map((area) => area.state.trim())
-        .where((stateName) => stateName.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final states =
+        state.areas
+            .where((area) => areaIdsWithProperties.contains(area.id))
+            .map((area) => area.state.trim())
+            .where((stateName) => stateName.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
 
     return states;
   }
@@ -765,20 +682,23 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       return const [];
     }
 
-    final types = _advisorProperties(state)
-        .where((property) {
-      final price = property.price;
+    final types =
+        _advisorProperties(state)
+            .where((property) {
+              final price = _advisorComparablePrice(property);
+              final area = state.matchedAreaFor(property);
 
-      if (price == null || price > targetBudget) {
-        return false;
-      }
+              if (price == null || price > targetBudget) {
+                return false;
+              }
 
-      return property.areaId == targetAreaId;
-    })
-        .expand((property) => property.normalizedPropertyTypes)
-        .toSet()
-        .toList()
-      ..sort();
+              return area != null &&
+                  LocationNormalizer.areaIdMatches(area.id, targetAreaId);
+            })
+            .expand((property) => property.normalizedPropertyTypes)
+            .toSet()
+            .toList()
+          ..sort();
 
     return types;
   }
@@ -789,9 +709,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     if (selectedState != 'any' && areaId == 'any') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please select an area after choosing a state.',
-          ),
+          content: Text('Please select an area after choosing a state.'),
         ),
       );
       return;
@@ -819,58 +737,48 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       targetAreaId: areaId,
     );
 
-    final effectivePropertyType =
-    areaId == 'any'
+    final effectivePropertyType = areaId == 'any'
         ? 'Any'
-        : propertyType == 'Any' ||
-        availableTypes.contains(propertyType)
+        : propertyType == 'Any' || availableTypes.contains(propertyType)
         ? propertyType
         : 'Any';
 
     final effectiveAreaId = areaId;
 
-    final priorities =
-    goal == PropertyGoal.ownStay
+    final priorities = goal == PropertyGoal.ownStay
         ? [
-      ownStaySafetyPriority,
-      ownStayEducationPriority,
-      ownStayTransportPriority,
-    ]
+            ownStaySafetyPriority,
+            ownStayEducationPriority,
+            ownStayTransportPriority,
+          ]
         : [
-      investmentIncomePriority,
-      investmentTransportPriority,
-      investmentAffordabilityPriority,
-    ];
+            investmentIncomePriority,
+            investmentTransportPriority,
+            investmentAffordabilityPriority,
+          ];
 
-    final totalPriority =
-    priorities.fold<double>(
+    final totalPriority = priorities.fold<double>(
       0,
-          (sum, value) => sum + value,
+      (sum, value) => sum + value,
     );
 
     if (totalPriority <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please set at least one scoring priority.',
-          ),
+          content: Text('Please set at least one scoring priority.'),
         ),
       );
 
       return;
     }
 
-    final normalisedWeights =
-    _normalisePriorities(
-      priorities,
-    );
+    final normalisedWeights = _normalisePriorities(priorities);
 
     String currentDistrict = '';
 
     if (effectiveAreaId != 'any') {
       for (final area in state.areas) {
-        if (area.id == effectiveAreaId) {
+        if (LocationNormalizer.areaIdMatches(area.id, effectiveAreaId)) {
           currentDistrict = area.name;
           break;
         }
@@ -889,27 +797,20 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
         // Keep RecommendationService aligned with the current Advisor
         // State / Area selection instead of the old saved profile values.
-        preferredState:
-        selectedState == 'any' ? '' : selectedState,
+        preferredState: selectedState == 'any' ? '' : selectedState,
         preferredDistrict: currentDistrict,
 
-        ownStaySafetyPriority:
-        ownStaySafetyPriority,
+        ownStaySafetyPriority: ownStaySafetyPriority,
 
-        ownStayEducationPriority:
-        ownStayEducationPriority,
+        ownStayEducationPriority: ownStayEducationPriority,
 
-        ownStayTransportPriority:
-        ownStayTransportPriority,
+        ownStayTransportPriority: ownStayTransportPriority,
 
-        investmentIncomePriority:
-        investmentIncomePriority,
+        investmentIncomePriority: investmentIncomePriority,
 
-        investmentTransportPriority:
-        investmentTransportPriority,
+        investmentTransportPriority: investmentTransportPriority,
 
-        investmentAffordabilityPriority:
-        investmentAffordabilityPriority,
+        investmentAffordabilityPriority: investmentAffordabilityPriority,
       ),
     );
 
@@ -930,40 +831,19 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     });
   }
 
-  List<double> _normalisePriorities(
-      List<double> priorities,
-      ) {
-    final total =
-    priorities.fold<double>(
+  List<double> _normalisePriorities(List<double> priorities) {
+    final total = priorities.fold<double>(
       0,
-          (sum, value) =>
-      sum +
-          value.clamp(
-            0,
-            100,
-          ),
+      (sum, value) => sum + value.clamp(0, 100),
     );
 
     if (total <= 0) {
-      final equal =
-          1.0 / priorities.length;
+      final equal = 1.0 / priorities.length;
 
-      return List<double>.filled(
-        priorities.length,
-        equal,
-      );
+      return List<double>.filled(priorities.length, equal);
     }
 
-    return priorities
-        .map(
-          (value) =>
-      value.clamp(
-        0,
-        100,
-      ) /
-          total,
-    )
-        .toList();
+    return priorities.map((value) => value.clamp(0, 100) / total).toList();
   }
 
   void _resetPriorities() {
@@ -985,11 +865,8 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     });
   }
 
-  void _toggleComparison(
-      PropertyRecommendation recommendation,
-      ) {
-    final id =
-        recommendation.property.id;
+  void _toggleComparison(PropertyRecommendation recommendation) {
+    final id = recommendation.property.id;
 
     setState(() {
       if (selectedComparisonIds.contains(id)) {
@@ -998,12 +875,9 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
       }
 
       if (selectedComparisonIds.length >= 3) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'You can compare a maximum of 3 properties.',
-            ),
+            content: Text('You can compare a maximum of 3 properties.'),
           ),
         );
 
@@ -1014,62 +888,34 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     });
   }
 
-  void _showMethod(
-      BuildContext context,
-      ) {
+  void _showMethod(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) =>
-      const Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          4,
-          24,
-          28,
-        ),
+      builder: (context) => const Padding(
+        padding: EdgeInsets.fromLTRB(24, 4, 24, 28),
         child: SafeArea(
           child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
-            crossAxisAlignment:
-            CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Transparent recommendation method',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight:
-                  FontWeight.w800,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
 
               SizedBox(height: 16),
 
-              Text(
-                'Own Stay',
-                style: TextStyle(
-                  fontWeight:
-                  FontWeight.w800,
-                ),
-              ),
+              Text('Own Stay', style: TextStyle(fontWeight: FontWeight.w800)),
 
               SizedBox(height: 6),
 
-              Text(
-                'Safety • Education Facilities • Transportation',
-              ),
+              Text('Safety • Education Facilities • Transportation'),
 
               SizedBox(height: 16),
 
-              Text(
-                'Investment',
-                style: TextStyle(
-                  fontWeight:
-                  FontWeight.w800,
-                ),
-              ),
+              Text('Investment', style: TextStyle(fontWeight: FontWeight.w800)),
 
               SizedBox(height: 6),
 
@@ -1081,27 +927,21 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 
               Text(
                 'Before generating, the sliders represent priority levels rather than percentages. After Generate Matches is pressed, the priorities are normalised into percentages that total 100%. The sliders are then locked until Reset to default is selected.',
-                style: TextStyle(
-                  color: AppTheme.muted,
-                ),
+                style: TextStyle(color: AppTheme.muted),
               ),
 
               SizedBox(height: 12),
 
               Text(
                 'Switching between Own Stay and Investment starts that goal again using its default editable priorities.',
-                style: TextStyle(
-                  color: AppTheme.muted,
-                ),
+                style: TextStyle(color: AppTheme.muted),
               ),
 
               SizedBox(height: 12),
 
               Text(
                 'AI only explains the calculated recommendation and does not determine or modify the suitability score.',
-                style: TextStyle(
-                  color: AppTheme.muted,
-                ),
+                style: TextStyle(color: AppTheme.muted),
               ),
             ],
           ),
@@ -1112,9 +952,7 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
 }
 
 class _AdvisorIntro extends StatelessWidget {
-  const _AdvisorIntro({
-    required this.goal,
-  });
+  const _AdvisorIntro({required this.goal});
 
   final PropertyGoal goal;
 
@@ -1126,11 +964,7 @@ class _AdvisorIntro extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppTheme.navy,
-            AppTheme.blue,
-            AppTheme.teal,
-          ],
+          colors: [AppTheme.navy, AppTheme.blue, AppTheme.teal],
         ),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -1154,8 +988,7 @@ class _AdvisorIntro extends StatelessWidget {
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   goal == PropertyGoal.ownStay
@@ -1164,8 +997,7 @@ class _AdvisorIntro extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
-                    fontWeight:
-                    FontWeight.w800,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
 
@@ -1173,9 +1005,7 @@ class _AdvisorIntro extends StatelessWidget {
 
                 const Text(
                   'Set your goal and adjust what matters most to you.',
-                  style: TextStyle(
-                    color: Colors.white70,
-                  ),
+                  style: TextStyle(color: Colors.white70),
                 ),
               ],
             ),
@@ -1240,38 +1070,27 @@ class _PreferencePanel extends StatelessWidget {
   final double investmentTransportPriority;
   final double investmentAffordabilityPriority;
 
-  final ValueChanged<PropertyGoal>
-  onGoalChanged;
+  final ValueChanged<PropertyGoal> onGoalChanged;
 
-  final ValueChanged<double>
-  onBudgetChanged;
+  final ValueChanged<double> onBudgetChanged;
 
-  final ValueChanged<String>
-  onStateChanged;
+  final ValueChanged<String> onStateChanged;
 
-  final ValueChanged<String>
-  onAreaChanged;
+  final ValueChanged<String> onAreaChanged;
 
-  final ValueChanged<String>
-  onTypeChanged;
+  final ValueChanged<String> onTypeChanged;
 
-  final ValueChanged<double>
-  onOwnStaySafetyChanged;
+  final ValueChanged<double> onOwnStaySafetyChanged;
 
-  final ValueChanged<double>
-  onOwnStayEducationChanged;
+  final ValueChanged<double> onOwnStayEducationChanged;
 
-  final ValueChanged<double>
-  onOwnStayTransportChanged;
+  final ValueChanged<double> onOwnStayTransportChanged;
 
-  final ValueChanged<double>
-  onInvestmentIncomeChanged;
+  final ValueChanged<double> onInvestmentIncomeChanged;
 
-  final ValueChanged<double>
-  onInvestmentTransportChanged;
+  final ValueChanged<double> onInvestmentTransportChanged;
 
-  final ValueChanged<double>
-  onInvestmentAffordabilityChanged;
+  final ValueChanged<double> onInvestmentAffordabilityChanged;
 
   final VoidCallback onResetWeights;
   final VoidCallback onGenerate;
@@ -1280,85 +1099,86 @@ class _PreferencePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
 
-    final validAreaIds = state.areas.map((area) => area.id).toSet();
-
     // Only properties with a valid Advisor area, valid price and
     // price within the selected budget participate in the location cascade.
     final areaIdsWithProperties = _advisorProperties(state)
         .where((property) {
-      final price = property.price;
+          final price = _advisorComparablePrice(property);
 
-      return price != null &&
-          price <= budget &&
-          validAreaIds.contains(property.areaId);
-    })
-        .map((property) => property.areaId)
+          return price != null &&
+              price <= budget &&
+              state.matchedAreaFor(property) != null;
+        })
+        .map((property) => state.matchedAreaFor(property)!.id)
         .toSet();
 
     // Level 1: State.
     // Only states that contain at least one usable area/property are shown.
-    final availableStates = state.areas
-        .where((area) => areaIdsWithProperties.contains(area.id))
-        .map((area) => area.state.trim())
-        .where((stateName) => stateName.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final availableStates =
+        state.areas
+            .where((area) => areaIdsWithProperties.contains(area.id))
+            .map((area) => area.state.trim())
+            .where((stateName) => stateName.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
 
     final effectiveSelectedState =
-    selectedState == 'any' ||
-        availableStates.contains(selectedState)
+        selectedState == 'any' || availableStates.contains(selectedState)
         ? selectedState
         : 'any';
 
     // Level 2: Area.
     // The long area list is hidden until a state has been selected.
-    final availableAreas = effectiveSelectedState == 'any'
-        ? <dynamic>[]
-        : state.areas
-        .where(
-          (area) =>
-      area.state == effectiveSelectedState &&
-          areaIdsWithProperties.contains(area.id),
-    )
-        .toList()
-      ..sort(
-            (a, b) => a.name.toLowerCase().compareTo(
-          b.name.toLowerCase(),
-        ),
-      );
+    final availableAreas =
+        effectiveSelectedState == 'any'
+              ? <dynamic>[]
+              : state.areas
+                    .where(
+                      (area) =>
+                          LocationNormalizer.stateMatches(
+                            area.state,
+                            effectiveSelectedState,
+                          ) &&
+                          areaIdsWithProperties.contains(area.id),
+                    )
+                    .toList()
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
 
-    final availableAreaIds =
-    availableAreas.map((area) => area.id).toSet();
+    final availableAreaIds = availableAreas.map((area) => area.id).toSet();
 
-    final effectiveAreaId =
-    areaId != 'any' && availableAreaIds.contains(areaId)
+    final effectiveAreaId = areaId != 'any' && availableAreaIds.contains(areaId)
         ? areaId
         : 'any';
 
     // Level 3: Property Type.
     // Types are derived only from the selected area, so an unavailable
     // type such as Semi-D is never offered for an area that has none.
-    final availablePropertyTypes = effectiveAreaId == 'any'
-        ? <String>[]
-        : _advisorProperties(state)
-        .where((property) {
-      final price = property.price;
+    final availablePropertyTypes =
+        effectiveAreaId == 'any'
+              ? <String>[]
+              : _advisorProperties(state)
+                    .where((property) {
+                      final price = _advisorComparablePrice(property);
+                      final area = state.matchedAreaFor(property);
 
-      return price != null &&
-          price <= budget &&
-          property.areaId == effectiveAreaId;
-    })
-        .expand(
-          (property) => property.normalizedPropertyTypes,
-    )
-        .toSet()
-        .toList()
-      ..sort();
+                      return price != null &&
+                          price <= budget &&
+                          area != null &&
+                          LocationNormalizer.areaIdMatches(
+                            area.id,
+                            effectiveAreaId,
+                          );
+                    })
+                    .expand((property) => property.normalizedPropertyTypes)
+                    .toSet()
+                    .toList()
+          ..sort();
 
     final effectivePropertyType =
-    propertyType == 'Any' ||
-        availablePropertyTypes.contains(propertyType)
+        propertyType == 'Any' || availablePropertyTypes.contains(propertyType)
         ? propertyType
         : 'Any';
 
@@ -1366,14 +1186,11 @@ class _PreferencePanel extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Your property goal',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 11),
@@ -1381,30 +1198,19 @@ class _PreferencePanel extends StatelessWidget {
             SegmentedButton<PropertyGoal>(
               segments: const [
                 ButtonSegment(
-                  value:
-                  PropertyGoal.ownStay,
-                  icon: Icon(
-                    Icons.home_rounded,
-                  ),
-                  label:
-                  Text('Own stay'),
+                  value: PropertyGoal.ownStay,
+                  icon: Icon(Icons.home_rounded),
+                  label: Text('Own stay'),
                 ),
                 ButtonSegment(
-                  value:
-                  PropertyGoal.investment,
-                  icon: Icon(
-                    Icons.trending_up_rounded,
-                  ),
-                  label:
-                  Text('Investment'),
+                  value: PropertyGoal.investment,
+                  icon: Icon(Icons.trending_up_rounded),
+                  label: Text('Investment'),
                 ),
               ],
               selected: {goal},
-              onSelectionChanged:
-                  (values) {
-                onGoalChanged(
-                  values.first,
-                );
+              onSelectionChanged: (values) {
+                onGoalChanged(values.first);
               },
             ),
 
@@ -1414,21 +1220,16 @@ class _PreferencePanel extends StatelessWidget {
               children: [
                 Text(
                   'Maximum budget',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
 
                 const Spacer(),
 
                 Text(
-                  formatRinggit(
-                    budget,
-                  ),
+                  formatRinggit(budget),
                   style: const TextStyle(
                     color: AppTheme.blue,
-                    fontWeight:
-                    FontWeight.w800,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -1454,9 +1255,7 @@ class _PreferencePanel extends StatelessWidget {
                     ),
                     initialValue: effectiveSelectedState,
                     isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'State',
-                    ),
+                    decoration: const InputDecoration(labelText: 'State'),
                     items: [
                       const DropdownMenuItem(
                         value: 'any',
@@ -1467,7 +1266,7 @@ class _PreferencePanel extends StatelessWidget {
                         ),
                       ),
                       ...availableStates.map(
-                            (stateName) => DropdownMenuItem(
+                        (stateName) => DropdownMenuItem(
                           value: stateName,
                           child: Text(
                             stateName,
@@ -1490,9 +1289,7 @@ class _PreferencePanel extends StatelessWidget {
                     ),
                     initialValue: effectiveAreaId,
                     isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Area',
-                    ),
+                    decoration: const InputDecoration(labelText: 'Area'),
                     items: [
                       DropdownMenuItem(
                         value: 'any',
@@ -1505,7 +1302,7 @@ class _PreferencePanel extends StatelessWidget {
                         ),
                       ),
                       ...availableAreas.map(
-                            (item) => DropdownMenuItem<String>(
+                        (item) => DropdownMenuItem<String>(
                           value: item.id,
                           child: Text(
                             item.name,
@@ -1518,8 +1315,8 @@ class _PreferencePanel extends StatelessWidget {
                     onChanged: effectiveSelectedState == 'any'
                         ? null
                         : (value) {
-                      onAreaChanged(value ?? 'any');
-                    },
+                            onAreaChanged(value ?? 'any');
+                          },
                   ),
                 ),
               ],
@@ -1533,22 +1330,18 @@ class _PreferencePanel extends StatelessWidget {
               ),
               initialValue: effectivePropertyType,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Property type',
-              ),
+              decoration: const InputDecoration(labelText: 'Property type'),
               items: [
                 DropdownMenuItem(
                   value: 'Any',
                   child: Text(
-                    effectiveAreaId == 'any'
-                        ? 'Select area first'
-                        : 'Any',
+                    effectiveAreaId == 'any' ? 'Select area first' : 'Any',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 ...availablePropertyTypes.map(
-                      (item) => DropdownMenuItem<String>(
+                  (item) => DropdownMenuItem<String>(
                     value: item,
                     child: Text(
                       item,
@@ -1561,17 +1354,15 @@ class _PreferencePanel extends StatelessWidget {
               onChanged: effectiveAreaId == 'any'
                   ? null
                   : (value) {
-                onTypeChanged(value ?? 'Any');
-              },
+                      onTypeChanged(value ?? 'Any');
+                    },
             ),
 
             const SizedBox(height: 24),
 
             Text(
               'Scoring priorities',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 6),
@@ -1580,10 +1371,7 @@ class _PreferencePanel extends StatelessWidget {
               scoringLocked
                   ? 'These percentages are the applied weights used for the current recommendation. Press Reset to default to adjust the priorities again.'
                   : 'Move each slider independently from low to high importance. Percentages are calculated after Generate matches.',
-              style: const TextStyle(
-                color: AppTheme.muted,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
             ),
 
             const SizedBox(height: 14),
@@ -1591,50 +1379,36 @@ class _PreferencePanel extends StatelessWidget {
             _PrioritySliders(
               goal: goal,
 
-              scoringLocked:
-              scoringLocked,
+              scoringLocked: scoringLocked,
 
-              appliedWeights:
-              appliedWeights,
+              appliedWeights: appliedWeights,
 
-              ownStaySafetyPriority:
-              ownStaySafetyPriority,
+              ownStaySafetyPriority: ownStaySafetyPriority,
 
-              ownStayEducationPriority:
-              ownStayEducationPriority,
+              ownStayEducationPriority: ownStayEducationPriority,
 
-              ownStayTransportPriority:
-              ownStayTransportPriority,
+              ownStayTransportPriority: ownStayTransportPriority,
 
-              investmentIncomePriority:
-              investmentIncomePriority,
+              investmentIncomePriority: investmentIncomePriority,
 
-              investmentTransportPriority:
-              investmentTransportPriority,
+              investmentTransportPriority: investmentTransportPriority,
 
-              investmentAffordabilityPriority:
-              investmentAffordabilityPriority,
+              investmentAffordabilityPriority: investmentAffordabilityPriority,
 
-              onOwnStaySafetyChanged:
-              onOwnStaySafetyChanged,
+              onOwnStaySafetyChanged: onOwnStaySafetyChanged,
 
-              onOwnStayEducationChanged:
-              onOwnStayEducationChanged,
+              onOwnStayEducationChanged: onOwnStayEducationChanged,
 
-              onOwnStayTransportChanged:
-              onOwnStayTransportChanged,
+              onOwnStayTransportChanged: onOwnStayTransportChanged,
 
-              onInvestmentIncomeChanged:
-              onInvestmentIncomeChanged,
+              onInvestmentIncomeChanged: onInvestmentIncomeChanged,
 
-              onInvestmentTransportChanged:
-              onInvestmentTransportChanged,
+              onInvestmentTransportChanged: onInvestmentTransportChanged,
 
               onInvestmentAffordabilityChanged:
-              onInvestmentAffordabilityChanged,
+                  onInvestmentAffordabilityChanged,
 
-              onResetWeights:
-              onResetWeights,
+              onResetWeights: onResetWeights,
             ),
 
             const SizedBox(height: 20),
@@ -1642,10 +1416,7 @@ class _PreferencePanel extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed:
-                scoringLocked
-                    ? null
-                    : onGenerate,
+                onPressed: scoringLocked ? null : onGenerate,
 
                 icon: Icon(
                   scoringLocked
@@ -1654,9 +1425,7 @@ class _PreferencePanel extends StatelessWidget {
                 ),
 
                 label: Text(
-                  scoringLocked
-                      ? 'Scoring applied'
-                      : 'Generate matches',
+                  scoringLocked ? 'Scoring applied' : 'Generate matches',
                 ),
               ),
             ),
@@ -1705,23 +1474,17 @@ class _PrioritySliders extends StatelessWidget {
   final double investmentTransportPriority;
   final double investmentAffordabilityPriority;
 
-  final ValueChanged<double>
-  onOwnStaySafetyChanged;
+  final ValueChanged<double> onOwnStaySafetyChanged;
 
-  final ValueChanged<double>
-  onOwnStayEducationChanged;
+  final ValueChanged<double> onOwnStayEducationChanged;
 
-  final ValueChanged<double>
-  onOwnStayTransportChanged;
+  final ValueChanged<double> onOwnStayTransportChanged;
 
-  final ValueChanged<double>
-  onInvestmentIncomeChanged;
+  final ValueChanged<double> onInvestmentIncomeChanged;
 
-  final ValueChanged<double>
-  onInvestmentTransportChanged;
+  final ValueChanged<double> onInvestmentTransportChanged;
 
-  final ValueChanged<double>
-  onInvestmentAffordabilityChanged;
+  final ValueChanged<double> onInvestmentAffordabilityChanged;
 
   final VoidCallback onResetWeights;
 
@@ -1730,120 +1493,77 @@ class _PrioritySliders extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.blue.withValues(
-          alpha: 0.05,
-        ),
-        borderRadius:
-        BorderRadius.circular(8),
-        border: Border.all(
-          color: AppTheme.blue.withValues(
-            alpha: 0.15,
-          ),
-        ),
+        color: AppTheme.blue.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.blue.withValues(alpha: 0.15)),
       ),
       child: Column(
         children: [
-          if (goal ==
-              PropertyGoal.ownStay) ...[
+          if (goal == PropertyGoal.ownStay) ...[
             _PrioritySlider(
               label: 'Safety',
-              value:
-              ownStaySafetyPriority,
-              appliedWeight:
-              _weightAt(0),
-              locked:
-              scoringLocked,
-              onChanged:
-              onOwnStaySafetyChanged,
+              value: ownStaySafetyPriority,
+              appliedWeight: _weightAt(0),
+              locked: scoringLocked,
+              onChanged: onOwnStaySafetyChanged,
             ),
 
             _PrioritySlider(
-              label:
-              'Education facilities',
-              value:
-              ownStayEducationPriority,
-              appliedWeight:
-              _weightAt(1),
-              locked:
-              scoringLocked,
-              onChanged:
-              onOwnStayEducationChanged,
+              label: 'Education facilities',
+              value: ownStayEducationPriority,
+              appliedWeight: _weightAt(1),
+              locked: scoringLocked,
+              onChanged: onOwnStayEducationChanged,
             ),
 
             _PrioritySlider(
-              label:
-              'Transportation',
-              value:
-              ownStayTransportPriority,
-              appliedWeight:
-              _weightAt(2),
-              locked:
-              scoringLocked,
-              onChanged:
-              onOwnStayTransportChanged,
+              label: 'Transportation',
+              value: ownStayTransportPriority,
+              appliedWeight: _weightAt(2),
+              locked: scoringLocked,
+              onChanged: onOwnStayTransportChanged,
             ),
           ] else ...[
             _PrioritySlider(
-              label:
-              'Income / economic indicator',
-              value:
-              investmentIncomePriority,
-              appliedWeight:
-              _weightAt(0),
-              locked:
-              scoringLocked,
-              onChanged:
-              onInvestmentIncomeChanged,
+              label: 'Income / economic indicator',
+              value: investmentIncomePriority,
+              appliedWeight: _weightAt(0),
+              locked: scoringLocked,
+              onChanged: onInvestmentIncomeChanged,
             ),
 
             _PrioritySlider(
-              label:
-              'Transportation',
-              value:
-              investmentTransportPriority,
-              appliedWeight:
-              _weightAt(1),
-              locked:
-              scoringLocked,
-              onChanged:
-              onInvestmentTransportChanged,
+              label: 'Transportation',
+              value: investmentTransportPriority,
+              appliedWeight: _weightAt(1),
+              locked: scoringLocked,
+              onChanged: onInvestmentTransportChanged,
             ),
 
             _PrioritySlider(
-              label:
-              'Property affordability',
-              value:
-              investmentAffordabilityPriority,
-              appliedWeight:
-              _weightAt(2),
-              locked:
-              scoringLocked,
-              onChanged:
-              onInvestmentAffordabilityChanged,
+              label: 'Property affordability',
+              value: investmentAffordabilityPriority,
+              appliedWeight: _weightAt(2),
+              locked: scoringLocked,
+              onChanged: onInvestmentAffordabilityChanged,
             ),
           ],
 
-          if (scoringLocked &&
-              appliedWeights.length >= 3) ...[
+          if (scoringLocked && appliedWeights.length >= 3) ...[
             const Divider(),
 
             const Row(
               children: [
                 Text(
                   'Total weight',
-                  style: TextStyle(
-                    fontWeight:
-                    FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 Spacer(),
                 Text(
                   '100.0%',
                   style: TextStyle(
-                    color:
-                    AppTheme.green,
-                    fontWeight:
-                    FontWeight.w900,
+                    color: AppTheme.green,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
@@ -1853,17 +1573,11 @@ class _PrioritySliders extends StatelessWidget {
           const Divider(),
 
           Align(
-            alignment:
-            Alignment.centerRight,
+            alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed:
-              onResetWeights,
-              icon: const Icon(
-                Icons.refresh_rounded,
-              ),
-              label: const Text(
-                'Reset to default',
-              ),
+              onPressed: onResetWeights,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Reset to default'),
             ),
           ),
         ],
@@ -1871,11 +1585,8 @@ class _PrioritySliders extends StatelessWidget {
     );
   }
 
-  double? _weightAt(
-      int index,
-      ) {
-    if (!scoringLocked ||
-        appliedWeights.length <= index) {
+  double? _weightAt(int index) {
+    if (!scoringLocked || appliedWeights.length <= index) {
       return null;
     }
 
@@ -1901,18 +1612,14 @@ class _PrioritySlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayValue =
-    locked && appliedWeight != null
+    final displayValue = locked && appliedWeight != null
         ? appliedWeight! * 100
         : value;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -1929,20 +1636,17 @@ class _PrioritySlider extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 12,
-                    fontWeight:
-                    FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
 
-              if (locked &&
-                  appliedWeight != null)
+              if (locked && appliedWeight != null)
                 Text(
                   '${(appliedWeight! * 100).toStringAsFixed(1)}%',
                   style: const TextStyle(
                     color: AppTheme.blue,
-                    fontWeight:
-                    FontWeight.w800,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
             ],
@@ -1955,76 +1659,51 @@ class _PrioritySlider extends StatelessWidget {
             max: 100,
             divisions: 100,
 
-            value: displayValue
-                .clamp(
-              0.0,
-              100.0,
-            )
-                .toDouble(),
+            value: displayValue.clamp(0.0, 100.0).toDouble(),
 
-            onChanged:
-            locked
-                ? null
-                : onChanged,
+            onChanged: locked ? null : onChanged,
           ),
 
           Padding(
-            padding:
-            const EdgeInsets.symmetric(
-              horizontal: 24,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
                 const Expanded(
                   child: Text(
                     'Low',
-                    textAlign:
-                    TextAlign.left,
-                    style: TextStyle(
-                      color:
-                      AppTheme.muted,
-                      fontSize: 9,
-                    ),
+                    textAlign: TextAlign.left,
+                    style: TextStyle(color: AppTheme.muted, fontSize: 9),
                   ),
                 ),
 
                 Expanded(
                   child: locked
                       ? const Row(
-                    mainAxisAlignment:
-                    MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.lock_outline_rounded,
-                        size: 10,
-                        color:
-                        AppTheme.muted,
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        'Locked',
-                        style:
-                        TextStyle(
-                          color:
-                          AppTheme.muted,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
-                  )
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              size: 10,
+                              color: AppTheme.muted,
+                            ),
+                            SizedBox(width: 3),
+                            Text(
+                              'Locked',
+                              style: TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ],
+                        )
                       : const SizedBox(),
                 ),
 
                 const Expanded(
                   child: Text(
                     'High',
-                    textAlign:
-                    TextAlign.right,
-                    style: TextStyle(
-                      color:
-                      AppTheme.muted,
-                      fontSize: 9,
-                    ),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(color: AppTheme.muted, fontSize: 9),
                   ),
                 ),
               ],
@@ -2036,8 +1715,7 @@ class _PrioritySlider extends StatelessWidget {
   }
 }
 
-class _AiAdvisorEntryCard
-    extends StatelessWidget {
+class _AiAdvisorEntryCard extends StatelessWidget {
   const _AiAdvisorEntryCard({
     required this.recommendationCount,
     required this.onOpen,
@@ -2052,23 +1730,17 @@ class _AiAdvisorEntryCard
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(
-                    color:
-                    AppTheme.blue.withValues(
-                      alpha: 0.10,
-                    ),
-                    borderRadius:
-                    BorderRadius.circular(12),
+                    color: AppTheme.blue.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
                     Icons.psychology_alt_rounded,
@@ -2080,18 +1752,12 @@ class _AiAdvisorEntryCard
 
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'AI Property Advisor',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(
-                          fontWeight:
-                          FontWeight.w800,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
 
                       const SizedBox(height: 5),
@@ -2113,10 +1779,7 @@ class _AiAdvisorEntryCard
 
             const Text(
               'The AI advisor explains the existing recommendation results. It does not recalculate the score or change the property ranking.',
-              style: TextStyle(
-                color: AppTheme.muted,
-                fontSize: 11,
-              ),
+              style: TextStyle(color: AppTheme.muted, fontSize: 11),
             ),
 
             const SizedBox(height: 14),
@@ -2125,12 +1788,8 @@ class _AiAdvisorEntryCard
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: onOpen,
-                icon: const Icon(
-                  Icons.chat_bubble_outline_rounded,
-                ),
-                label: const Text(
-                  'Open AI Property Advisor',
-                ),
+                icon: const Icon(Icons.chat_bubble_outline_rounded),
+                label: const Text('Open AI Property Advisor'),
               ),
             ),
           ],
@@ -2140,8 +1799,7 @@ class _AiAdvisorEntryCard
   }
 }
 
-class _ComparisonSelectionBar
-    extends StatelessWidget {
+class _ComparisonSelectionBar extends StatelessWidget {
   const _ComparisonSelectionBar({
     required this.selectedCount,
     required this.canCompare,
@@ -2157,65 +1815,39 @@ class _ComparisonSelectionBar
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.blue.withValues(
-          alpha: 0.06,
-        ),
-        borderRadius:
-        BorderRadius.circular(8),
-        border: Border.all(
-          color: AppTheme.blue.withValues(
-            alpha: 0.18,
-          ),
-        ),
+        color: AppTheme.blue.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.blue.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.compare_arrows_rounded,
-            color: AppTheme.blue,
-          ),
+          const Icon(Icons.compare_arrows_rounded, color: AppTheme.blue),
 
           const SizedBox(width: 10),
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Select 2–3 properties to compare',
-                  style: TextStyle(
-                    fontWeight:
-                    FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 2),
 
                 Text(
                   '$selectedCount selected',
-                  style: const TextStyle(
-                    color:
-                    AppTheme.muted,
-                    fontSize: 11,
-                  ),
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                 ),
               ],
             ),
           ),
 
           FilledButton.icon(
-            onPressed:
-            canCompare
-                ? onCompare
-                : null,
-            icon: const Icon(
-              Icons.compare_rounded,
-              size: 18,
-            ),
-            label: const Text(
-              'Compare',
-            ),
+            onPressed: canCompare ? onCompare : null,
+            icon: const Icon(Icons.compare_rounded, size: 18),
+            label: const Text('Compare'),
           ),
         ],
       ),
@@ -2239,10 +1871,9 @@ class _RecommendationSwipeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final property = recommendation.property;
-    final price = property.price;
+    final price = _advisorComparablePrice(property);
 
-    final badgeText =
-    rank == 1 ? 'HIGHEST MATCH' : 'MATCH #$rank';
+    final badgeText = rank == 1 ? 'HIGHEST MATCH' : 'MATCH #$rank';
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -2251,10 +1882,7 @@ class _RecommendationSwipeCard extends StatelessWidget {
         children: [
           Stack(
             children: [
-              PropertyArt(
-                palette: property.palette,
-                height: 165,
-              ),
+              PropertyArt(palette: property.palette, height: 165),
               Positioned(
                 top: 12,
                 left: 12,
@@ -2314,18 +1942,12 @@ class _RecommendationSwipeCard extends StatelessWidget {
                           property.name,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _ScoreBadge(
-                        score: recommendation.score,
-                      ),
+                      _ScoreBadge(score: recommendation.score),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -2333,20 +1955,13 @@ class _RecommendationSwipeCard extends StatelessWidget {
                     property.address,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 11,
-                    ),
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    price == null
-                        ? 'Price unavailable'
-                        : formatRinggit(price),
+                    price == null ? 'Price unavailable' : formatRinggit(price),
                     style: TextStyle(
-                      color: price == null
-                          ? AppTheme.muted
-                          : AppTheme.green,
+                      color: price == null ? AppTheme.muted : AppTheme.green,
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
                     ),
@@ -2354,38 +1969,35 @@ class _RecommendationSwipeCard extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Text(
                     'Why this matches you',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 7),
-                  ...recommendation.reasons.take(2).map(
+                  ...recommendation.reasons
+                      .take(2)
+                      .map(
                         (reason) => Padding(
-                      padding: const EdgeInsets.only(bottom: 5),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.check_circle_outline_rounded,
-                            size: 16,
-                            color: AppTheme.green,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              reason,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
+                          padding: const EdgeInsets.only(bottom: 5),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 16,
+                                color: AppTheme.green,
                               ),
-                            ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  reason,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
                   const Spacer(),
                   SizedBox(
                     width: double.infinity,
@@ -2410,9 +2022,8 @@ class _RecommendationSwipeCard extends StatelessWidget {
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => PropertyDetailScreen(
-                              propertyId: property.id,
-                            ),
+                            builder: (_) =>
+                                PropertyDetailScreen(propertyId: property.id),
                           ),
                         );
                       },
@@ -2430,9 +2041,7 @@ class _RecommendationSwipeCard extends StatelessWidget {
 }
 
 class _ScoreBadge extends StatelessWidget {
-  const _ScoreBadge({
-    required this.score,
-  });
+  const _ScoreBadge({required this.score});
 
   final double score;
 
@@ -2443,36 +2052,27 @@ class _ScoreBadge extends StatelessWidget {
       height: 54,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: AppTheme.blue.withValues(
-          alpha: 0.09,
-        ),
+        color: AppTheme.blue.withValues(alpha: 0.09),
         shape: BoxShape.circle,
         border: Border.all(
-          color: AppTheme.blue.withValues(
-            alpha: 0.25,
-          ),
+          color: AppTheme.blue.withValues(alpha: 0.25),
           width: 2,
         ),
       ),
       child: Column(
-        mainAxisAlignment:
-        MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             score.round().toString(),
             style: const TextStyle(
               color: AppTheme.blue,
               fontSize: 17,
-              fontWeight:
-              FontWeight.w900,
+              fontWeight: FontWeight.w900,
             ),
           ),
           const Text(
             '/100',
-            style: TextStyle(
-              color: AppTheme.muted,
-              fontSize: 8,
-            ),
+            style: TextStyle(color: AppTheme.muted, fontSize: 8),
           ),
         ],
       ),
@@ -2490,10 +2090,7 @@ class _NoMatches extends StatelessWidget {
         padding: EdgeInsets.all(28),
         child: Row(
           children: [
-            Icon(
-              Icons.filter_alt_off_rounded,
-              color: AppTheme.muted,
-            ),
+            Icon(Icons.filter_alt_off_rounded, color: AppTheme.muted),
             SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -2515,37 +2112,19 @@ class _DecisionNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: const Color(
-          0xFFFFF7E6,
-        ),
-        borderRadius:
-        BorderRadius.circular(8),
-        border: Border.all(
-          color: const Color(
-            0xFFF4D89A,
-          ),
-        ),
+        color: const Color(0xFFFFF7E6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF4D89A)),
       ),
       child: const Row(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.fact_check_outlined,
-            color: Color(
-              0xFF9B6A08,
-            ),
-          ),
+          Icon(Icons.fact_check_outlined, color: Color(0xFF9B6A08)),
           SizedBox(width: 10),
           Expanded(
             child: Text(
               'Decision support only. Scores are calculated using user-selected priority levels, normalised weighted criteria and available data, not a professional property valuation.',
-              style: TextStyle(
-                color: Color(
-                  0xFF70500C,
-                ),
-                fontSize: 12,
-              ),
+              style: TextStyle(color: Color(0xFF70500C), fontSize: 12),
             ),
           ),
         ],

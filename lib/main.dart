@@ -19,7 +19,7 @@ Future<void> main() async {
   } else if (kDebugMode) {
     debugPrint(
       '[DEV Supabase check] SupabaseConfig constants are not set; '
-      'starting with local JSON fallback only.',
+      'startup will continue with static metadata only until official data is configured.',
     );
   }
 

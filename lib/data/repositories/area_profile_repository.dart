@@ -34,18 +34,31 @@ class AreaProfileRepository {
     }
   }
 
-  Future<void> upsertAreaProfiles(List<AreaProfile> profiles) async {
+  Future<int> upsertAreaProfiles(List<AreaProfile> profiles) async {
     if (profiles.isEmpty) {
-      return;
+      return 0;
     }
 
     try {
+      final updatedAt = DateTime.now().toUtc();
+      final incomingByAreaId = mergeProfileData(profiles);
+      final existingRows = await _supabase
+          .from('area_profiles')
+          .select()
+          .inFilter('area_id', incomingByAreaId.keys.toList());
+      final mergedByAreaId = mergeProfileData([
+        ...existingRows.map((row) => AreaProfile.fromJson(row)),
+        ...incomingByAreaId.values,
+      ]);
       await _supabase
           .from('area_profiles')
           .upsert(
-            profiles.map((profile) => profile.toSupabaseJson()).toList(),
+            mergedByAreaId.values
+                .map((profile) => profile.toSupabaseJson(updatedAt: updatedAt))
+                .toList(),
             onConflict: 'area_id',
           );
+      return mergedByAreaId.length;
     } catch (error, stackTrace) {
       throw AreaProfileRepositoryException(
         'Failed to sync area profiles to Supabase.',
@@ -53,6 +66,20 @@ class AreaProfileRepository {
         stackTrace,
       );
     }
+  }
+
+  static Map<String, AreaProfile> mergeProfileData(
+    Iterable<AreaProfile> profiles,
+  ) {
+    final merged = <String, AreaProfile>{};
+    for (final profile in profiles) {
+      final canonical = profile.canonicalized();
+      final existing = merged[canonical.areaId];
+      merged[canonical.areaId] = existing == null
+          ? canonical
+          : existing.mergeWith(canonical);
+    }
+    return merged;
   }
 }
 

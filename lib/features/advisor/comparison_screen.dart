@@ -6,14 +6,12 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
+import '../../models/area_data.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 
 class ComparisonScreen extends StatelessWidget {
-  const ComparisonScreen({
-    required this.recommendations,
-    super.key,
-  });
+  const ComparisonScreen({required this.recommendations, super.key});
 
   final List<PropertyRecommendation> recommendations;
 
@@ -23,20 +21,13 @@ class ComparisonScreen extends StatelessWidget {
     final goal = state.preferences.goal;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Compare recommendations'),
-      ),
+      appBar: AppBar(title: const Text('Compare recommendations')),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                4,
-              ),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: AiComparisonCard(
                 recommendations: recommendations,
                 goal: goal,
@@ -52,24 +43,20 @@ class ComparisonScreen extends StatelessWidget {
                 child: PageContainer(
                   maxWidth: double.infinity,
                   child: Row(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: recommendations
                         .map(
                           (item) => SizedBox(
-                        width: 300,
-                        child: Padding(
-                          padding:
-                          const EdgeInsets.only(
-                            right: 14,
+                            width: 300,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 14),
+                              child: _ComparisonColumn(
+                                recommendation: item,
+                                goal: goal,
+                              ),
+                            ),
                           ),
-                          child: _ComparisonColumn(
-                            recommendation: item,
-                            goal: goal,
-                          ),
-                        ),
-                      ),
-                    )
+                        )
                         .toList(),
                   ),
                 ),
@@ -85,10 +72,7 @@ class ComparisonScreen extends StatelessWidget {
 }
 
 class _ComparisonColumn extends StatelessWidget {
-  const _ComparisonColumn({
-    required this.recommendation,
-    required this.goal,
-  });
+  const _ComparisonColumn({required this.recommendation, required this.goal});
 
   final PropertyRecommendation recommendation;
   final PropertyGoal goal;
@@ -96,7 +80,12 @@ class _ComparisonColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final property = recommendation.property;
-    final price = property.price;
+    final AreaData? area = AppScope.of(context).matchedAreaFor(property);
+    final hasPrice = _hasPrice(
+      property.price,
+      property.priceMin,
+      property.priceMax,
+    );
     final pricePerSqft = property.pricePerSqft;
 
     return Card(
@@ -106,10 +95,7 @@ class _ComparisonColumn extends StatelessWidget {
         children: [
           Stack(
             children: [
-              PropertyArt(
-                palette: property.palette,
-                height: 170,
-              ),
+              PropertyArt(palette: property.palette, height: 170),
 
               Positioned(
                 top: 12,
@@ -121,13 +107,10 @@ class _ComparisonColumn extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: AppTheme.blue,
-                    borderRadius:
-                    BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    goal == PropertyGoal.ownStay
-                        ? 'OWN STAY'
-                        : 'INVESTMENT',
+                    goal == PropertyGoal.ownStay ? 'OWN STAY' : 'INVESTMENT',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 9,
@@ -142,36 +125,30 @@ class _ComparisonColumn extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(17),
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   property.name,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
 
                 const SizedBox(height: 4),
 
                 Text(
                   property.address,
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
                 ),
 
                 const SizedBox(height: 10),
 
                 Text(
-                  price == null
-                      ? 'Price unavailable'
-                      : formatRinggit(price),
+                  _priceText(
+                    property.price,
+                    property.priceMin,
+                    property.priceMax,
+                  ),
                   style: TextStyle(
-                    color: price == null
-                        ? AppTheme.muted
-                        : AppTheme.green,
+                    color: hasPrice ? AppTheme.green : AppTheme.muted,
                     fontWeight: FontWeight.w800,
                     fontSize: 17,
                   ),
@@ -181,8 +158,7 @@ class _ComparisonColumn extends StatelessWidget {
 
                 _Row(
                   label: 'Overall score',
-                  value:
-                  '${recommendation.score.round()}/100',
+                  value: '${recommendation.score.round()}/100',
                   highlight: true,
                 ),
 
@@ -190,19 +166,31 @@ class _ComparisonColumn extends StatelessWidget {
                   label: 'Price psf',
                   value: pricePerSqft == null
                       ? 'Unavailable'
-                      : formatRinggit(
-                    pricePerSqft.round(),
-                  ),
+                      : formatRinggit(pricePerSqft.round()),
+                ),
+
+                _Row(label: 'Property type', value: property.type),
+
+                _Row(label: 'Tenure', value: property.tenure),
+
+                _Row(
+                  label: 'Area safety',
+                  value: _scoreText(area?.safetyScore),
                 ),
 
                 _Row(
-                  label: 'Property type',
-                  value: property.type,
+                  label: 'Infrastructure',
+                  value: _scoreText(area?.infrastructureScore),
                 ),
 
                 _Row(
-                  label: 'Tenure',
-                  value: property.tenure,
+                  label: 'Price growth',
+                  value: _percentText(area?.priceGrowth),
+                ),
+
+                _Row(
+                  label: 'Rental yield',
+                  value: _percentText(area?.rentalYield),
                 ),
 
                 const SizedBox(height: 16),
@@ -211,18 +199,15 @@ class _ComparisonColumn extends StatelessWidget {
                   goal == PropertyGoal.ownStay
                       ? 'Own-stay indicators'
                       : 'Investment indicators',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 8),
 
                 ...recommendation.factors.map(
-                      (factor) => _Row(
+                  (factor) => _Row(
                     label: factor.label,
-                    value:
-                    '${factor.score.round()}/100',
+                    value: '${factor.score.round()}/100',
                   ),
                 ),
 
@@ -234,27 +219,20 @@ class _ComparisonColumn extends StatelessWidget {
 
                 const Text(
                   'Score breakdown',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 4),
 
                 const Text(
                   'Each indicator contributes to the final score according to its assigned weight.',
-                  style: TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: 10,
-                  ),
+                  style: TextStyle(color: AppTheme.muted, fontSize: 10),
                 ),
 
                 const SizedBox(height: 12),
 
                 ...recommendation.factors.map(
-                      (factor) => _FactorBreakdown(
-                    factor: factor,
-                  ),
+                  (factor) => _FactorBreakdown(factor: factor),
                 ),
 
                 const SizedBox(height: 10),
@@ -262,21 +240,15 @@ class _ComparisonColumn extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppTheme.blue.withValues(
-                      alpha: 0.06,
-                    ),
-                    borderRadius:
-                    BorderRadius.circular(8),
+                    color: AppTheme.blue.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
                       const Expanded(
                         child: Text(
                           'Final weighted score',
-                          style: TextStyle(
-                            fontWeight:
-                            FontWeight.w800,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                       Text(
@@ -294,36 +266,26 @@ class _ComparisonColumn extends StatelessWidget {
 
                 const Text(
                   'Advantages',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 7),
 
                 ...recommendation.reasons.map(
-                      (item) => _BulletItem(
-                    text: item,
-                    positive: true,
-                  ),
+                  (item) => _BulletItem(text: item, positive: true),
                 ),
 
                 const SizedBox(height: 14),
 
                 const Text(
                   'Watch out for',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
 
                 const SizedBox(height: 7),
 
                 ...recommendation.cautions.map(
-                      (item) => _BulletItem(
-                    text: item,
-                    positive: false,
-                  ),
+                  (item) => _BulletItem(text: item, positive: false),
                 ),
 
                 if (property.source.isNotEmpty) ...[
@@ -335,19 +297,14 @@ class _ComparisonColumn extends StatelessWidget {
 
                   const Text(
                     'Data source',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
 
                   const SizedBox(height: 5),
 
                   Text(
                     property.source,
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 10,
-                    ),
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 10),
                   ),
                 ],
               ],
@@ -359,28 +316,46 @@ class _ComparisonColumn extends StatelessWidget {
   }
 }
 
+bool _hasPrice(int? price, int? priceMin, int? priceMax) {
+  return price != null || priceMin != null || priceMax != null;
+}
+
+String _priceText(int? price, int? priceMin, int? priceMax) {
+  if (priceMin != null && priceMax != null && priceMin != priceMax) {
+    return '${formatRinggit(priceMin)} - ${formatRinggit(priceMax)}';
+  }
+  final displayPrice = price ?? priceMin ?? priceMax;
+  return displayPrice == null
+      ? 'Price unavailable'
+      : formatRinggit(displayPrice);
+}
+
+String _scoreText(double? value) {
+  return value == null ? 'Unavailable' : '${value.round()}/100';
+}
+
+String _percentText(double? value) {
+  if (value == null) {
+    return 'Unavailable';
+  }
+  return '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+}
+
 class _FactorBreakdown extends StatelessWidget {
-  const _FactorBreakdown({
-    required this.factor,
-  });
+  const _FactorBreakdown({required this.factor});
 
   final ScoreFactor factor;
 
   @override
   Widget build(BuildContext context) {
-    final weightPercent =
-        factor.weight * 100;
+    final weightPercent = factor.weight * 100;
 
-    final contribution =
-        factor.contribution;
+    final contribution = factor.contribution;
 
     return Padding(
-      padding: const EdgeInsets.only(
-        bottom: 13,
-      ),
+      padding: const EdgeInsets.only(bottom: 13),
       child: Column(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -389,19 +364,15 @@ class _FactorBreakdown extends StatelessWidget {
                   factor.label,
                   style: const TextStyle(
                     fontSize: 11,
-                    fontWeight:
-                    FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
 
               Text(
-                '${factor.score.round()} × '
-                    '${weightPercent.round()}%',
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 10,
-                ),
+                '${factor.score.round()} x '
+                '${weightPercent.round()}%',
+                style: const TextStyle(color: AppTheme.muted, fontSize: 10),
               ),
             ],
           ),
@@ -409,25 +380,19 @@ class _FactorBreakdown extends StatelessWidget {
           const SizedBox(height: 5),
 
           LinearProgressIndicator(
-            value: (factor.score / 100)
-                .clamp(0.0, 1.0),
+            value: (factor.score / 100).clamp(0.0, 1.0),
             minHeight: 6,
-            borderRadius:
-            BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(6),
           ),
 
           const SizedBox(height: 4),
 
           Align(
-            alignment:
-            Alignment.centerRight,
+            alignment: Alignment.centerRight,
             child: Text(
               'Contribution: '
-                  '${contribution.toStringAsFixed(1)} pts',
-              style: const TextStyle(
-                color: AppTheme.muted,
-                fontSize: 9,
-              ),
+              '${contribution.toStringAsFixed(1)} pts',
+              style: const TextStyle(color: AppTheme.muted, fontSize: 9),
             ),
           ),
         ],
@@ -437,10 +402,7 @@ class _FactorBreakdown extends StatelessWidget {
 }
 
 class _BulletItem extends StatelessWidget {
-  const _BulletItem({
-    required this.text,
-    required this.positive,
-  });
+  const _BulletItem({required this.text, required this.positive});
 
   final String text;
   final bool positive;
@@ -448,24 +410,16 @@ class _BulletItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(
-        bottom: 6,
-      ),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             positive
-                ? Icons
-                .check_circle_outline_rounded
+                ? Icons.check_circle_outline_rounded
                 : Icons.warning_amber_rounded,
             size: 16,
-            color: positive
-                ? AppTheme.green
-                : const Color(
-              0xFFB7791F,
-            ),
+            color: positive ? AppTheme.green : const Color(0xFFB7791F),
           ),
 
           const SizedBox(width: 6),
@@ -473,10 +427,7 @@ class _BulletItem extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: AppTheme.muted,
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 11),
             ),
           ),
         ],
@@ -499,18 +450,13 @@ class _Row extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 7,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
-                color: AppTheme.muted,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: AppTheme.muted, fontSize: 12),
             ),
           ),
 
@@ -521,9 +467,7 @@ class _Row extends StatelessWidget {
               value,
               textAlign: TextAlign.right,
               style: TextStyle(
-                color: highlight
-                    ? AppTheme.blue
-                    : AppTheme.ink,
+                color: highlight ? AppTheme.blue : AppTheme.ink,
                 fontWeight: FontWeight.w800,
                 fontSize: 12,
               ),

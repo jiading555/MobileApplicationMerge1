@@ -1,9 +1,7 @@
 class AuthValidators {
   const AuthValidators._();
 
-  static final RegExp _emailPattern = RegExp(
-    r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$',
-  );
+  static final RegExp _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$');
 
   static String? email(String? value) {
     final email = value?.trim() ?? '';

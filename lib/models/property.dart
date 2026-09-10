@@ -1,3 +1,5 @@
+import '../core/utils/property_type_normalizer.dart';
+
 class Property {
   const Property({
     required this.id,
@@ -6,6 +8,7 @@ class Property {
     required this.address,
     required this.type,
     required this.tenure,
+    this.verifiedPropertyType,
     this.state,
     this.district,
     this.price,
@@ -27,6 +30,7 @@ class Property {
     this.totalUnits,
     this.availableUnits,
     this.unitTypes = const [],
+    this.unitOptions = const [],
     this.sourceUrl,
     this.externalProjectUrl,
     this.developerAddress,
@@ -40,6 +44,7 @@ class Property {
   final String address;
   final String type;
   final String tenure;
+  final String? verifiedPropertyType;
   final String? state;
   final String? district;
   final int? price;
@@ -61,6 +66,7 @@ class Property {
   final int? totalUnits;
   final int? availableUnits;
   final List<String> unitTypes;
+  final List<PropertyUnitOption> unitOptions;
   final String? sourceUrl;
   final String? externalProjectUrl;
   final String? developerAddress;
@@ -74,47 +80,35 @@ class Property {
   double? get pricePerSqft {
     final askingPrice = price;
     final size = sizeSqft;
-
     if (askingPrice == null || size == null || size == 0) {
       return null;
     }
-
     return askingPrice / size;
   }
 
-  /// User-friendly property categories derived from TEDUH `unit_types`.
-  ///
-  /// A project may belong to more than one category. For example, a project
-  /// containing both RUMAH TERES and RUMAH BERKEMBAR can match both Terrace
-  /// and Semi-D filters.
   List<String> get normalizedPropertyTypes {
-    final result = <String>{};
-
-    for (final unitType in unitTypes) {
-      final normalized = _normalizePropertyType(unitType);
-      if (normalized != null) {
-        result.add(normalized);
+    final candidates = [
+      verifiedPropertyType,
+      ...unitOptions.map((option) => option.unitType),
+      ...unitTypes,
+      type,
+    ];
+    final categories = <String>{};
+    for (final candidate in candidates) {
+      final text = candidate?.trim();
+      if (text == null || text.isEmpty) {
+        continue;
       }
-    }
-
-    // Compatibility for local JSON or older records that only have `type`.
-    if (result.isEmpty) {
-      final normalized = _normalizePropertyType(type);
-      if (normalized != null) {
-        result.add(normalized);
+      final normalized = text.toLowerCase();
+      if (isGovernmentRecord &&
+          (normalized == 'public housing' || normalized == 'public')) {
+        continue;
       }
+      categories.addAll(PropertyTypeNormalizer.categoriesFor(text));
     }
-
-    final values = result.toList()..sort();
-    return values;
-  }
-
-  bool matchesPropertyType(String selectedType) {
-    if (selectedType == 'Any') {
-      return true;
-    }
-
-    return normalizedPropertyTypes.contains(selectedType);
+    return PropertyTypeNormalizer.orderedCategories
+        .where(categories.contains)
+        .toList();
   }
 
   factory Property.fromJson(Map<String, dynamic> json) {
@@ -125,6 +119,10 @@ class Property {
       address: json['address'] as String,
       type: json['type'] as String,
       tenure: json['tenure'] as String,
+      verifiedPropertyType:
+          json['verifiedPropertyType'] as String? ??
+          json['property_type'] as String? ??
+          json['propertyType'] as String?,
       state: json['state'] as String?,
       district: json['district'] as String?,
       price: _intFromJson(json['price']),
@@ -148,6 +146,9 @@ class Property {
       unitTypes: (json['unitTypes'] as List<dynamic>? ?? const [])
           .map((value) => value.toString())
           .toList(),
+      unitOptions: _unitOptionsFromJson(
+        json['unitOptions'] ?? json['unit_options'],
+      ),
       sourceUrl: json['sourceUrl'] as String?,
       externalProjectUrl: json['externalProjectUrl'] as String?,
       developerAddress: json['developerAddress'] as String?,
@@ -157,10 +158,10 @@ class Property {
   }
 
   factory Property.fromTeduhJson(
-      Map<String, dynamic> json, {
-        required String areaId,
-        required int palette,
-      }) {
+    Map<String, dynamic> json, {
+    required String areaId,
+    required int palette,
+  }) {
     final sourceId = _stringFromJson(json['source_id'] ?? json['sourceId']);
     final projectName = _stringFromJson(
       json['project_name'] ?? json['projectName'],
@@ -168,12 +169,13 @@ class Property {
     final state = _nullableStringFromJson(json['state']);
     final district = _nullableStringFromJson(json['district']);
     final scheme = _nullableStringFromJson(json['scheme']);
+    final tenure = _nullableStringFromJson(json['tenure']);
     final projectStatus = _nullableStringFromJson(
       json['project_status'] ?? json['projectStatus'],
     );
     final priceMin = _intFromJson(json['price_min'] ?? json['priceMin']);
     final priceMax = _intFromJson(json['price_max'] ?? json['priceMax']);
-    final rawPropertyType = _nullableStringFromJson(
+    final type = _nullableStringFromJson(
       json['property_type'] ?? json['propertyType'],
     );
     final developer = _nullableStringFromJson(
@@ -183,19 +185,20 @@ class Property {
     final unitTypes = _stringListFromJson(
       json['unit_types'] ?? json['unitTypes'],
     );
+    final unitOptions = _unitOptionsFromJson(
+      json['unit_options'] ?? json['unitOptions'],
+    );
+    final facilities = _stringListFromJson(json['facilities']);
     final location = [?district, ?state].join(', ');
 
-    final displayType = rawPropertyType ??
-        _displayTypeFromUnitTypes(unitTypes) ??
-        'Public housing';
-
     return Property(
-      id: _nullableStringFromJson(json['id']) ?? 'teduh_$sourceId',
+      id: 'teduh_$sourceId',
       name: projectName,
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
-      type: displayType,
-      tenure: scheme ?? 'Government housing',
+      type: type ?? '',
+      tenure: tenure ?? '',
+      verifiedPropertyType: type,
       state: state,
       district: district,
       price: priceMin ?? priceMax,
@@ -203,17 +206,11 @@ class Property {
       priceMax: priceMax,
       latitude: _doubleFromJson(json['latitude']),
       longitude: _doubleFromJson(json['longitude']),
-      summary: _teduhSummary(
-        scheme: scheme,
-        developer: developer,
-        totalUnits: _intFromJson(json['total_units'] ?? json['totalUnits']),
-        availableUnits: _intFromJson(
-          json['available_units'] ?? json['availableUnits'],
-        ),
-      ),
-      facilities: [?scheme, ?developer, ?state],
+      summary: _teduhSummary(),
+      facilities: facilities,
       palette: palette,
-      source: _nullableStringFromJson(json['source']) ??
+      source:
+          _nullableStringFromJson(json['source']) ??
           'TEDUH - Jabatan Perumahan Negara, KPKT',
       sourceId: sourceId,
       scheme: scheme,
@@ -224,6 +221,7 @@ class Property {
         json['available_units'] ?? json['availableUnits'],
       ),
       unitTypes: unitTypes,
+      unitOptions: unitOptions,
       sourceUrl: _nullableStringFromJson(
         json['source_url'] ?? json['sourceUrl'],
       ),
@@ -242,7 +240,7 @@ class Property {
     );
   }
 
-  Map<String, dynamic> toSupabaseJson() {
+  Map<String, dynamic> toSupabaseJson({DateTime? updatedAt}) {
     return {
       'source_id': sourceId,
       'project_name': name,
@@ -251,7 +249,7 @@ class Property {
       'scheme': scheme,
       'price_min': priceMin,
       'price_max': priceMax,
-      'property_type': type,
+      'property_type': verifiedPropertyType,
       'project_status': projectStatus,
       'developer_name': developerName,
       'address': address,
@@ -260,114 +258,19 @@ class Property {
       'total_units': totalUnits,
       'available_units': availableUnits,
       'unit_types': unitTypes,
+      'unit_options': unitOptions.map((option) => option.toJson()).toList(),
       'source': source,
       'source_url': sourceUrl,
       'external_project_url': externalProjectUrl,
       'developer_address': developerAddress,
       'raw_location': rawLocation,
       'retrieved_at': retrievedAt?.toUtc().toIso8601String(),
+      if (updatedAt != null) 'updated_at': updatedAt.toUtc().toIso8601String(),
     };
   }
 
-  static String _teduhSummary({
-    required String? scheme,
-    required String? developer,
-    required int? totalUnits,
-    required int? availableUnits,
-  }) {
-    final parts = [
-      'Public housing/project record from TEDUH.',
-      if (scheme != null) 'Scheme: $scheme.',
-      if (developer != null) 'Developer: $developer.',
-      if (totalUnits != null) 'Total units: $totalUnits.',
-      if (availableUnits != null) 'Available units: $availableUnits.',
-    ];
-    return parts.join(' ');
-  }
-
-  static String? _displayTypeFromUnitTypes(List<String> unitTypes) {
-    final categories = <String>{};
-
-    for (final unitType in unitTypes) {
-      final normalized = _normalizePropertyType(unitType);
-      if (normalized != null) {
-        categories.add(normalized);
-      }
-    }
-
-    if (categories.isEmpty) {
-      return null;
-    }
-
-    final sorted = categories.toList()..sort();
-    return sorted.join(' / ');
-  }
-
-  static String? _normalizePropertyType(String value) {
-    final text = value
-        .trim()
-        .toUpperCase()
-        .replaceAll(RegExp(r'[-_/]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ');
-
-    if (text.isEmpty) {
-      return null;
-    }
-
-    if (text.contains('KONDOMINIUM') ||
-        text.contains('CONDOMINIUM')) {
-      return 'Condominium';
-    }
-
-    if (text.contains('PANGSAPURI') ||
-        text.contains('APARTMEN') ||
-        text.contains('APARTMENT')) {
-      return 'Apartment';
-    }
-
-    if (text.contains('BERKEMBAR') ||
-        text.contains('SEMI D') ||
-        text.contains('SEMI-D')) {
-      return 'Semi-D';
-    }
-
-    if (text.contains('TERES')) {
-      return 'Terrace';
-    }
-
-    if (text.contains('RUMAH BANDAR') ||
-        text.contains('TOWNHOUSE') ||
-        text.contains('TOWN HOUSE')) {
-      return 'Townhouse';
-    }
-
-    if (text.contains('RUMAH KEDAI') ||
-        text.contains('SHOP HOUSE') ||
-        text.contains('SHOPHOUSE') ||
-        text.contains('SHOP LOT') ||
-        text.contains('SHOPLOT')) {
-      return 'Shop House';
-    }
-
-    if (text.contains('BANGLO') ||
-        text.contains('BUNGALOW')) {
-      return 'Bungalow';
-    }
-
-    if (text.contains('FLAT')) {
-      return 'Flat';
-    }
-
-    if (text.contains('KLUSTER') ||
-        text.contains('CLUSTER')) {
-      return 'Cluster House';
-    }
-
-    if (text.contains('STUDIO')) {
-      return 'Studio';
-    }
-
-    return 'Other';
+  static String _teduhSummary() {
+    return 'Official housing project information sourced from TEDUH.';
   }
 
   static String _stringFromJson(Object? value) => value?.toString() ?? '';
@@ -388,7 +291,11 @@ class Property {
       return value.round();
     }
     final text = value.toString().replaceAll(',', '').trim();
-    return int.tryParse(text);
+    if (text.isEmpty) {
+      return null;
+    }
+    final parsedDouble = double.tryParse(text);
+    return parsedDouble?.round();
   }
 
   static double? _doubleFromJson(Object? value) {
@@ -416,16 +323,95 @@ class Property {
           .where((item) => item.isNotEmpty)
           .toList();
     }
-
     final text = _nullableStringFromJson(value);
     if (text == null) {
       return const [];
     }
-
     return text
         .split(';')
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList();
+  }
+
+  static List<PropertyUnitOption> _unitOptionsFromJson(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map>()
+        .map(
+          (item) =>
+              PropertyUnitOption.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .where((item) => item.hasContent)
+        .toList();
+  }
+}
+
+class PropertyUnitOption {
+  const PropertyUnitOption({
+    this.sourceUnitId,
+    this.unitType,
+    this.priceStart,
+    this.priceFromText,
+    this.sizeSqft,
+    this.sizeText,
+    this.imageUrl,
+  });
+
+  final String? sourceUnitId;
+  final String? unitType;
+  final int? priceStart;
+  final String? priceFromText;
+  final int? sizeSqft;
+  final String? sizeText;
+  final String? imageUrl;
+
+  bool get hasContent =>
+      sourceUnitId != null ||
+      unitType != null ||
+      priceStart != null ||
+      priceFromText != null ||
+      sizeSqft != null ||
+      sizeText != null ||
+      imageUrl != null;
+
+  factory PropertyUnitOption.fromJson(Map<String, dynamic> json) {
+    return PropertyUnitOption(
+      sourceUnitId: Property._nullableStringFromJson(
+        json['source_unit_id'] ?? json['sourceUnitId'] ?? json['id'],
+      ),
+      unitType: Property._nullableStringFromJson(
+        json['unit_type'] ?? json['unitType'] ?? json['name'],
+      ),
+      priceStart: Property._intFromJson(
+        json['price_start'] ?? json['priceStart'],
+      ),
+      priceFromText: Property._nullableStringFromJson(
+        json['price_from_text'] ?? json['priceFromText'],
+      ),
+      sizeSqft: Property._intFromJson(
+        json['size_sqft'] ?? json['sizeSqft'] ?? json['base_area'],
+      ),
+      sizeText: Property._nullableStringFromJson(
+        json['size_text'] ?? json['sizeText'],
+      ),
+      imageUrl: Property._nullableStringFromJson(
+        json['image_url'] ?? json['imageUrl'] ?? json['img_url'],
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (sourceUnitId != null) 'source_unit_id': sourceUnitId,
+      if (unitType != null) 'unit_type': unitType,
+      if (priceStart != null) 'price_start': priceStart,
+      if (priceFromText != null) 'price_from_text': priceFromText,
+      if (sizeSqft != null) 'size_sqft': sizeSqft,
+      if (sizeText != null) 'size_text': sizeText,
+      if (imageUrl != null) 'image_url': imageUrl,
+    };
   }
 }

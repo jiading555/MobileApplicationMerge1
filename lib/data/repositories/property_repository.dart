@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/utils/property_area_resolver.dart';
 import '../../models/area_data.dart';
 import '../../models/property.dart';
 
@@ -22,11 +23,11 @@ class PropertyRepository {
       return rows.indexed
           .map(
             (entry) => Property.fromTeduhJson(
-          entry.$2,
-          areaId: _areaIdForRow(entry.$2, areas),
-          palette: (entry.$1 + 10) % 12,
-        ),
-      )
+              entry.$2,
+              areaId: resolveAreaIdForRow(entry.$2, areas),
+              palette: (entry.$1 + 10) % 12,
+            ),
+          )
           .toList();
     } on PropertyRepositoryException {
       rethrow;
@@ -39,18 +40,24 @@ class PropertyRepository {
     }
   }
 
-  Future<void> upsertProperties(List<Property> properties) async {
+  Future<int> upsertProperties(List<Property> properties) async {
     if (properties.isEmpty) {
-      return;
+      return 0;
     }
 
     try {
+      final updatedAt = DateTime.now().toUtc();
       await _supabase
           .from('properties')
           .upsert(
-        properties.map((property) => property.toSupabaseJson()).toList(),
-        onConflict: 'source_id',
-      );
+            properties
+                .map(
+                  (property) => property.toSupabaseJson(updatedAt: updatedAt),
+                )
+                .toList(),
+            onConflict: 'source_id',
+          );
+      return properties.length;
     } catch (error, stackTrace) {
       throw PropertyRepositoryException(
         'Failed to sync TEDUH properties to Supabase.',
@@ -60,47 +67,23 @@ class PropertyRepository {
     }
   }
 
-  String _areaIdForRow(
-      Map<String, dynamic> row,
-      List<AreaData> areas,
-      ) {
-    final state = _normalise(row['state']);
-    final district = _normalise(row['district']);
-
-    for (final area in areas) {
-      if (_normalise(area.state) == state &&
-          _normalise(area.name) == district) {
-        return area.id;
-      }
-    }
-
-    for (final area in areas) {
-      if (_normalise(area.state) == state) {
-        return area.id;
-      }
-    }
-
-    return areas.isEmpty ? 'unknown' : areas.first.id;
-  }
-
-  String _normalise(Object? value) {
-    return value
-        .toString()
-        .trim()
-        .toLowerCase()
-        .replaceAll(
-      RegExp(r'[^a-z0-9]+'),
-      ' ',
+  static String resolveAreaIdForRow(
+    Map<String, dynamic> row,
+    List<AreaData> areas,
+  ) {
+    return PropertyAreaResolver.resolveAreaIdForLocation(
+      sourceAreaId: row['area_id'] ?? row['areaId'],
+      state: row['state'],
+      district: row['district'],
+      address: row['address'],
+      rawLocation: row['raw_location'] ?? row['rawLocation'],
+      areas: areas,
     );
   }
 }
 
 class PropertyRepositoryException implements Exception {
-  const PropertyRepositoryException(
-      this.message,
-      this.cause,
-      this.stackTrace,
-      );
+  const PropertyRepositoryException(this.message, this.cause, this.stackTrace);
 
   final String message;
   final Object cause;

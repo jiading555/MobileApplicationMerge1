@@ -95,113 +95,115 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     },
                   )
                 : Form(
-              key: formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Icon(
-                    Icons.person_add_alt_1_rounded,
-                    size: 58,
-                    color: AppTheme.blue,
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Start your property journey',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 28),
-                  TextFormField(
-                    controller: nameController,
-                    onChanged: (_) => setState(() => error = null),
-                    autovalidateMode:
-                        AutovalidateMode.onUserInteraction,
-                    decoration: const InputDecoration(
-                      labelText: 'Full name',
-                      prefixIcon: Icon(Icons.person_outline_rounded),
-                      errorMaxLines: 3,
+                    key: formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.person_add_alt_1_rounded,
+                          size: 58,
+                          color: AppTheme.blue,
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Start your property journey',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 28),
+                        TextFormField(
+                          controller: nameController,
+                          onChanged: (_) => setState(() => error = null),
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          decoration: const InputDecoration(
+                            labelText: 'Full name',
+                            prefixIcon: Icon(Icons.person_outline_rounded),
+                            errorMaxLines: 3,
+                          ),
+                          validator: (value) =>
+                              value == null || value.trim().length < 2
+                              ? 'Enter your full name'
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: emailController,
+                          onChanged: (_) => setState(() => error = null),
+                          keyboardType: TextInputType.emailAddress,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          decoration: const InputDecoration(
+                            labelText: 'Email address',
+                            prefixIcon: Icon(Icons.mail_outline_rounded),
+                            errorMaxLines: 3,
+                          ),
+                          validator: AuthValidators.email,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: passwordController,
+                          onChanged: (_) => setState(() => error = null),
+                          obscureText: true,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: Icon(Icons.lock_outline_rounded),
+                            errorMaxLines: 3,
+                          ),
+                          validator: AuthValidators.registrationPassword,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Use 8+ characters with uppercase, lowercase and a special character.',
+                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: confirmPasswordController,
+                          onChanged: (_) => setState(() => error = null),
+                          obscureText: true,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          decoration: const InputDecoration(
+                            labelText: 'Confirm password',
+                            prefixIcon: Icon(Icons.lock_reset_rounded),
+                            errorMaxLines: 3,
+                          ),
+                          validator: (value) => AuthValidators.confirmPassword(
+                            value,
+                            passwordController.text,
+                          ),
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: 14),
+                          Text(
+                            error!,
+                            style: const TextStyle(color: Color(0xFFB42318)),
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        FilledButton(
+                          onPressed:
+                              AppScope.of(context).isAccountBusy || !canSubmit
+                              ? null
+                              : submit,
+                          child: AppScope.of(context).isAccountBusy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Create account'),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'A confirmation email may be required before your first sign in.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                        ),
+                      ],
                     ),
-                    validator: (value) =>
-                        value == null || value.trim().length < 2
-                        ? 'Enter your full name'
-                        : null,
                   ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: emailController,
-                    onChanged: (_) => setState(() => error = null),
-                    keyboardType: TextInputType.emailAddress,
-                    autovalidateMode:
-                        AutovalidateMode.onUserInteraction,
-                    decoration: const InputDecoration(
-                      labelText: 'Email address',
-                      prefixIcon: Icon(Icons.mail_outline_rounded),
-                      errorMaxLines: 3,
-                    ),
-                    validator: AuthValidators.email,
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: passwordController,
-                    onChanged: (_) => setState(() => error = null),
-                    obscureText: true,
-                    autovalidateMode:
-                        AutovalidateMode.onUserInteraction,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: Icon(Icons.lock_outline_rounded),
-                      errorMaxLines: 3,
-                    ),
-                    validator: AuthValidators.registrationPassword,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Use 8+ characters with uppercase, lowercase and a special character.',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: confirmPasswordController,
-                    onChanged: (_) => setState(() => error = null),
-                    obscureText: true,
-                    autovalidateMode:
-                        AutovalidateMode.onUserInteraction,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm password',
-                      prefixIcon: Icon(Icons.lock_reset_rounded),
-                      errorMaxLines: 3,
-                    ),
-                    validator: (value) => AuthValidators.confirmPassword(
-                      value,
-                      passwordController.text,
-                    ),
-                  ),
-                  if (error != null) ...[
-                    const SizedBox(height: 14),
-                    Text(
-                      error!,
-                      style: const TextStyle(color: Color(0xFFB42318)),
-                    ),
-                  ],
-                  const SizedBox(height: 22),
-                  FilledButton(
-                    onPressed:
-                        AppScope.of(context).isAccountBusy || !canSubmit
-                        ? null
-                        : submit,
-                    child: AppScope.of(context).isAccountBusy
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Create account'),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'A confirmation email may be required before your first sign in.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
           ),
         ),
       ),
@@ -227,7 +229,11 @@ class _ConfirmationSent extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(Icons.mark_email_read_rounded, size: 68, color: AppTheme.blue),
+        const Icon(
+          Icons.mark_email_read_rounded,
+          size: 68,
+          color: AppTheme.blue,
+        ),
         const SizedBox(height: 18),
         Text(
           'Check your email',
@@ -251,4 +257,3 @@ class _ConfirmationSent extends StatelessWidget {
     );
   }
 }
-

@@ -17,21 +17,23 @@ class AdvisorBrand extends StatelessWidget {
         const _AdvisorMark(),
         if (!compact) ...[
           const SizedBox(width: 10),
-          RichText(
-            text: TextSpan(
-              style: TextStyle(
-                color: foreground,
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-              children: const [
-                TextSpan(text: 'Smart'),
-                TextSpan(
-                  text: 'Advisor',
-                  style: TextStyle(color: AppTheme.blue),
+          Flexible(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
                 ),
-              ],
+                children: const [
+                  TextSpan(text: 'Smart'),
+                  TextSpan(
+                    text: 'Advisor',
+                    style: TextStyle(color: AppTheme.blue),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

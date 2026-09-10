@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
 
+import '../core/utils/location_normalizer.dart';
+
 class TransportSnapshot {
   const TransportSnapshot({
     required this.stopCounts,
@@ -18,7 +20,8 @@ class TransportSnapshot {
 }
 
 class TransportDataService {
-  TransportDataService({http.Client? client}) : _client = client ?? http.Client();
+  TransportDataService({http.Client? client})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -159,18 +162,26 @@ class TransportDataService {
   }
 
   static List<List<_Point>> _readPolygon(List coordinates) {
-    return coordinates.whereType<List>().map((ring) {
-      return ring.whereType<List>().where((coordinate) {
-        return coordinate.length >= 2 &&
-            coordinate[0] is num &&
-            coordinate[1] is num;
-      }).map((coordinate) {
-        return _Point(
-          (coordinate[0] as num).toDouble(),
-          (coordinate[1] as num).toDouble(),
-        );
-      }).toList();
-    }).where((ring) => ring.length >= 3).toList();
+    return coordinates
+        .whereType<List>()
+        .map((ring) {
+          return ring
+              .whereType<List>()
+              .where((coordinate) {
+                return coordinate.length >= 2 &&
+                    coordinate[0] is num &&
+                    coordinate[1] is num;
+              })
+              .map((coordinate) {
+                return _Point(
+                  (coordinate[0] as num).toDouble(),
+                  (coordinate[1] as num).toDouble(),
+                );
+              })
+              .toList();
+        })
+        .where((ring) => ring.length >= 3)
+        .toList();
   }
 
   static List<Map<String, String>> _parseCsv(String source) {
@@ -211,19 +222,7 @@ class TransportDataService {
   }
 
   static String locationKey(String state, String district) {
-    return '${_normalise(state)}|${_normalise(district)}';
-  }
-
-  static String _normalise(String value) {
-    final normalised = value
-        .trim()
-        .toLowerCase()
-        .replaceAll('-', ' ')
-        .replaceAll('_', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ');
-    if (normalised == 'pulau pinang') return 'penang';
-    if (normalised == 'ulu langat') return 'hulu langat';
-    return normalised;
+    return LocationNormalizer.stateDistrictKey(state, district);
   }
 }
 
@@ -254,8 +253,7 @@ class _DistrictBoundary {
       final xj = ring[j].longitude;
       final yj = ring[j].latitude;
       final crosses =
-          ((yi > y) != (yj > y)) &&
-          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+          ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
       if (crosses) inside = !inside;
     }
     return inside;

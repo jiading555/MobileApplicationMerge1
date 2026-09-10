@@ -5,6 +5,7 @@ import '../../app/app_scope.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/line_chart.dart';
 import '../../core/widgets/metric_card.dart';
 import '../../core/widgets/page_container.dart';
@@ -40,15 +41,20 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    if (state.areas.isEmpty) {
+      return const Scaffold(
+        appBar: _AnalysisAppBar(),
+        body: SafeArea(child: _NoAreasAvailable()),
+      );
+    }
     selectedAreaId ??= state.areas.first.id;
     var area = state.areaFor(selectedAreaId!);
     final states = state.areas.map((item) => item.state).toSet().toList()
       ..sort();
     selectedState ??= area.state;
-    var stateDistricts = state.areas
-        .where((item) => item.state == selectedState)
-        .toList()
-      ..sort((left, right) => left.name.compareTo(right.name));
+    var stateDistricts =
+        state.areas.where((item) => item.state == selectedState).toList()
+          ..sort((left, right) => left.name.compareTo(right.name));
     if (!stateDistricts.any((item) => item.id == selectedAreaId)) {
       selectedAreaId = stateDistricts.first.id;
       area = state.areaFor(selectedAreaId!);
@@ -63,7 +69,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         ? 'processed JSON'
         : 'local sample';
     final refreshMessage = state.governmentDataSyncMessage;
-    final refreshFailed = refreshMessage?.startsWith('Refresh failed.') ?? false;
+    final refreshFailed =
+        refreshMessage?.startsWith('Refresh failed.') ?? false;
     return Scaffold(
       appBar: AppBar(
         title: const FittedBox(
@@ -126,12 +133,13 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         .toList(),
                     onChanged: (value) {
                       if (value == null || value == selectedState) return;
-                      final districts = state.areas
-                          .where((item) => item.state == value)
-                          .toList()
-                        ..sort(
-                          (left, right) => left.name.compareTo(right.name),
-                        );
+                      final districts =
+                          state.areas
+                              .where((item) => item.state == value)
+                              .toList()
+                            ..sort(
+                              (left, right) => left.name.compareTo(right.name),
+                            );
                       setState(() {
                         selectedState = value;
                         selectedAreaId = districts.first.id;
@@ -140,8 +148,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       });
                     },
                   );
-                  final districtSelect =
-                      DropdownButtonFormField<String>(
+                  final districtSelect = DropdownButtonFormField<String>(
                     key: ValueKey(selectedState),
                     initialValue: selectedAreaId,
                     isExpanded: true,
@@ -203,7 +210,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       ],
                     ),
                   );
-                  return constraints.maxWidth >= 900
+                  return ResponsiveLayout.isTablet(context)
                       ? Row(
                           children: [
                             Expanded(flex: 2, child: stateSelect),
@@ -238,10 +245,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: Color(0xFFB3261E),
-                      ),
+                      const Icon(Icons.error_outline, color: Color(0xFFB3261E)),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -270,9 +274,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                             showCheckmark: false,
                             backgroundColor: Colors.white,
                             selectedColor: const Color(0xFFDCEBFF),
-                            side: const BorderSide(
-                              color: Color(0xFFB8C7DA),
-                            ),
+                            side: const BorderSide(color: Color(0xFFB8C7DA)),
                             labelStyle: TextStyle(
                               color: selectedView == label
                                   ? AppTheme.blue
@@ -452,6 +454,60 @@ class _DataSource {
   final String url;
 }
 
+class _AnalysisAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _AnalysisAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: const FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Market trend & analytics',
+          maxLines: 1,
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoAreasAvailable extends StatelessWidget {
+  const _NoAreasAvailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return PageContainer(
+      child: Center(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded, color: AppTheme.muted),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'No area profiles are available yet. Refresh official data or check the Supabase configuration.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Overview extends StatelessWidget {
   const _Overview({
     required this.area,
@@ -498,29 +554,30 @@ class _Overview extends StatelessWidget {
       activeType,
       marketArea: activeMarketArea,
     );
+    final infrastructureScore = area.infrastructureScore;
     final cards = [
       MetricCard(
         label: 'Population',
-        value: area.populationYear == null
+        value: area.population == null
             ? 'Unavailable'
-            : formatCount(area.population),
+            : formatCount(area.population!),
         trend: _yearLabel('Year', area.populationYear),
         icon: Icons.groups_2_outlined,
       ),
       MetricCard(
         label: 'Median household income',
-        value: area.incomeYear == null
+        value: area.medianIncome == null
             ? 'Unavailable'
-            : formatRinggit(area.medianIncome),
+            : formatRinggit(area.medianIncome!),
         trend: _yearLabel('Year', area.incomeYear),
         icon: Icons.account_balance_wallet_outlined,
         color: AppTheme.teal,
       ),
       MetricCard(
         label: 'Normalized safety',
-        value: area.crimeYear == null
+        value: area.safetyScore == null
             ? 'Unavailable'
-            : '${area.safetyScore.round()}/100',
+            : '${area.safetyScore!.round()}/100',
         trend: area.crimeYear == null
             ? 'No crime data reference'
             : 'Crime data ${area.crimeYear}',
@@ -529,19 +586,17 @@ class _Overview extends StatelessWidget {
       ),
       MetricCard(
         label: 'Infrastructure',
-        value: area.educationYear == null &&
-                area.hospitalYear == null &&
-                area.transportYear == null
+        value: infrastructureScore == null
             ? 'Unavailable'
-            : '${area.infrastructureScore.round()}/100',
+            : '${infrastructureScore.round()}/100',
         trend: [
-          area.educationYear == null
+          area.schools == null
               ? 'schools unavailable'
               : '${area.schools} schools (${area.educationYear})',
-          area.hospitalYear == null
+          area.hospitalBeds == null
               ? 'hospital beds unavailable'
               : '${area.hospitalBeds} beds (${area.hospitalYear})',
-          area.transportYear == null
+          area.transportStopCount == null
               ? 'transport unavailable'
               : '${area.transportStopCount} transport stops '
                     '(${area.transportYear})',
@@ -565,14 +620,11 @@ class _Overview extends StatelessWidget {
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 900
-                ? 4
-                : constraints.maxWidth >= 560
-                ? 2
-                : 1;
-            final width = (constraints.maxWidth - (columns - 1) * 12)
-                .clamp(0.0, double.infinity)
-                .toDouble() /
+            final columns = ResponsiveLayout.isTablet(context) ? 4 : 1;
+            final width =
+                (constraints.maxWidth - (columns - 1) * 12)
+                    .clamp(0.0, double.infinity)
+                    .toDouble() /
                 columns;
             return Wrap(
               spacing: 12,
@@ -601,7 +653,7 @@ class _Overview extends StatelessWidget {
                 ? _ChartCard(
                     title: 'Historical price indicator',
                     subtitle:
-                        'NAPIC $activeMarketArea · $activeType median (RM/unit)',
+                        'NAPIC $activeMarketArea - $activeType median (RM/unit)',
                     value: formatRinggit(latestPrice.round()),
                     trend: priceGrowth == null
                         ? 'More quarters required'
@@ -617,7 +669,7 @@ class _Overview extends StatelessWidget {
                         'for this district.',
                   );
             final demand = _DemandCard(area: area);
-            return constraints.maxWidth >= 820
+            return ResponsiveLayout.isTablet(context)
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -679,11 +731,7 @@ class _PriceFilters extends StatelessWidget {
           .map(
             (option) => DropdownMenuItem(
               value: option,
-              child: Text(
-                option,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           )
           .toList(),
@@ -699,7 +747,7 @@ class _PriceFilters extends StatelessWidget {
       onChanged: onPropertyTypeChanged,
     );
     return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth >= 680
+      builder: (context, constraints) => ResponsiveLayout.isTablet(context)
           ? Row(
               children: [
                 Expanded(child: marketFilter),
@@ -708,11 +756,7 @@ class _PriceFilters extends StatelessWidget {
               ],
             )
           : Column(
-              children: [
-                marketFilter,
-                const SizedBox(height: 12),
-                typeFilter,
-              ],
+              children: [marketFilter, const SizedBox(height: 12), typeFilter],
             ),
     );
   }
@@ -750,11 +794,7 @@ class _PropertyTypeFilter extends StatelessWidget {
           .map(
             (option) => DropdownMenuItem(
               value: option,
-              child: Text(
-                option,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           )
           .toList(),
@@ -790,7 +830,10 @@ class _SourceSummary extends StatelessWidget {
         children: [
           _SourceItem(label: 'Data mode', value: sourceMode),
           _SourceItem(label: 'Source', value: area.source),
-          _SourceItem(label: 'Latest year', value: area.snapshotDate),
+          _SourceItem(
+            label: 'Latest year',
+            value: area.snapshotDate ?? 'Unavailable',
+          ),
           _SourceItem(
             label: 'Retrieved',
             value: retrieved == null
@@ -912,8 +955,7 @@ class _PriceTrend extends StatelessWidget {
         else ...[
           _ChartCard(
             title: 'Historical price indicator',
-            subtitle:
-                'NAPIC $activeMarketArea · $activeType median (RM/unit)',
+            subtitle: 'NAPIC $activeMarketArea - $activeType median (RM/unit)',
             value: formatRinggit(latestPrice.round()),
             trend: changePercent == null
                 ? 'More quarters required'
@@ -968,22 +1010,23 @@ class _DistrictComparison extends StatelessWidget {
     final stateAreas = areas
         .where((area) => area.state == selectedState)
         .toList();
-    final typeOptions = <String>{
-      'All residential',
-      for (final area in stateAreas) ...area.marketPropertyTypes,
-    }.toList()
-      ..sort((left, right) {
-        if (left == 'All residential') return -1;
-        if (right == 'All residential') return 1;
-        return left.compareTo(right);
-      });
+    final typeOptions =
+        <String>{
+          'All residential',
+          for (final area in stateAreas) ...area.marketPropertyTypes,
+        }.toList()..sort((left, right) {
+          if (left == 'All residential') return -1;
+          if (right == 'All residential') return 1;
+          return left.compareTo(right);
+        });
     final activeType = typeOptions.contains(propertyType)
         ? propertyType
         : 'All residential';
     final ranked = [...stateAreas]
       ..sort(
-        (left, right) => (right.priceGrowthFor(activeType) ?? -999)
-            .compareTo(left.priceGrowthFor(activeType) ?? -999),
+        (left, right) => (right.priceGrowthFor(activeType) ?? -999).compareTo(
+          left.priceGrowthFor(activeType) ?? -999,
+        ),
       );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1012,10 +1055,7 @@ class _DistrictComparison extends StatelessWidget {
                 const _ComparisonLegend(),
                 const SizedBox(height: 18),
                 ...ranked.map(
-                  (area) => _AreaBars(
-                    area: area,
-                    propertyType: activeType,
-                  ),
+                  (area) => _AreaBars(area: area, propertyType: activeType),
                 ),
               ],
             ),
@@ -1033,52 +1073,44 @@ class _DistrictComparison extends StatelessWidget {
                 DataColumn(label: Text('Population')),
                 DataColumn(label: Text('Median income')),
               ],
-              rows: ranked
-                  .map(
-                    (area) {
-                      final price = area.latestPriceFor(activeType);
-                      final periods = area.pricePeriodsFor(activeType);
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            Text(
-                              area.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              price == null
-                                  ? 'Unavailable'
-                                  : formatRinggit(price.round()),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              periods.isEmpty ? 'Unavailable' : periods.last,
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              area.populationYear == null
-                                  ? 'Unavailable'
-                                  : formatCount(area.population),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              area.incomeYear == null
-                                  ? 'Unavailable'
-                                  : formatRinggit(area.medianIncome),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  )
-                  .toList(),
+              rows: ranked.map((area) {
+                final price = area.latestPriceFor(activeType);
+                final periods = area.pricePeriodsFor(activeType);
+                return DataRow(
+                  cells: [
+                    DataCell(
+                      Text(
+                        area.name,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        price == null
+                            ? 'Unavailable'
+                            : formatRinggit(price.round()),
+                      ),
+                    ),
+                    DataCell(
+                      Text(periods.isEmpty ? 'Unavailable' : periods.last),
+                    ),
+                    DataCell(
+                      Text(
+                        area.population == null
+                            ? 'Unavailable'
+                            : formatCount(area.population!),
+                      ),
+                    ),
+                    DataCell(
+                      Text(
+                        area.medianIncome == null
+                            ? 'Unavailable'
+                            : formatRinggit(area.medianIncome!),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -1287,11 +1319,11 @@ class _DemandInterpretation extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = _meaningFor(score);
     const ranges = [
-      ('0–24', 'Significant demand decline'),
-      ('25–44', 'Weak demand'),
-      ('45–55', 'Broadly stable'),
-      ('56–74', 'Growing demand'),
-      ('75–100', 'Strong demand growth'),
+      ('0-24', 'Significant demand decline'),
+      ('25-44', 'Weak demand'),
+      ('45-55', 'Broadly stable'),
+      ('56-74', 'Growing demand'),
+      ('75-100', 'Strong demand growth'),
     ];
     return Container(
       width: double.infinity,
@@ -1494,10 +1526,7 @@ class _Legend extends StatelessWidget {
 }
 
 class _AreaBars extends StatelessWidget {
-  const _AreaBars({
-    required this.area,
-    required this.propertyType,
-  });
+  const _AreaBars({required this.area, required this.propertyType});
 
   final AreaData area;
   final String propertyType;
@@ -1544,7 +1573,7 @@ class _AreaBars extends StatelessWidget {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'Safety unavailable — no data reference',
+                            'Safety unavailable - no data reference',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -1555,14 +1584,32 @@ class _AreaBars extends StatelessWidget {
                         ),
                       )
                     : _Bar(
-                        value: area.safetyScore / 100,
+                        value: area.safetyScore == null
+                            ? 0
+                            : area.safetyScore! / 100,
                         color: AppTheme.green,
                       ),
                 const SizedBox(height: 4),
-                _Bar(
-                  value: area.infrastructureScore / 100,
-                  color: AppTheme.teal,
-                ),
+                area.infrastructureScore == null
+                    ? const SizedBox(
+                        height: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Infrastructure unavailable',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: 8,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _Bar(
+                        value: area.infrastructureScore! / 100,
+                        color: AppTheme.teal,
+                      ),
               ],
             ),
           ),
