@@ -1116,57 +1116,8 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
     return types;
   }
 
-  void _changeBudget(AppState state, double value) {
-    setState(() {
-      maximumBudget = value;
-
-      final states = _availableStates(state: state, targetBudget: value);
-
-      if (selectedState.isNotEmpty && !states.contains(selectedState)) {
-        selectedState = '';
-        selectedDistrict = '';
-        propertyType = 'Any';
-        return;
-      }
-
-      if (selectedState.isNotEmpty && selectedDistrict.isNotEmpty) {
-        final areas = _availableAreas(
-          state: state,
-          targetBudget: value,
-          targetState: selectedState,
-        );
-
-        final areaExists = areas.any(
-          (area) => LocationNormalizer.districtMatches(
-            area.name,
-            selectedDistrict,
-            state: area.state,
-          ),
-        );
-
-        if (!areaExists) {
-          selectedDistrict = '';
-          propertyType = 'Any';
-          return;
-        }
-
-        final areaId = _areaIdForSelection(
-          state: state,
-          targetState: selectedState,
-          targetDistrict: selectedDistrict,
-        );
-
-        final types = _availablePropertyTypes(
-          state: state,
-          targetBudget: value,
-          targetAreaId: areaId,
-        );
-
-        if (propertyType != 'Any' && !types.contains(propertyType)) {
-          propertyType = 'Any';
-        }
-      }
-    });
+  void _changeBudget(double value) {
+    setState(() => maximumBudget = value);
   }
 
   @override
@@ -1262,7 +1213,7 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
                         minimum: _minimumBudget,
                         maximum: _maximumBudget,
                         divisions: _budgetDivisions,
-                        onChangeEnd: (value) => _changeBudget(state, value),
+                        onChangeEnd: _changeBudget,
                       ),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 4),
