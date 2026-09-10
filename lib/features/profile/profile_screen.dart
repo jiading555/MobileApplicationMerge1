@@ -854,8 +854,10 @@ class _ProfileBudgetControlState extends State<_ProfileBudgetControl> {
           max: widget.maximum,
           divisions: widget.divisions,
           value: _draftValue,
-          onChanged: (value) => setState(() => _draftValue = value),
-          onChangeEnd: widget.onChangeEnd,
+          onChanged: (value) {
+            setState(() => _draftValue = value);
+            widget.onChangeEnd(value);
+          },
         ),
       ],
     );
