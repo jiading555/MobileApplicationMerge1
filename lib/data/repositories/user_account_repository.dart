@@ -74,6 +74,37 @@ class UserAccountRepository {
     });
   }
 
+  Future<Set<String>> loadFavouritePropertyIds(String userId) async {
+    final rows = await _client
+        .from('user_favourites')
+        .select('property_id')
+        .eq('user_id', userId);
+    return rows
+        .map((row) => row['property_id']?.toString())
+        .whereType<String>()
+        .toSet();
+  }
+
+  Future<void> setFavourite({
+    required String userId,
+    required String propertyId,
+    required bool isFavourite,
+  }) async {
+    if (isFavourite) {
+      await _client.from('user_favourites').upsert({
+        'user_id': userId,
+        'property_id': propertyId,
+      });
+      return;
+    }
+
+    await _client
+        .from('user_favourites')
+        .delete()
+        .eq('user_id', userId)
+        .eq('property_id', propertyId);
+  }
+
   Future<String> uploadAvatar({
     required String userId,
     required Uint8List bytes,
