@@ -23,6 +23,8 @@ BOUNDARIES_URL = (
 GTFS_FEEDS = (
     "https://api.data.gov.my/gtfs-static/ktmb",
     "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kl",
+    "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-penang",
+    "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kuantan",
     "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-mrtfeeder",
     "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-rail-kl",
 )
