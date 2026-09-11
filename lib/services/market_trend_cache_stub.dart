@@ -5,6 +5,11 @@ class MarketTrendCacheEntry {
 
   final List<AreaData> areas;
   final DateTime updatedAt;
+
+  bool isFreshAt(DateTime now) {
+    final age = now.toUtc().difference(updatedAt.toUtc());
+    return !age.isNegative && age < const Duration(days: 1);
+  }
 }
 
 class MarketTrendCache {
