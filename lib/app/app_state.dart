@@ -189,11 +189,19 @@ class AppState extends ChangeNotifier {
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
+      if (!isUsingCloudAreaProfiles) {
+        throw StateError(
+          openDataLoadMessage ??
+              'The latest cloud data could not be reached; cached data is still displayed.',
+        );
+      }
       latestDataRefreshMessage =
           'Latest data refreshed: ${properties.length} properties and '
           '${areas.length} areas loaded.';
     } catch (error) {
-      latestDataRefreshMessage = 'Latest data refresh failed: $error';
+      latestDataRefreshMessage = _isNetworkErrorMessage(error.toString())
+          ? 'Refresh failed: no internet connection. Cached data is still displayed.'
+          : 'Latest data refresh failed. Cached data is still displayed.';
     } finally {
       isRefreshingLatestData = false;
       notifyListeners();
@@ -232,9 +240,10 @@ class AppState extends ChangeNotifier {
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
-      if (areas.isEmpty) {
+      if (areas.isEmpty || !isUsingCloudAreaProfiles) {
         throw StateError(
-          'Supabase returned no area profiles; keeping the previous data.',
+          openDataLoadMessage ??
+              'Supabase returned no area profiles; keeping the cached data.',
         );
       }
       final years = _dataYears(areas);
@@ -242,8 +251,7 @@ class AppState extends ChangeNotifier {
           ? ''
           : ' Data years: ${years.join(', ')}.';
       governmentDataRefreshMessage =
-          'Latest data reloaded: ${properties.length} properties and '
-          '${areas.length} areas loaded from Supabase.$yearSuffix';
+          'Latest market data reloaded from Supabase.$yearSuffix';
     } catch (error) {
       areas = previousAreas;
       properties = previousProperties;
@@ -255,7 +263,9 @@ class AppState extends ChangeNotifier {
       isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
       marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
       _invalidateDataCaches();
-      governmentDataRefreshMessage = 'Latest data reload failed: $error';
+      governmentDataRefreshMessage = _isNetworkErrorMessage(error.toString())
+          ? 'Refresh failed: no internet connection. Cached market data is still displayed.'
+          : 'Latest market data could not be reloaded. Cached data is still displayed.';
     } finally {
       isRefreshingGovernmentData = false;
       notifyListeners();
