@@ -1,3 +1,4 @@
+import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
 import 'package:smart_property_advisor/data/asset_repository.dart';
@@ -6,6 +7,7 @@ import 'package:smart_property_advisor/data/repositories/property_repository.dar
 import 'package:smart_property_advisor/models/area_data.dart';
 import 'package:smart_property_advisor/models/area_profile.dart';
 import 'package:smart_property_advisor/models/property.dart';
+import 'package:smart_property_advisor/services/market_trend_cache.dart';
 
 void main() {
   test('startup does not trigger government fetch or upsert', () async {
@@ -28,6 +30,71 @@ void main() {
     expect(state.properties, hasLength(1));
   });
 
+  test('startup restores market cache before cloud area refresh', () async {
+    final areaRepository = _FakeAreaProfileRepository();
+    final propertyRepository = _FakePropertyRepository();
+    final cache = _FakeMarketTrendCache(
+      entry: MarketTrendCacheEntry(
+        areas: const [_cachedArea],
+        updatedAt: DateTime.utc(2026, 9, 11, 1),
+      ),
+    );
+    final state = AppState(
+      repository: const _FakeAssetRepository(),
+      areaProfileRepository: areaRepository,
+      propertyRepository: propertyRepository,
+      marketTrendCache: cache,
+    );
+
+    await state.initialise();
+
+    expect(cache.loads, 1);
+    expect(areaRepository.reads, 0);
+    expect(propertyRepository.reads, 1);
+    expect(state.areas.single.id, 'cached');
+    expect(state.isUsingMarketTrendCache, isTrue);
+    expect(state.marketTrendCacheUpdatedAt, DateTime.utc(2026, 9, 11, 1));
+  });
+
+  test(
+    'fresh cache does not auto refresh when market data is requested',
+    () async {
+      final areaRepository = _FakeAreaProfileRepository();
+      final state = AppState(
+        repository: const _FakeAssetRepository(),
+        areaProfileRepository: areaRepository,
+        propertyRepository: _FakePropertyRepository(),
+      );
+      state.areas = const [_cachedArea];
+      state.marketTrendCacheUpdatedAt = DateTime.now().toUtc();
+
+      await state.ensureInitialMarketData();
+
+      expect(areaRepository.reads, 0);
+    },
+  );
+
+  test('expired cache auto refreshes only once per runtime', () async {
+    final areaRepository = _OfflineAreaProfileRepository();
+    final state = AppState(
+      repository: const _FakeAssetRepository(),
+      areaProfileRepository: areaRepository,
+      propertyRepository: _FakePropertyRepository(),
+    );
+    state.areas = const [_cachedArea];
+    state.properties = const [_oldProperty];
+    state.marketTrendCacheUpdatedAt = DateTime.now().toUtc().subtract(
+      const Duration(days: 2),
+    );
+
+    await state.ensureInitialMarketData();
+    await state.ensureInitialMarketData();
+
+    expect(areaRepository.reads, 1);
+    expect(state.areas, const [_cachedArea]);
+    expect(state.properties, const [_oldProperty]);
+  });
+
   test('normal latest-data refresh only reads shared Supabase data', () async {
     final areaRepository = _FakeAreaProfileRepository();
     final propertyRepository = _FakePropertyRepository();
@@ -37,7 +104,7 @@ void main() {
       propertyRepository: propertyRepository,
     );
 
-    await state.refreshLatestData();
+    final result = await state.refreshLatestData();
 
     expect(areaRepository.reads, 1);
     expect(propertyRepository.reads, 1);
@@ -46,7 +113,9 @@ void main() {
     expect(state.isRefreshingLatestData, isFalse);
     expect(state.properties, hasLength(1));
     expect(state.areas.single.id, 'selangor_gombak');
+    expect(result.succeeded, isTrue);
     expect(state.latestDataRefreshMessage, contains('Latest data refreshed'));
+    expect(state.latestDataRefreshStatus, DataRefreshStatus.success);
   });
 
   test('explicit latest-data reload only reads Supabase', () async {
@@ -58,7 +127,7 @@ void main() {
       propertyRepository: propertyRepository,
     );
 
-    await state.refreshGovernmentData();
+    final result = await state.refreshGovernmentData();
 
     expect(areaRepository.reads, 1);
     expect(propertyRepository.reads, 1);
@@ -66,10 +135,12 @@ void main() {
     expect(propertyRepository.upserts, 0);
     expect(state.properties, hasLength(1));
     expect(state.isRefreshingGovernmentData, isFalse);
+    expect(result.succeeded, isTrue);
     expect(
       state.governmentDataRefreshMessage,
-      contains('Latest data reloaded'),
+      contains('Latest market data reloaded from Supabase'),
     );
+    expect(state.governmentDataRefreshStatus, DataRefreshStatus.success);
   });
 
   test('failed latest-data reload keeps existing visible data', () async {
@@ -81,15 +152,87 @@ void main() {
     state.areas = const [_oldArea];
     state.properties = const [_oldProperty];
 
-    await state.refreshGovernmentData();
+    final result = await state.refreshGovernmentData();
 
     expect(state.areas, const [_oldArea]);
     expect(state.properties, const [_oldProperty]);
     expect(state.isRefreshingGovernmentData, isFalse);
+    expect(result.succeeded, isFalse);
     expect(
       state.governmentDataRefreshMessage,
-      contains('Latest data reload failed'),
+      'Latest market data could not be reloaded. Cached data is still displayed.',
     );
+    expect(state.governmentDataRefreshStatus, DataRefreshStatus.failure);
+  });
+
+  test('property refresh failure does not report success', () async {
+    final state = AppState(
+      repository: const _FakeAssetRepository(),
+      areaProfileRepository: _FakeAreaProfileRepository(),
+      propertyRepository: _FailingPropertyRepository(),
+    );
+    state.areas = const [_oldArea];
+    state.properties = const [_oldProperty];
+
+    final result = await state.refreshGovernmentData();
+
+    expect(state.areas, const [_oldArea]);
+    expect(state.properties, const [_oldProperty]);
+    expect(result.succeeded, isFalse);
+    expect(
+      result.message,
+      'Latest market data could not be reloaded. Cached data is still displayed.',
+    );
+    expect(state.governmentDataRefreshStatus, DataRefreshStatus.failure);
+  });
+
+  test('offline market refresh keeps cached data and timestamp', () async {
+    final cachedAt = DateTime.utc(2026, 9, 10, 1);
+    final cache = _FakeMarketTrendCache(
+      entry: MarketTrendCacheEntry(
+        areas: const [_cachedArea],
+        updatedAt: cachedAt,
+      ),
+    );
+    final state = AppState(
+      repository: const _FakeAssetRepository(),
+      areaProfileRepository: _OfflineAreaProfileRepository(),
+      propertyRepository: _FakePropertyRepository(),
+      marketTrendCache: cache,
+    );
+    state.areas = const [_cachedArea];
+    state.properties = const [_oldProperty];
+    state.marketTrendCacheUpdatedAt = cachedAt;
+    state.isUsingMarketTrendCache = true;
+
+    final result = await state.refreshGovernmentData();
+
+    expect(result.succeeded, isFalse);
+    expect(
+      result.message,
+      'Refresh failed: no internet connection. Cached market data is still displayed.',
+    );
+    expect(state.areas, const [_cachedArea]);
+    expect(state.properties, const [_oldProperty]);
+    expect(state.marketTrendCacheUpdatedAt, cachedAt);
+    expect(cache.saves, 0);
+  });
+
+  test('latest-data property failure keeps existing visible data', () async {
+    final state = AppState(
+      repository: const _FakeAssetRepository(),
+      areaProfileRepository: _FakeAreaProfileRepository(),
+      propertyRepository: _FailingPropertyRepository(),
+    );
+    state.areas = const [_oldArea];
+    state.properties = const [_oldProperty];
+
+    final result = await state.refreshLatestData();
+
+    expect(state.areas, const [_oldArea]);
+    expect(state.properties, const [_oldProperty]);
+    expect(result.succeeded, isFalse);
+    expect(state.latestDataRefreshStatus, DataRefreshStatus.failure);
   });
 }
 
@@ -109,6 +252,16 @@ const _oldArea = AreaData(
   priceGrowth: 1,
   priceHistory: [1],
   snapshotDate: '2026',
+);
+
+const _cachedArea = AreaData(
+  id: 'cached',
+  name: 'Cached',
+  state: 'Selangor',
+  priceHistory: [400000, 420000],
+  marketPricePeriods: ['2026 Q1', '2026 Q2'],
+  medianResidentialPrice: 420000,
+  marketPriceYear: 2026,
 );
 
 const _oldProperty = Property(
@@ -216,5 +369,49 @@ class _FakePropertyRepository extends PropertyRepository {
   Future<int> upsertProperties(List<Property> properties) async {
     upserts += 1;
     throw StateError('normal refresh must not upsert properties');
+  }
+}
+
+class _OfflineAreaProfileRepository extends AreaProfileRepository {
+  int reads = 0;
+
+  @override
+  Future<List<AreaProfile>> getAreaProfiles({int? limit}) async {
+    reads += 1;
+    throw AreaProfileRepositoryException(
+      'Failed to load area profiles from Supabase.',
+      http.ClientException('SocketException: Failed host lookup'),
+      StackTrace.empty,
+    );
+  }
+}
+
+class _FailingPropertyRepository extends PropertyRepository {
+  @override
+  Future<List<Property>> getProperties(List<AreaData> areas) async {
+    throw StateError('Supabase unavailable');
+  }
+}
+
+class _FakeMarketTrendCache extends MarketTrendCache {
+  _FakeMarketTrendCache({this.entry});
+
+  final MarketTrendCacheEntry? entry;
+  int loads = 0;
+  int saves = 0;
+  List<AreaData> savedAreas = const [];
+  DateTime? savedUpdatedAt;
+
+  @override
+  Future<MarketTrendCacheEntry?> load() async {
+    loads += 1;
+    return entry;
+  }
+
+  @override
+  Future<void> save(List<AreaData> areas, {required DateTime updatedAt}) async {
+    saves += 1;
+    savedAreas = areas;
+    savedUpdatedAt = updatedAt;
   }
 }

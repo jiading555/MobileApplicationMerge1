@@ -71,8 +71,6 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     _WelcomeHeader(name: state.user.name),
                     const SizedBox(height: 20),
-                    _SearchLauncher(onTap: () => selectDestination(1)),
-                    const SizedBox(height: 18),
                     _ModuleHub(onSelect: selectDestination),
                     const SizedBox(height: 30),
                     SectionHeader(
@@ -286,43 +284,6 @@ class _WelcomeHeader extends StatelessWidget {
           icon: const Icon(Icons.notifications_none_rounded),
         ),
       ],
-    );
-  }
-}
-
-class _SearchLauncher extends StatelessWidget {
-  const _SearchLauncher({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFFDCE3ED)),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 17, vertical: 16),
-          child: Row(
-            children: [
-              Icon(Icons.search_rounded, color: AppTheme.blue),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Search properties, locations, projects...',
-                  style: TextStyle(color: AppTheme.muted),
-                ),
-              ),
-              Icon(Icons.tune_rounded, color: AppTheme.muted),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

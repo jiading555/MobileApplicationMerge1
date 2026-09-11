@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/network_error_mapper.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 import '../../services/ai_advisor_chat_service.dart';
@@ -65,10 +67,9 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
     }
 
     if (widget.recommendations.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Generate property recommendations first.'),
-        ),
+      showAppSnackBar(
+        context,
+        message: 'Generate property recommendations first.',
       );
       return;
     }
@@ -111,7 +112,10 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
       setState(() {
         _messages.add(
           _ChatMessage(
-            text: 'Sorry, I could not generate an AI advisor response.\n\n$e',
+            text: NetworkErrorMapper.cleanMessage(
+              e,
+              fallback: NetworkErrorMapper.aiFailureMessage,
+            ),
             isUser: false,
             isError: true,
           ),
@@ -129,6 +133,9 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       if (!_scrollController.hasClients) {
         return;
       }

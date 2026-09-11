@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/gemini_config.dart';
+import '../core/utils/network_error_mapper.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 
@@ -44,19 +45,12 @@ class AiComparisonService {
 
       return text;
     } on TimeoutException {
-      throw Exception(
-        'AI comparison is taking longer than expected. '
-        'Please check your internet connection and try again.',
-      );
+      throw Exception(NetworkErrorMapper.offlineMessage);
     } catch (error) {
-      final message = error.toString();
-      if (message.contains('Gemini API error') ||
-          message.contains('Gemini returned')) {
-        rethrow;
+      if (NetworkErrorMapper.isNetworkError(error)) {
+        throw Exception(NetworkErrorMapper.offlineMessage);
       }
-      throw Exception(
-        'Failed to generate the AI comparison. Please try again.',
-      );
+      throw Exception(NetworkErrorMapper.aiFailureMessage);
     }
   }
 

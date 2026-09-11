@@ -5,7 +5,9 @@ import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/network_error_mapper.dart';
 import '../../core/utils/responsive_layout.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
@@ -829,6 +831,9 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       if (_recommendationPageController.hasClients) {
         _recommendationPageController.jumpToPage(0);
       }
@@ -897,27 +902,20 @@ class _AdvisorScreenState extends State<AdvisorScreen> {
         _recommendationSaved = true;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Recommendation session saved successfully.'),
-          backgroundColor: AppTheme.green,
-        ),
+      showAppSnackBar(
+        context,
+        message: 'Recommendation session saved successfully.',
+        type: AppFeedbackType.success,
       );
     } catch (error) {
       if (!mounted) return;
 
-      final message = error.toString().replaceFirst('Exception: ', '').trim();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            message.isEmpty
-                ? 'Could not save the recommendation session.'
-                : message,
-          ),
-          backgroundColor: const Color(0xFFB42318),
-        ),
+      final message = NetworkErrorMapper.cleanMessage(
+        error,
+        fallback: 'Could not save the recommendation session.',
       );
+
+      showAppSnackBar(context, message: message, type: AppFeedbackType.error);
     } finally {
       if (mounted) {
         setState(() {

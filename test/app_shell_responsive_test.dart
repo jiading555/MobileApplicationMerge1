@@ -48,6 +48,24 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('switches through Advisor and Analysis without framework error', (
+    tester,
+  ) async {
+    await _pumpShell(tester, const Size(844, 390));
+
+    await tester.tap(find.byKey(const ValueKey('compact-nav-Advisor')));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const ValueKey('compact-nav-Analysis')));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const ValueKey('compact-nav-Advisor')));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _pumpShell(WidgetTester tester, Size size) async {

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/utils/network_error_mapper.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 
@@ -30,35 +31,45 @@ class SavedRecommendationService {
       appliedWeights: appliedWeights,
     );
 
-    await _supabase.from('saved_recommendation_sessions').insert({
-      'user_id': user.id,
+    try {
+      await _supabase.from('saved_recommendation_sessions').insert({
+        'user_id': user.id,
 
-      'goal': preferences.goal.name,
+        'goal': preferences.goal.name,
 
-      'budget': preferences.budget,
+        'budget': preferences.budget,
 
-      'preferred_state': preferences.preferredState.trim().isEmpty
-          ? null
-          : preferences.preferredState.trim(),
+        'preferred_state': preferences.preferredState.trim().isEmpty
+            ? null
+            : preferences.preferredState.trim(),
 
-      'preferred_district': preferences.preferredDistrict.trim().isEmpty
-          ? null
-          : preferences.preferredDistrict.trim(),
+        'preferred_district': preferences.preferredDistrict.trim().isEmpty
+            ? null
+            : preferences.preferredDistrict.trim(),
 
-      'property_type': preferences.propertyType == 'Any'
-          ? null
-          : preferences.propertyType,
+        'property_type': preferences.propertyType == 'Any'
+            ? null
+            : preferences.propertyType,
 
-      'applied_weights': resolvedWeights,
+        'applied_weights': resolvedWeights,
 
-      'recommendations': [
-        for (int index = 0; index < topRecommendations.length; index++)
-          _recommendationSnapshot(
-            recommendation: topRecommendations[index],
-            rank: index + 1,
-          ),
-      ],
-    });
+        'recommendations': [
+          for (int index = 0; index < topRecommendations.length; index++)
+            _recommendationSnapshot(
+              recommendation: topRecommendations[index],
+              rank: index + 1,
+            ),
+        ],
+      });
+    } catch (error) {
+      throw Exception(
+        NetworkErrorMapper.messageFor(
+          error,
+          action: NetworkErrorAction.save,
+          fallback: 'Could not save the recommendation session.',
+        ),
+      );
+    }
   }
 
   Future<List<Map<String, dynamic>>> getSavedRecommendationSessions() async {
@@ -68,13 +79,19 @@ class SavedRecommendationService {
       return [];
     }
 
-    final response = await _supabase
-        .from('saved_recommendation_sessions')
-        .select()
-        .eq('user_id', user.id)
-        .order('created_at', ascending: false);
+    try {
+      final response = await _supabase
+          .from('saved_recommendation_sessions')
+          .select()
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
 
-    return List<Map<String, dynamic>>.from(response);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (error) {
+      throw Exception(
+        NetworkErrorMapper.messageFor(error, action: NetworkErrorAction.load),
+      );
+    }
   }
 
   Future<Map<String, dynamic>?> getSavedRecommendationSession(String id) async {
@@ -84,12 +101,19 @@ class SavedRecommendationService {
       return null;
     }
 
-    final response = await _supabase
-        .from('saved_recommendation_sessions')
-        .select()
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .maybeSingle();
+    final Map<String, dynamic>? response;
+    try {
+      response = await _supabase
+          .from('saved_recommendation_sessions')
+          .select()
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+    } catch (error) {
+      throw Exception(
+        NetworkErrorMapper.messageFor(error, action: NetworkErrorAction.load),
+      );
+    }
 
     if (response == null) {
       return null;
@@ -105,11 +129,21 @@ class SavedRecommendationService {
       throw Exception('Please sign in before deleting a saved recommendation.');
     }
 
-    await _supabase
-        .from('saved_recommendation_sessions')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+    try {
+      await _supabase
+          .from('saved_recommendation_sessions')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
+    } catch (error) {
+      throw Exception(
+        NetworkErrorMapper.messageFor(
+          error,
+          action: NetworkErrorAction.save,
+          fallback: 'Unable to delete saved recommendation. Please try again.',
+        ),
+      );
+    }
   }
 
   Map<String, dynamic> _recommendationSnapshot({

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/network_error_mapper.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../services/saved_recommendation_service.dart';
 
 class SavedRecommendationsScreen extends StatefulWidget {
@@ -30,7 +32,9 @@ class _SavedRecommendationsScreenState
 
   Future<void> _refresh() async {
     setState(_loadSavedRecommendations);
-    await _savedFuture;
+    try {
+      await _savedFuture;
+    } catch (_) {}
   }
 
   Future<void> _deleteSession({
@@ -69,19 +73,21 @@ class _SavedRecommendationsScreenState
 
       setState(_loadSavedRecommendations);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved recommendation deleted.')),
+      showAppSnackBar(
+        context,
+        message: 'Saved recommendation deleted.',
+        type: AppFeedbackType.success,
       );
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to delete: '
-            '${error.toString().replaceFirst('Exception: ', '')}',
-          ),
+      showAppSnackBar(
+        context,
+        message: NetworkErrorMapper.cleanMessage(
+          error,
+          fallback: 'Unable to delete saved recommendation. Please try again.',
         ),
+        type: AppFeedbackType.error,
       );
     }
   }
@@ -117,7 +123,10 @@ class _SavedRecommendationsScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    snapshot.error.toString().replaceFirst('Exception: ', ''),
+                    NetworkErrorMapper.cleanMessage(
+                      snapshot.error!,
+                      fallback: NetworkErrorMapper.loadFailureMessage,
+                    ),
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppTheme.muted, fontSize: 11),
                   ),
