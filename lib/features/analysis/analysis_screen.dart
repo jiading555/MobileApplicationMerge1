@@ -75,6 +75,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final refreshMessage = state.governmentDataSyncMessage;
     final refreshFailed =
         state.governmentDataRefreshStatus == DataRefreshStatus.failure;
+    final refreshFailureMessage =
+        refreshMessage ?? 'Latest market data could not be reloaded. Try again.';
     return Scaffold(
       appBar: AppBar(
         title: const FittedBox(
@@ -253,7 +255,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          refreshMessage,
+                          refreshFailureMessage,
                           style: const TextStyle(
                             color: Color(0xFFB3261E),
                             fontWeight: FontWeight.w600,

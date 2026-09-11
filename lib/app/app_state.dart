@@ -158,9 +158,6 @@ class AppState extends ChangeNotifier {
   String? get governmentDataSyncMessage => governmentDataRefreshMessage;
   int get requestedAnalysisLocationVersion => _requestedAnalysisLocationVersion;
 
-  static const _noInternetMessage =
-      'No internet connection. Check your network and try again.';
-
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
   ValueListenable<Set<String>> get favouriteIdsListenable =>
       _favouriteIdsNotifier;
