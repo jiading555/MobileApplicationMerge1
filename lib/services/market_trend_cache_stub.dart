@@ -8,6 +8,7 @@ class MarketTrendCacheEntry {
 
   bool isFreshAt(DateTime now) {
     final age = now.toUtc().difference(updatedAt.toUtc());
+
     return !age.isNegative && age < const Duration(days: 1);
   }
 }

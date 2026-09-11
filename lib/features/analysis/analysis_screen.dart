@@ -5,6 +5,7 @@ import '../../app/app_scope.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/line_chart.dart';
@@ -27,6 +28,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   String comparisonPropertyType = 'All residential';
   String selectedView = 'Overview';
   bool _initialRefreshScheduled = false;
+  int _appliedAnalysisLocationVersion = -1;
 
   @override
   void didChangeDependencies() {
@@ -48,6 +50,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         body: SafeArea(child: _NoAreasAvailable()),
       );
     }
+    _applyRequestedAnalysisLocation(state);
     selectedAreaId ??= state.areas.first.id;
     var area = state.areaFor(selectedAreaId!);
     final states = state.areas.map((item) => item.state).toSet().toList()
@@ -250,7 +253,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          refreshMessage!,
+                          refreshMessage,
                           style: const TextStyle(
                             color: Color(0xFFB3261E),
                             fontWeight: FontWeight.w600,
@@ -442,6 +445,39 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       message: result.message,
       type: result.succeeded ? AppFeedbackType.success : AppFeedbackType.error,
     );
+  }
+
+  void _applyRequestedAnalysisLocation(AppState state) {
+    final version = state.requestedAnalysisLocationVersion;
+    if (_appliedAnalysisLocationVersion == version) {
+      return;
+    }
+    _appliedAnalysisLocationVersion = version;
+
+    final requestedState = state.requestedAnalysisState;
+    final requestedDistrict = state.requestedAnalysisDistrict;
+    if (requestedState == null || requestedDistrict == null) {
+      return;
+    }
+
+    for (final area in state.areas) {
+      if (!LocationNormalizer.stateMatches(area.state, requestedState) ||
+          !LocationNormalizer.districtMatches(
+            area.name,
+            requestedDistrict,
+            state: area.state,
+          )) {
+        continue;
+      }
+
+      selectedState = area.state;
+      selectedAreaId = area.id;
+      selectedMarketArea = 'Overall';
+      selectedPropertyType = 'All residential';
+      comparisonPropertyType = 'All residential';
+      selectedView = 'Overview';
+      return;
+    }
   }
 }
 

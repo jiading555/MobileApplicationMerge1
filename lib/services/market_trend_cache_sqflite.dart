@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
@@ -14,6 +14,7 @@ class MarketTrendCacheEntry {
 
   bool isFreshAt(DateTime now) {
     final age = now.toUtc().difference(updatedAt.toUtc());
+
     return !age.isNegative && age < const Duration(days: 1);
   }
 }
@@ -25,7 +26,9 @@ class MarketTrendCache {
 
   Database? _database;
 
-  bool get _isSupportedPlatform => Platform.isAndroid || Platform.isIOS;
+  bool get _isSupportedPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   Future<Database> _openDatabase() async {
     final existing = _database;

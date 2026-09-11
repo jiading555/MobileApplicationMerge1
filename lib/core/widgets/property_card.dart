@@ -36,6 +36,8 @@ class PropertyCard extends StatelessWidget {
                 property: property,
                 onTap: onTap,
                 favouriteIdsListenable: state.favouriteIdsListenable,
+                favouriteOperationIdsListenable:
+                    state.favouriteOperationIdsListenable,
                 onToggleFavourite: state.toggleFavourite,
                 showPropertyInfo: showPropertyInfo,
                 showDetailsAction: showDetailsAction,
@@ -44,6 +46,8 @@ class PropertyCard extends StatelessWidget {
                 property: property,
                 onTap: onTap,
                 favouriteIdsListenable: state.favouriteIdsListenable,
+                favouriteOperationIdsListenable:
+                    state.favouriteOperationIdsListenable,
                 onToggleFavourite: state.toggleFavourite,
                 showPropertyInfo: showPropertyInfo,
                 showDetailsAction: showDetailsAction,
@@ -58,6 +62,7 @@ class _FullContent extends StatelessWidget {
     required this.property,
     required this.onTap,
     required this.favouriteIdsListenable,
+    required this.favouriteOperationIdsListenable,
     required this.onToggleFavourite,
     required this.showPropertyInfo,
     required this.showDetailsAction,
@@ -66,7 +71,8 @@ class _FullContent extends StatelessWidget {
   final Property property;
   final VoidCallback onTap;
   final ValueListenable<Set<String>> favouriteIdsListenable;
-  final ValueChanged<String> onToggleFavourite;
+  final ValueListenable<Set<String>> favouriteOperationIdsListenable;
+  final Future<String?> Function(String) onToggleFavourite;
   final bool showPropertyInfo;
   final bool showDetailsAction;
 
@@ -110,6 +116,8 @@ class _FullContent extends StatelessWidget {
               child: _FavouriteButton(
                 propertyId: property.id,
                 favouriteIdsListenable: favouriteIdsListenable,
+                favouriteOperationIdsListenable:
+                    favouriteOperationIdsListenable,
                 onToggleFavourite: onToggleFavourite,
                 filled: true,
               ),
@@ -166,6 +174,7 @@ class _CompactContent extends StatelessWidget {
     required this.property,
     required this.onTap,
     required this.favouriteIdsListenable,
+    required this.favouriteOperationIdsListenable,
     required this.onToggleFavourite,
     required this.showPropertyInfo,
     required this.showDetailsAction,
@@ -174,7 +183,8 @@ class _CompactContent extends StatelessWidget {
   final Property property;
   final VoidCallback onTap;
   final ValueListenable<Set<String>> favouriteIdsListenable;
-  final ValueChanged<String> onToggleFavourite;
+  final ValueListenable<Set<String>> favouriteOperationIdsListenable;
+  final Future<String?> Function(String) onToggleFavourite;
   final bool showPropertyInfo;
   final bool showDetailsAction;
 
@@ -242,6 +252,7 @@ class _CompactContent extends StatelessWidget {
             child: _FavouriteButton(
               propertyId: property.id,
               favouriteIdsListenable: favouriteIdsListenable,
+              favouriteOperationIdsListenable: favouriteOperationIdsListenable,
               onToggleFavourite: onToggleFavourite,
             ),
           ),
@@ -255,13 +266,15 @@ class _FavouriteButton extends StatelessWidget {
   const _FavouriteButton({
     required this.propertyId,
     required this.favouriteIdsListenable,
+    required this.favouriteOperationIdsListenable,
     required this.onToggleFavourite,
     this.filled = false,
   });
 
   final String propertyId;
   final ValueListenable<Set<String>> favouriteIdsListenable;
-  final ValueChanged<String> onToggleFavourite;
+  final ValueListenable<Set<String>> favouriteOperationIdsListenable;
+  final Future<String?> Function(String) onToggleFavourite;
   final bool filled;
 
   @override
@@ -270,23 +283,54 @@ class _FavouriteButton extends StatelessWidget {
       valueListenable: favouriteIdsListenable,
       builder: (context, favouriteIds, _) {
         final isFavourite = favouriteIds.contains(propertyId);
-        final icon = Icon(
-          isFavourite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-          color: isFavourite
-              ? const Color(0xFFE54865)
-              : filled
-              ? AppTheme.ink
-              : AppTheme.muted,
-        );
-        if (filled) {
-          return IconButton.filledTonal(
-            onPressed: () => onToggleFavourite(propertyId),
-            icon: icon,
-          );
-        }
-        return IconButton(
-          onPressed: () => onToggleFavourite(propertyId),
-          icon: icon,
+        return ValueListenableBuilder<Set<String>>(
+          valueListenable: favouriteOperationIdsListenable,
+          builder: (context, operationIds, _) {
+            final isBusy = operationIds.contains(propertyId);
+            final icon = isBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    isFavourite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    color: isFavourite
+                        ? const Color(0xFFE54865)
+                        : filled
+                        ? AppTheme.ink
+                        : AppTheme.muted,
+                  );
+            final onPressed = isBusy
+                ? null
+                : () async {
+                    final error = await onToggleFavourite(propertyId);
+                    if (error == null || !context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error),
+                        backgroundColor: const Color(0xFFB42318),
+                      ),
+                    );
+                  };
+            if (filled) {
+              return IconButton.filledTonal(
+                onPressed: onPressed,
+                tooltip: isFavourite
+                    ? 'Remove from favourites'
+                    : 'Add to favourites',
+                icon: icon,
+              );
+            }
+            return IconButton(
+              onPressed: onPressed,
+              tooltip: isFavourite
+                  ? 'Remove from favourites'
+                  : 'Add to favourites',
+              icon: icon,
+            );
+          },
         );
       },
     );

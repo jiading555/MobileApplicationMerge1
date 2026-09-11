@@ -176,6 +176,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _showAllFavourites = false;
+  bool _isSigningOut = false;
 
   Future<void> _pickAvatar() async {
     final file = await ImagePicker().pickImage(
@@ -297,7 +298,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () => state.logout(),
+                      onPressed: state.isAccountBusy || _isSigningOut
+                          ? null
+                          : _confirmSignOut,
                       icon: const Icon(Icons.logout_rounded),
                       label: const Text('Sign out'),
                     ),
@@ -324,9 +327,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final updated = await showModalBottomSheet<AppUser>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: false,
-      enableDrag: false,
+      showDragHandle: true,
+      enableDrag: true,
       useSafeArea: true,
+      useRootNavigator: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.90,
+      ),
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 320),
+        reverseDuration: Duration(milliseconds: 240),
+      ),
       builder: (context) => _EditProfileSheet(initialValue: state.user),
     );
     if (!mounted || updated == null) return;
@@ -345,6 +356,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       enableDrag: true,
       useSafeArea: true,
       useRootNavigator: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.90,
+      ),
       sheetAnimationStyle: const AnimationStyle(
         duration: Duration(milliseconds: 320),
         reverseDuration: Duration(milliseconds: 240),
@@ -357,6 +371,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final error = await state.saveAccountPreferences(updated);
     if (!mounted) return;
     _message(error ?? 'Preferences updated successfully.', error != null);
+  }
+
+  Future<void> _confirmSignOut() async {
+    if (_isSigningOut) return;
+
+    setState(() => _isSigningOut = true);
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Sign out?'),
+          content: const Text('Are you sure you want to sign out?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted || confirmed != true) {
+        return;
+      }
+
+      await AppScope.of(context).logout();
+    } finally {
+      if (mounted) {
+        setState(() => _isSigningOut = false);
+      }
+    }
   }
 
   Future<void> _changePassword() async {
@@ -527,83 +576,100 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        16,
-        24,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Personal information',
-                style: Theme.of(context).textTheme.titleLarge,
+    return _ProfileBottomSheetFrame(
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Personal information',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Full name'),
+              validator: (value) => value == null || value.trim().length < 2
+                  ? 'Enter at least 2 characters'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-()\s]')),
+                LengthLimitingTextInputFormatter(18),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                hintText: '012-345 6789',
+                helperText: 'Malaysia mobile format: 01X or +601X',
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Full name'),
-                validator: (value) => value == null || value.trim().length < 2
-                    ? 'Enter at least 2 characters'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-()\s]')),
-                  LengthLimitingTextInputFormatter(18),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  hintText: '012-345 6789',
-                  helperText: 'Malaysia mobile format: 01X or +601X',
+              validator: _validatePhone,
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
                 ),
-                validator: _validatePhone,
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
                     ),
+                    onPressed: () {
+                      if (!_formKey.currentState!.validate()) return;
+                      Navigator.of(context).pop(
+                        widget.initialValue.copyWith(
+                          name: _name.text.trim(),
+                          phone: _phone.text.trim(),
+                        ),
+                      );
+                    },
+                    child: const Text('Save changes'),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      onPressed: () {
-                        if (!_formKey.currentState!.validate()) return;
-                        Navigator.of(context).pop(
-                          widget.initialValue.copyWith(
-                            name: _name.text.trim(),
-                            phone: _phone.text.trim(),
-                          ),
-                        );
-                      },
-                      child: const Text('Save changes'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileBottomSheetFrame extends StatelessWidget {
+  const _ProfileBottomSheetFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardHeight),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: screenHeight * 0.88),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+          child: child,
         ),
       ),
     );
@@ -720,11 +786,15 @@ class _FavouriteProperties extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              'Favourite properties',
-              style: Theme.of(context).textTheme.titleLarge,
+            Expanded(
+              child: Text(
+                'Favourite properties',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: 12),
             Text(
               '${properties.length} saved',
               style: const TextStyle(color: AppTheme.muted, fontSize: 12),
@@ -954,16 +1024,25 @@ class _ProfileBudgetControlState extends State<_ProfileBudgetControl> {
       children: [
         Row(
           children: [
-            Text(
-              'Maximum budget',
-              style: Theme.of(context).textTheme.titleMedium,
+            Expanded(
+              child: Text(
+                'Maximum budget',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
-            const Spacer(),
-            Text(
-              formatRinggit(_draftValue),
-              style: const TextStyle(
-                color: AppTheme.blue,
-                fontWeight: FontWeight.w800,
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                formatRinggit(_draftValue),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppTheme.blue,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
@@ -1183,240 +1262,200 @@ class _PropertyPreferencesSheetState extends State<_PropertyPreferencesSheet> {
       }
     }
 
-    return FractionallySizedBox(
-      heightFactor: 0.9,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+    final stateField = DropdownButtonFormField<String>(
+      key: ValueKey('profile-state-$effectiveState'),
+      initialValue: effectiveState,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'State'),
+      items: [
+        const DropdownMenuItem(
+          value: '',
+          child: Text(
+            'Any state',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        ...availableStates.map(
+          (value) => DropdownMenuItem(
+            value: value,
+            child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ],
+      onChanged: (value) {
+        _changeState(value ?? '');
+      },
+    );
+
+    final areaField = DropdownButtonFormField<String>(
+      key: ValueKey('profile-area-$effectiveAreaId-$effectiveState'),
+      initialValue: effectiveAreaId,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Area'),
+      items: [
+        const DropdownMenuItem(
+          value: '',
+          child: Text('Any area', maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        ...availableAreas.map(
+          (area) => DropdownMenuItem<String>(
+            value: area.value,
+            child: Text(
+              area.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+      onChanged: effectiveState.isEmpty
+          ? null
+          : (value) {
+              _changeArea(value ?? '');
+            },
+    );
+
+    return _ProfileBottomSheetFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Property preferences',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Set your default budget and property search filters.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 18),
+          _ProfileBudgetControl(
+            value: maximumBudget,
+            minimum: _minimumBudget,
+            maximum: _maximumBudget,
+            divisions: _budgetDivisions,
+            onChangeEnd: _changeBudget,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'RM 350,000',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                ),
+                Text(
+                  'RM 1,600,000',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  children: [stateField, const SizedBox(height: 12), areaField],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Property preferences',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
+                  Expanded(child: stateField),
+                  const SizedBox(width: 10),
+                  Expanded(child: areaField),
                 ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey(
+              'profile-type-$effectivePropertyType-'
+              '$effectiveAreaId-$effectiveState-'
+              '${maximumBudget.round()}',
+            ),
+            initialValue: effectivePropertyType,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Property type'),
+            items: [
+              const DropdownMenuItem(
+                value: 'Any',
+                child: Text(
+                  'Any property type',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const SizedBox(height: 18),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _ProfileBudgetControl(
-                        value: maximumBudget,
-                        minimum: _minimumBudget,
-                        maximum: _maximumBudget,
-                        divisions: _budgetDivisions,
-                        onChangeEnd: _changeBudget,
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'RM 350,000',
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 11,
-                              ),
-                            ),
-                            Text(
-                              'RM 1,600,000',
-                              style: TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              key: ValueKey('profile-state-$effectiveState'),
-                              initialValue: effectiveState,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'State',
-                              ),
-                              items: [
-                                const DropdownMenuItem(
-                                  value: '',
-                                  child: Text(
-                                    'Any state',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                ...availableStates.map(
-                                  (value) => DropdownMenuItem(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged: (value) {
-                                _changeState(value ?? '');
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              key: ValueKey(
-                                'profile-area-$effectiveAreaId-$effectiveState',
-                              ),
-                              initialValue: effectiveAreaId,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Area',
-                              ),
-                              items: [
-                                DropdownMenuItem(
-                                  value: '',
-                                  child: Text(
-                                    effectiveState.isEmpty
-                                        ? 'Any area'
-                                        : 'Any area',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                ...availableAreas.map(
-                                  (area) => DropdownMenuItem<String>(
-                                    value: area.value,
-                                    child: Text(
-                                      area.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged: effectiveState.isEmpty
-                                  ? null
-                                  : (value) {
-                                      _changeArea(value ?? '');
-                                    },
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      DropdownButtonFormField<String>(
-                        key: ValueKey(
-                          'profile-type-$effectivePropertyType-'
-                          '$effectiveAreaId-$effectiveState-'
-                          '${maximumBudget.round()}',
-                        ),
-                        initialValue: effectivePropertyType,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Property type',
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: 'Any',
-                            child: Text(
-                              'Any property type',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          ...availablePropertyTypes.map(
-                            (value) => DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(
-                                value,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                        ],
-                        onChanged: availablePropertyTypes.isEmpty
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  propertyType = value ?? 'Any';
-                                });
-                              },
-                      ),
-                    ],
+              ...availablePropertyTypes.map(
+                (value) => DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
+            ],
+            onChanged: availablePropertyTypes.isEmpty
+                ? null
+                : (value) {
+                    setState(() {
+                      propertyType = value ?? 'Any';
+                    });
+                  },
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: () {
+                    final hiddenMinimumBudget = widget
+                        .initialValue
+                        .minimumBudget
+                        .clamp(0.0, maximumBudget)
+                        .toDouble();
+
+                    Navigator.of(context).pop(
+                      widget.initialValue.copyWith(
+                        preferredState: effectiveState,
+                        preferredDistrict: effectiveDistrict,
+                        preferredAreaId: 'any',
+                        propertyType: effectivePropertyType,
+                        minimumBudget: hiddenMinimumBudget,
+                        maximumBudget: maximumBudget,
+                        budget: maximumBudget,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () {
-                          final finalState = effectiveState;
-                          final finalDistrict = effectiveDistrict;
-
-                          final hiddenMinimumBudget = widget
-                              .initialValue
-                              .minimumBudget
-                              .clamp(0.0, maximumBudget)
-                              .toDouble();
-
-                          Navigator.of(context).pop(
-                            widget.initialValue.copyWith(
-                              preferredState: finalState,
-                              preferredDistrict: finalDistrict,
-                              preferredAreaId: 'any',
-
-                              propertyType: effectivePropertyType,
-                              minimumBudget: hiddenMinimumBudget,
-                              maximumBudget: maximumBudget,
-                              budget: maximumBudget,
-                            ),
-                          );
-                        },
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text('Save preferences'),
-                        ),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Save changes'),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

@@ -163,7 +163,7 @@ class HomeScreen extends StatelessWidget {
                       const _NoMarketDataCard()
                     else
                       SizedBox(
-                        height: 136,
+                        height: 148,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: trendingAreas.length,
@@ -175,7 +175,13 @@ class HomeScreen extends StatelessWidget {
                               state: area.state,
                               growth: area.priceGrowth!,
                               position: index + 1,
-                              onTap: () => selectDestination(4),
+                              onTap: () {
+                                state.requestAnalysisLocation(
+                                  state: area.state,
+                                  district: area.name,
+                                );
+                                selectDestination(4);
+                              },
                             );
                           },
                         ),
@@ -251,14 +257,39 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _WelcomeHeader extends StatelessWidget {
+class _WelcomeHeader extends StatefulWidget {
   const _WelcomeHeader({required this.name});
 
   final String name;
 
   @override
+  State<_WelcomeHeader> createState() => _WelcomeHeaderState();
+}
+
+class _WelcomeHeaderState extends State<_WelcomeHeader> {
+  bool _isOpeningNotifications = false;
+
+  Future<void> _showNotifications() async {
+    if (_isOpeningNotifications) {
+      return;
+    }
+
+    setState(() => _isOpeningNotifications = true);
+    try {
+      final controller = ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You have no new alerts.')));
+      await controller.closed;
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningNotifications = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final firstName = name.split(' ').first;
+    final firstName = widget.name.split(' ').first;
     return Row(
       children: [
         Expanded(
@@ -278,9 +309,7 @@ class _WelcomeHeader extends StatelessWidget {
           ),
         ),
         IconButton.filledTonal(
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You have no new alerts.')),
-          ),
+          onPressed: _isOpeningNotifications ? null : _showNotifications,
           icon: const Icon(Icons.notifications_none_rounded),
         ),
       ],

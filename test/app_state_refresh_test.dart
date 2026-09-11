@@ -1,5 +1,5 @@
-import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:smart_property_advisor/app/app_state.dart';
 import 'package:smart_property_advisor/data/asset_repository.dart';
 import 'package:smart_property_advisor/data/repositories/area_profile_repository.dart';
@@ -33,10 +33,11 @@ void main() {
   test('startup restores market cache before cloud area refresh', () async {
     final areaRepository = _FakeAreaProfileRepository();
     final propertyRepository = _FakePropertyRepository();
+    final cachedAt = DateTime.utc(2026, 9, 11, 8);
     final cache = _FakeMarketTrendCache(
       entry: MarketTrendCacheEntry(
-        areas: const [_cachedArea],
-        updatedAt: DateTime.utc(2026, 9, 11, 1),
+        areas: const [_cachedMarketArea],
+        updatedAt: cachedAt,
       ),
     );
     final state = AppState(
@@ -51,9 +52,9 @@ void main() {
     expect(cache.loads, 1);
     expect(areaRepository.reads, 0);
     expect(propertyRepository.reads, 1);
-    expect(state.areas.single.id, 'cached');
     expect(state.isUsingMarketTrendCache, isTrue);
-    expect(state.marketTrendCacheUpdatedAt, DateTime.utc(2026, 9, 11, 1));
+    expect(state.areas.single.id, 'kedah_langkawi');
+    expect(state.marketTrendCacheUpdatedAt, cachedAt);
   });
 
   test(
@@ -71,6 +72,39 @@ void main() {
       await state.ensureInitialMarketData();
 
       expect(areaRepository.reads, 0);
+    },
+  );
+
+  test(
+    'expired market cache auto-refreshes once from Analysis entry',
+    () async {
+      final areaRepository = _FakeAreaProfileRepository();
+      final cache = _FakeMarketTrendCache(
+        entry: MarketTrendCacheEntry(
+          areas: const [_cachedMarketArea],
+          updatedAt: DateTime.utc(2026, 9, 9),
+        ),
+      );
+      final state = AppState(
+        repository: const _FakeAssetRepository(),
+        areaProfileRepository: areaRepository,
+        propertyRepository: _FakePropertyRepository(),
+        marketTrendCache: cache,
+      );
+
+      await state.initialise();
+      expect(areaRepository.reads, 0);
+
+      await state.ensureInitialMarketData();
+      await state.ensureInitialMarketData();
+
+      expect(areaRepository.reads, 1);
+      expect(cache.saves, 1);
+      expect(state.isUsingCloudAreaProfiles, isTrue);
+      expect(
+        state.governmentDataRefreshMessage,
+        contains('Latest market data reloaded from Supabase'),
+      );
     },
   );
 
@@ -264,6 +298,17 @@ const _cachedArea = AreaData(
   marketPriceYear: 2026,
 );
 
+const _cachedMarketArea = AreaData(
+  id: 'kedah_langkawi',
+  name: 'Langkawi',
+  state: 'Kedah',
+  medianResidentialPrice: 315000,
+  marketPriceYear: 2026,
+  priceHistory: [280000, 315000],
+  marketPricePeriods: ['2026 Q1', '2026 Q2'],
+  isGovernmentProfile: true,
+);
+
 const _oldProperty = Property(
   id: 'old',
   name: 'Old Property',
@@ -338,6 +383,20 @@ class _FailingAreaProfileRepository extends AreaProfileRepository {
   }
 }
 
+class _OfflineAreaProfileRepository extends AreaProfileRepository {
+  int reads = 0;
+
+  @override
+  Future<List<AreaProfile>> getAreaProfiles({int? limit}) async {
+    reads += 1;
+    throw AreaProfileRepositoryException(
+      'Failed to load area profiles from Supabase.',
+      http.ClientException('SocketException: Failed host lookup'),
+      StackTrace.empty,
+    );
+  }
+}
+
 class _FakePropertyRepository extends PropertyRepository {
   int reads = 0;
   int upserts = 0;
@@ -372,20 +431,6 @@ class _FakePropertyRepository extends PropertyRepository {
   }
 }
 
-class _OfflineAreaProfileRepository extends AreaProfileRepository {
-  int reads = 0;
-
-  @override
-  Future<List<AreaProfile>> getAreaProfiles({int? limit}) async {
-    reads += 1;
-    throw AreaProfileRepositoryException(
-      'Failed to load area profiles from Supabase.',
-      http.ClientException('SocketException: Failed host lookup'),
-      StackTrace.empty,
-    );
-  }
-}
-
 class _FailingPropertyRepository extends PropertyRepository {
   @override
   Future<List<Property>> getProperties(List<AreaData> areas) async {
@@ -396,7 +441,7 @@ class _FailingPropertyRepository extends PropertyRepository {
 class _FakeMarketTrendCache extends MarketTrendCache {
   _FakeMarketTrendCache({this.entry});
 
-  final MarketTrendCacheEntry? entry;
+  MarketTrendCacheEntry? entry;
   int loads = 0;
   int saves = 0;
   List<AreaData> savedAreas = const [];
@@ -413,5 +458,6 @@ class _FakeMarketTrendCache extends MarketTrendCache {
     saves += 1;
     savedAreas = areas;
     savedUpdatedAt = updatedAt;
+    entry = MarketTrendCacheEntry(areas: areas, updatedAt: updatedAt);
   }
 }
