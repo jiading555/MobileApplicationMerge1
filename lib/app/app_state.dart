@@ -138,7 +138,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialise() async {
     try {
-      await _reloadVisibleData(allowMarketCacheFallback: true);
+      await _loadInitialVisibleData();
       await _loadCurrentAuthSession();
     } catch (error) {
       loadError = 'Failed to load official app data: $error';
@@ -151,11 +151,19 @@ class AppState extends ChangeNotifier {
   Future<void> ensureInitialMarketData() async {
     if (hasAttemptedInitialMarketRefresh) return;
     hasAttemptedInitialMarketRefresh = true;
-    if (!SupabaseConfig.isConfigured ||
-        isRefreshingGovernmentData ||
-        areas.any((area) => area.hasMarketHistory)) {
+    if (!SupabaseConfig.isConfigured || isRefreshingGovernmentData) {
       return;
     }
+
+    final cachedAt = marketTrendCacheUpdatedAt;
+    final cacheIsFresh =
+        cachedAt != null &&
+        MarketTrendCacheEntry(
+          areas: const [],
+          updatedAt: cachedAt,
+        ).isFreshAt(DateTime.now().toUtc());
+    if (cacheIsFresh) return;
+
     await refreshGovernmentData();
   }
 
@@ -181,11 +189,19 @@ class AppState extends ChangeNotifier {
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
+      if (!isUsingCloudAreaProfiles) {
+        throw StateError(
+          openDataLoadMessage ??
+              'The latest cloud data could not be reached; cached data is still displayed.',
+        );
+      }
       latestDataRefreshMessage =
           'Latest data refreshed: ${properties.length} properties and '
           '${areas.length} areas loaded.';
     } catch (error) {
-      latestDataRefreshMessage = 'Latest data refresh failed: $error';
+      latestDataRefreshMessage = _isNetworkErrorMessage(error.toString())
+          ? 'Refresh failed: no internet connection. Cached data is still displayed.'
+          : 'Latest data refresh failed. Cached data is still displayed.';
     } finally {
       isRefreshingLatestData = false;
       notifyListeners();
@@ -224,9 +240,10 @@ class AppState extends ChangeNotifier {
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
-      if (areas.isEmpty) {
+      if (areas.isEmpty || !isUsingCloudAreaProfiles) {
         throw StateError(
-          'Supabase returned no area profiles; keeping the previous data.',
+          openDataLoadMessage ??
+              'Supabase returned no area profiles; keeping the cached data.',
         );
       }
       final years = _dataYears(areas);
@@ -234,8 +251,7 @@ class AppState extends ChangeNotifier {
           ? ''
           : ' Data years: ${years.join(', ')}.';
       governmentDataRefreshMessage =
-          'Latest data reloaded: ${properties.length} properties and '
-          '${areas.length} areas loaded from Supabase.$yearSuffix';
+          'Latest market data reloaded from Supabase.$yearSuffix';
     } catch (error) {
       areas = previousAreas;
       properties = previousProperties;
@@ -247,7 +263,9 @@ class AppState extends ChangeNotifier {
       isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
       marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
       _invalidateDataCaches();
-      governmentDataRefreshMessage = 'Latest data reload failed: $error';
+      governmentDataRefreshMessage = _isNetworkErrorMessage(error.toString())
+          ? 'Refresh failed: no internet connection. Cached market data is still displayed.'
+          : 'Latest market data could not be reloaded. Cached data is still displayed.';
     } finally {
       isRefreshingGovernmentData = false;
       notifyListeners();
@@ -295,6 +313,9 @@ class AppState extends ChangeNotifier {
       return null;
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
+      if (_isNetworkErrorMessage(message)) {
+        return 'No internet connection. Check your network and try again.';
+      }
       if (message.contains('invalid login credentials')) {
         return 'Incorrect email address or password.';
       }
@@ -302,7 +323,10 @@ class AppState extends ChangeNotifier {
         return 'Confirm your email address before signing in.';
       }
       return error.message;
-    } catch (_) {
+    } catch (error) {
+      if (_isNetworkErrorMessage(error.toString())) {
+        return 'No internet connection. Check your network and try again.';
+      }
       return 'Unable to sign in. Please try again.';
     } finally {
       isAccountBusy = false;
@@ -686,6 +710,31 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
+  Future<void> _loadInitialVisibleData() async {
+    final cachedMarketTrend = await _loadMarketTrendCache();
+    if (cachedMarketTrend == null || cachedMarketTrend.areas.isEmpty) {
+      await _reloadVisibleData(allowMarketCacheFallback: true);
+      return;
+    }
+
+    areas = _canonicalAreas(cachedMarketTrend.areas);
+    marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingMarketTrendCache = true;
+    isUsingLiveAreaProfiles = false;
+
+    if (SupabaseConfig.isConfigured) {
+      final cloudProperties = await _loadCloudProperties(areas);
+      if (cloudProperties.isNotEmpty) {
+        properties = cloudProperties;
+        isUsingCloudProperties = true;
+        isUsingProcessedTeduhProperties = false;
+      }
+    }
+    _invalidateDataCaches();
+  }
+
   Future<void> _reloadVisibleData({
     bool allowMarketCacheFallback = false,
     bool preserveCurrentData = false,
@@ -707,14 +756,23 @@ class AppState extends ChangeNotifier {
     openDataLoadMessage = null;
 
     if (!SupabaseConfig.isConfigured) {
+      if (allowMarketCacheFallback) {
+        final cachedMarketTrend = await _loadMarketTrendCache();
+        if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
+          areas = _canonicalAreas(cachedMarketTrend.areas);
+          marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+          isUsingMarketTrendCache = true;
+          openDataLoadMessage =
+              'Offline market data loaded from the device cache.';
+          _invalidateDataCaches();
+          return;
+        }
+      }
+
       openDataLoadMessage =
-          'Supabase is not configured. Add the project URL and publishable key '
-          'to load official property and area data.';
+          'Supabase is not configured and no offline market cache is available.';
       if (preserveCurrentData) {
-        throw StateError(
-          openDataLoadMessage ??
-              'Supabase is not configured to load official data.',
-        );
+        throw StateError(openDataLoadMessage!);
       }
       return;
     }
@@ -862,7 +920,9 @@ class AppState extends ChangeNotifier {
   Future<MarketTrendCacheEntry?> _loadMarketTrendCache() async {
     try {
       return await _marketTrendCache.load();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load SQLite market cache: $error');
+      debugPrintStack(stackTrace: stackTrace);
       return null;
     }
   }
@@ -873,7 +933,10 @@ class AppState extends ChangeNotifier {
   ) async {
     try {
       await _marketTrendCache.save(value, updatedAt: updatedAt);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      debugPrint('Failed to save SQLite market cache: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _loadCurrentAuthSession() async {
@@ -909,6 +972,17 @@ class AppState extends ChangeNotifier {
     try {
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
     } catch (_) {}
+  }
+
+  bool _isNetworkErrorMessage(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('socketexception') ||
+        normalized.contains('clientexception') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('network is unreachable') ||
+        normalized.contains('connection refused') ||
+        normalized.contains('connection reset') ||
+        normalized.contains('connection timed out');
   }
 
   String? _currentAuthEmail() {
