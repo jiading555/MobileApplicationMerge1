@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/network_error_mapper.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 import '../../services/ai_advisor_chat_service.dart';
@@ -65,10 +67,9 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
     }
 
     if (widget.recommendations.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Generate property recommendations first.'),
-        ),
+      showAppSnackBar(
+        context,
+        message: 'Generate property recommendations first.',
       );
       return;
     }
@@ -76,10 +77,10 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
     final history = _messages
         .map(
           (message) => {
-        'role': message.isUser ? 'User' : 'AI Advisor',
-        'text': message.text,
-      },
-    )
+            'role': message.isUser ? 'User' : 'AI Advisor',
+            'text': message.text,
+          },
+        )
         .toList();
 
     setState(() {
@@ -111,7 +112,10 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
       setState(() {
         _messages.add(
           _ChatMessage(
-            text: 'Sorry, I could not generate an AI advisor response.\n\n$e',
+            text: NetworkErrorMapper.cleanMessage(
+              e,
+              fallback: NetworkErrorMapper.aiFailureMessage,
+            ),
             isUser: false,
             isError: true,
           ),
@@ -129,6 +133,9 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       if (!_scrollController.hasClients) {
         return;
       }
@@ -206,18 +213,12 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
         children: [
           const Text(
             'Ask about your recommendations',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
           ),
           const SizedBox(height: 4),
           const Text(
             'Choose a suggested question or type your own question below.',
-            style: TextStyle(
-              color: AppTheme.muted,
-              fontSize: 10,
-            ),
+            style: TextStyle(color: AppTheme.muted, fontSize: 10),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -226,31 +227,29 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
             children: _suggestedQuestions
                 .map(
                   (question) => ActionChip(
-                onPressed:
-                _isLoading ? null : () => _sendMessage(question),
-                avatar: const Icon(
-                  Icons.auto_awesome_rounded,
-                  size: 14,
-                  color: AppTheme.blue,
-                ),
-                label: Text(
-                  question,
-                  style: const TextStyle(
-                    color: AppTheme.blue,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
+                    onPressed: _isLoading ? null : () => _sendMessage(question),
+                    avatar: const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 14,
+                      color: AppTheme.blue,
+                    ),
+                    label: Text(
+                      question,
+                      style: const TextStyle(
+                        color: AppTheme.blue,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    backgroundColor: AppTheme.blue.withValues(alpha: 0.06),
+                    side: BorderSide(
+                      color: AppTheme.blue.withValues(alpha: 0.20),
+                    ),
+                    visualDensity: isLandscape
+                        ? const VisualDensity(horizontal: -2, vertical: -3)
+                        : VisualDensity.compact,
                   ),
-                ),
-                backgroundColor:
-                AppTheme.blue.withValues(alpha: 0.06),
-                side: BorderSide(
-                  color: AppTheme.blue.withValues(alpha: 0.20),
-                ),
-                visualDensity: isLandscape
-                    ? const VisualDensity(horizontal: -2, vertical: -3)
-                    : VisualDensity.compact,
-              ),
-            )
+                )
                 .toList(),
           ),
         ],
@@ -278,8 +277,8 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
 
         Text(
           'The AI advisor uses your current property '
-              'recommendations, scores and priorities to '
-              'help explain the results.',
+          'recommendations, scores and priorities to '
+          'help explain the results.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
@@ -296,7 +295,7 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
         const SizedBox(height: 12),
 
         ..._suggestedQuestions.map(
-              (question) => Padding(
+          (question) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: OutlinedButton(
               onPressed: _isLoading ? null : () => _sendMessage(question),
@@ -357,10 +356,7 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
 
         final message = _messages[index];
 
-        return _MessageBubble(
-          message: message,
-          compact: isLandscape,
-        );
+        return _MessageBubble(message: message, compact: isLandscape);
       },
     );
   }
@@ -504,13 +500,13 @@ class _AiAdvisorChatScreenState extends State<AiAdvisorChatScreen> {
             onPressed: _isLoading ? null : () => _sendMessage(),
             icon: _isLoading
                 ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            )
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.send_rounded),
           ),
         ],
@@ -536,9 +532,7 @@ class _CompactAdvisorContext extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.blue.withValues(alpha: 0.07),
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.blue.withValues(alpha: 0.12),
-          ),
+          bottom: BorderSide(color: AppTheme.blue.withValues(alpha: 0.12)),
         ),
       ),
       child: Row(
@@ -554,10 +548,7 @@ class _CompactAdvisorContext extends StatelessWidget {
               'Goal: $goal  •  $recommendationCount properties',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -605,7 +596,7 @@ class _AdvisorContextCard extends StatelessWidget {
 
                 Text(
                   'Goal: $goal  •  '
-                      '$recommendationCount properties',
+                  '$recommendationCount properties',
                 ),
               ],
             ),
@@ -617,10 +608,7 @@ class _AdvisorContextCard extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    required this.message,
-    this.compact = false,
-  });
+  const _MessageBubble({required this.message, this.compact = false});
 
   final _ChatMessage message;
   final bool compact;

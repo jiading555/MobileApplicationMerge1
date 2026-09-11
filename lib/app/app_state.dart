@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/supabase_config.dart';
+import '../core/utils/auth_error_mapper.dart';
 import '../core/utils/auth_validators.dart';
 import '../core/utils/location_normalizer.dart';
+import '../core/utils/network_error_mapper.dart';
 import '../core/utils/property_area_resolver.dart';
 import '../data/asset_repository.dart';
 import '../data/repositories/area_profile_repository.dart';
@@ -17,6 +19,61 @@ import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 import '../services/market_trend_cache.dart';
 import '../services/recommendation_service.dart';
+
+enum DataRefreshStatus { idle, success, failure }
+
+class DataRefreshResult {
+  const DataRefreshResult._({
+    required this.succeeded,
+    required this.message,
+    required this.status,
+  });
+
+  const DataRefreshResult.success(String message)
+    : this._(
+        succeeded: true,
+        message: message,
+        status: DataRefreshStatus.success,
+      );
+
+  const DataRefreshResult.failure(String message)
+    : this._(
+        succeeded: false,
+        message: message,
+        status: DataRefreshStatus.failure,
+      );
+
+  final bool succeeded;
+  final String message;
+  final DataRefreshStatus status;
+}
+
+class _VisibleDataLoadResult {
+  bool cloudAreaProfilesSucceeded = false;
+  bool cloudPropertiesSucceeded = false;
+}
+
+class _CloudAreaProfilesLoadAttempt {
+  const _CloudAreaProfilesLoadAttempt.success(this.profiles) : error = null;
+
+  const _CloudAreaProfilesLoadAttempt.failure(this.error) : profiles = const [];
+
+  final List<AreaProfile> profiles;
+  final Object? error;
+
+  bool get succeeded => error == null;
+}
+
+class _CloudPropertiesLoadAttempt {
+  const _CloudPropertiesLoadAttempt.success(this.properties) : error = null;
+
+  const _CloudPropertiesLoadAttempt.failure(this.error) : properties = const [];
+
+  final List<Property> properties;
+  final Object? error;
+
+  bool get succeeded => error == null;
+}
 
 class AppState extends ChangeNotifier {
   AppState({
@@ -70,10 +127,13 @@ class AppState extends ChangeNotifier {
   bool isRefreshingLatestData = false;
   bool isRefreshingGovernmentData = false;
   bool hasAttemptedInitialMarketRefresh = false;
+  bool hasAttemptedExpiredMarketCacheRefresh = false;
   DateTime? marketTrendCacheUpdatedAt;
   String? openDataLoadMessage;
   String? latestDataRefreshMessage;
   String? governmentDataRefreshMessage;
+  DataRefreshStatus latestDataRefreshStatus = DataRefreshStatus.idle;
+  DataRefreshStatus governmentDataRefreshStatus = DataRefreshStatus.idle;
   bool isAccountBusy = false;
   bool registrationNeedsConfirmation = false;
   String? accountError;
@@ -138,10 +198,22 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialise() async {
     try {
-      await _reloadVisibleData(allowMarketCacheFallback: true);
+      final restoredCache = await _restoreMarketTrendCache();
+      if (restoredCache) {
+        isLoading = false;
+        notifyListeners();
+      }
       await _loadCurrentAuthSession();
+      await _reloadVisibleData(
+        allowMarketCacheFallback: !restoredCache,
+        preserveCurrentData: restoredCache,
+        skipCloudAreaProfiles: restoredCache,
+      );
     } catch (error) {
-      loadError = 'Failed to load official app data: $error';
+      loadError = NetworkErrorMapper.messageFor(
+        error,
+        action: NetworkErrorAction.load,
+      );
     } finally {
       isLoading = false;
       notifyListeners();
@@ -149,60 +221,121 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> ensureInitialMarketData() async {
-    if (hasAttemptedInitialMarketRefresh) return;
-    hasAttemptedInitialMarketRefresh = true;
-    if (!SupabaseConfig.isConfigured ||
-        isRefreshingGovernmentData ||
+    if (!SupabaseConfig.isConfigured || isRefreshingGovernmentData) {
+      return;
+    }
+
+    final cachedAt = marketTrendCacheUpdatedAt;
+    if (cachedAt != null) {
+      final cacheEntry = MarketTrendCacheEntry(
+        areas: areas,
+        updatedAt: cachedAt,
+      );
+      if (cacheEntry.isFreshAt(DateTime.now())) return;
+      if (hasAttemptedExpiredMarketCacheRefresh) return;
+      hasAttemptedExpiredMarketCacheRefresh = true;
+      await refreshGovernmentData();
+      return;
+    }
+
+    if (hasAttemptedInitialMarketRefresh ||
         areas.any((area) => area.hasMarketHistory)) {
       return;
     }
+    hasAttemptedInitialMarketRefresh = true;
     await refreshGovernmentData();
   }
 
-  Future<void> refreshLatestData() async {
+  Future<DataRefreshResult> refreshLatestData() async {
     if (!SupabaseConfig.isConfigured) {
-      latestDataRefreshMessage =
+      final message =
           'Supabase is not configured. Add the project URL and client-safe '
           'publishable key to load latest data.';
+      latestDataRefreshStatus = DataRefreshStatus.failure;
+      latestDataRefreshMessage = message;
       notifyListeners();
-      return;
+      return DataRefreshResult.failure(message);
     }
 
     if (isRefreshingLatestData) {
-      return;
+      return DataRefreshResult.failure(
+        latestDataRefreshMessage ?? NetworkErrorMapper.refreshFailureMessage,
+      );
     }
+
+    final previousAreas = areas;
+    final previousProperties = properties;
+    final previousCloudAreaProfiles = isUsingCloudAreaProfiles;
+    final previousProcessedAreaProfiles = isUsingProcessedAreaProfiles;
+    final previousMarketTrendCache = isUsingMarketTrendCache;
+    final previousLiveAreaProfiles = isUsingLiveAreaProfiles;
+    final previousCloudProperties = isUsingCloudProperties;
+    final previousProcessedTeduhProperties = isUsingProcessedTeduhProperties;
+    final previousCacheUpdatedAt = marketTrendCacheUpdatedAt;
 
     isRefreshingLatestData = true;
     latestDataRefreshMessage = null;
+    latestDataRefreshStatus = DataRefreshStatus.idle;
     notifyListeners();
 
     try {
-      await _reloadVisibleData(
+      final loadResult = await _reloadVisibleData(
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
+        requireCloudData: true,
       );
-      latestDataRefreshMessage =
+      if (!loadResult.cloudAreaProfilesSucceeded ||
+          !loadResult.cloudPropertiesSucceeded) {
+        throw StateError(
+          'Latest data was not confirmed from Supabase; keeping current data.',
+        );
+      }
+      final message =
           'Latest data refreshed: ${properties.length} properties and '
           '${areas.length} areas loaded.';
+      latestDataRefreshStatus = DataRefreshStatus.success;
+      latestDataRefreshMessage = message;
+      return DataRefreshResult.success(message);
     } catch (error) {
-      latestDataRefreshMessage = 'Latest data refresh failed: $error';
+      areas = previousAreas;
+      properties = previousProperties;
+      isUsingCloudAreaProfiles = previousCloudAreaProfiles;
+      isUsingProcessedAreaProfiles = previousProcessedAreaProfiles;
+      isUsingMarketTrendCache = previousMarketTrendCache;
+      isUsingLiveAreaProfiles = previousLiveAreaProfiles;
+      isUsingCloudProperties = previousCloudProperties;
+      isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
+      marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
+      _invalidateDataCaches();
+      final message = NetworkErrorMapper.messageFor(
+        error,
+        action: NetworkErrorAction.refresh,
+      );
+      latestDataRefreshStatus = DataRefreshStatus.failure;
+      latestDataRefreshMessage = message;
+      return DataRefreshResult.failure(message);
     } finally {
       isRefreshingLatestData = false;
       notifyListeners();
     }
   }
 
-  Future<void> refreshGovernmentData() async {
+  Future<DataRefreshResult> refreshGovernmentData() async {
     if (!SupabaseConfig.isConfigured) {
-      governmentDataRefreshMessage =
+      final message =
           'Supabase is not configured. Add the project URL and client-safe '
           'publishable key before reloading latest data.';
+      governmentDataRefreshStatus = DataRefreshStatus.failure;
+      governmentDataRefreshMessage = message;
       notifyListeners();
-      return;
+      return DataRefreshResult.failure(message);
     }
 
     if (isRefreshingGovernmentData) {
-      return;
+      return DataRefreshResult.failure(
+        governmentDataRefreshMessage ??
+            NetworkErrorMapper.refreshFailureMessage,
+      );
     }
 
     final previousAreas = areas;
@@ -217,25 +350,32 @@ class AppState extends ChangeNotifier {
 
     isRefreshingGovernmentData = true;
     governmentDataRefreshMessage = null;
+    governmentDataRefreshStatus = DataRefreshStatus.idle;
     notifyListeners();
 
     try {
-      await _reloadVisibleData(
+      final loadResult = await _reloadVisibleData(
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
+        requireCloudData: true,
       );
-      if (areas.isEmpty) {
+      if (!loadResult.cloudAreaProfilesSucceeded || areas.isEmpty) {
         throw StateError(
-          'Supabase returned no area profiles; keeping the previous data.',
+          'No area profiles were returned; keeping the previous data.',
+        );
+      }
+      if (!loadResult.cloudPropertiesSucceeded) {
+        throw StateError(
+          'Properties were not confirmed from Supabase; keeping previous data.',
         );
       }
       final years = _dataYears(areas);
-      final yearSuffix = years.isEmpty
-          ? ''
-          : ' Data years: ${years.join(', ')}.';
-      governmentDataRefreshMessage =
-          'Latest data reloaded: ${properties.length} properties and '
-          '${areas.length} areas loaded from Supabase.$yearSuffix';
+      final message =
+          'Latest market data reloaded from Supabase. Data years: '
+          '${years.isEmpty ? 'unavailable' : years.join(', ')}.';
+      governmentDataRefreshStatus = DataRefreshStatus.success;
+      governmentDataRefreshMessage = message;
+      return DataRefreshResult.success(message);
     } catch (error) {
       areas = previousAreas;
       properties = previousProperties;
@@ -247,7 +387,13 @@ class AppState extends ChangeNotifier {
       isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
       marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
       _invalidateDataCaches();
-      governmentDataRefreshMessage = 'Latest data reload failed: $error';
+      final message = _marketRefreshFailureMessage(
+        error,
+        hasRetainedMarketData: previousAreas.isNotEmpty,
+      );
+      governmentDataRefreshStatus = DataRefreshStatus.failure;
+      governmentDataRefreshMessage = message;
+      return DataRefreshResult.failure(message);
     } finally {
       isRefreshingGovernmentData = false;
       notifyListeners();
@@ -293,17 +439,12 @@ class AppState extends ChangeNotifier {
       isAuthenticated = true;
       accountNotice = null;
       return null;
-    } on AuthException catch (error) {
-      final message = error.message.toLowerCase();
-      if (message.contains('invalid login credentials')) {
-        return 'Incorrect email address or password.';
-      }
-      if (message.contains('email not confirmed')) {
-        return 'Confirm your email address before signing in.';
-      }
-      return error.message;
-    } catch (_) {
-      return 'Unable to sign in. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('sign in', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.signIn,
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -333,7 +474,7 @@ class AppState extends ChangeNotifier {
       final authUser = response.user;
       if (authUser == null) return 'Unable to create account.';
       if (authUser.identities?.isEmpty ?? false) {
-        return 'An account with this email address already exists. Please sign in.';
+        return AuthErrorMapper.duplicateAccountMessage;
       }
       user = AppUser(
         id: authUser.id,
@@ -349,13 +490,12 @@ class AppState extends ChangeNotifier {
         await _userAccountRepository.savePreferences(authUser.id, preferences);
       }
       return null;
-    } on AuthException catch (error) {
-      if (error.message.toLowerCase().contains('already registered')) {
-        return 'An account with this email address already exists. Please sign in.';
-      }
-      return error.message;
-    } catch (_) {
-      return 'Unable to create account. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('create account', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.signUp,
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -420,10 +560,12 @@ class AppState extends ChangeNotifier {
       isAuthenticated = false;
       accountNotice = 'Password updated successfully. Please sign in.';
       return null;
-    } on AuthException catch (error) {
-      return error.message;
-    } catch (_) {
-      return 'Unable to update password. Please request a new reset link.';
+    } catch (error, stackTrace) {
+      _debugAuthError('update recovered password', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.passwordUpdate,
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -458,10 +600,12 @@ class AppState extends ChangeNotifier {
         emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
       );
       return null;
-    } on AuthException catch (error) {
-      return error.message;
-    } catch (_) {
-      return 'Unable to resend confirmation email. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('resend confirmation email', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.resendConfirmation,
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -551,8 +695,13 @@ class AppState extends ChangeNotifier {
       await _userAccountRepository.saveProfile(value);
       user = value;
       return null;
-    } catch (_) {
-      return 'Unable to save profile. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('save profile', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.accountUpdate,
+        fallback: 'Unable to save profile. Please try again.',
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -585,8 +734,13 @@ class AppState extends ChangeNotifier {
       preferences = value;
       _recommendationCacheKey = '';
       return null;
-    } catch (_) {
-      return 'Unable to save preferences. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('save preferences', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.accountUpdate,
+        fallback: 'Unable to save preferences. Please try again.',
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -621,13 +775,13 @@ class AppState extends ChangeNotifier {
         UserAttributes(password: newPassword),
       );
       return null;
-    } on AuthException catch (error) {
-      if (error.message.toLowerCase().contains('invalid login')) {
-        return 'Current password is incorrect.';
-      }
-      return error.message;
-    } catch (_) {
-      return 'Unable to update password. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('change password', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.passwordUpdate,
+        fallback: 'Unable to update password. Please try again.',
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -648,10 +802,12 @@ class AppState extends ChangeNotifier {
         redirectTo: SupabaseConfig.passwordRecoveryRedirectUrl,
       );
       return null;
-    } on AuthException catch (error) {
-      return error.message;
-    } catch (_) {
-      return 'Unable to send reset email. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('send password reset email', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.passwordReset,
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -672,8 +828,13 @@ class AppState extends ChangeNotifier {
       await _userAccountRepository.saveProfile(updated);
       user = updated;
       return null;
-    } catch (_) {
-      return 'Unable to upload avatar. Please try again.';
+    } catch (error, stackTrace) {
+      _debugAuthError('upload avatar', error, stackTrace);
+      return AuthErrorMapper.messageFor(
+        error,
+        context: AuthErrorContext.accountUpdate,
+        fallback: 'Unable to upload avatar. Please try again.',
+      );
     } finally {
       isAccountBusy = false;
       notifyListeners();
@@ -686,10 +847,13 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _reloadVisibleData({
+  Future<_VisibleDataLoadResult> _reloadVisibleData({
     bool allowMarketCacheFallback = false,
     bool preserveCurrentData = false,
+    bool requireCloudData = false,
+    bool skipCloudAreaProfiles = false,
   }) async {
+    final result = _VisibleDataLoadResult();
     final localAreas = await _loadStaticAreaMetadata();
 
     if (!preserveCurrentData) {
@@ -706,30 +870,46 @@ class AppState extends ChangeNotifier {
     }
     openDataLoadMessage = null;
 
+    var loadedAreas = preserveCurrentData && areas.isNotEmpty;
+
     if (!SupabaseConfig.isConfigured) {
       openDataLoadMessage =
           'Supabase is not configured. Add the project URL and publishable key '
           'to load official property and area data.';
-      if (preserveCurrentData) {
+      if (requireCloudData) {
         throw StateError(
           openDataLoadMessage ??
               'Supabase is not configured to load official data.',
         );
       }
-      return;
+      return result;
     }
 
-    var loadedAreas = false;
-    final cloudProfiles = await _loadCloudAreaProfiles();
-    if (cloudProfiles.isNotEmpty) {
-      final refreshedAreas = _areasFromProfiles(cloudProfiles, localAreas);
-      if (refreshedAreas.isNotEmpty) {
-        areas = refreshedAreas;
-        isUsingCloudAreaProfiles = true;
-        isUsingProcessedAreaProfiles = false;
-        isUsingMarketTrendCache = false;
-        isUsingLiveAreaProfiles = false;
-        loadedAreas = true;
+    if (!skipCloudAreaProfiles) {
+      final cloudProfiles = await _loadCloudAreaProfiles();
+      final cloudProfilesError = cloudProfiles.error;
+      if (cloudProfilesError != null) {
+        openDataLoadMessage = NetworkErrorMapper.messageFor(
+          cloudProfilesError,
+          action: NetworkErrorAction.load,
+        );
+        if (requireCloudData) {
+          throw cloudProfilesError;
+        }
+      } else if (cloudProfiles.profiles.isNotEmpty) {
+        final refreshedAreas = _areasFromProfiles(
+          cloudProfiles.profiles,
+          localAreas,
+        );
+        if (refreshedAreas.isNotEmpty) {
+          areas = refreshedAreas;
+          isUsingCloudAreaProfiles = true;
+          isUsingProcessedAreaProfiles = false;
+          isUsingMarketTrendCache = false;
+          isUsingLiveAreaProfiles = false;
+          result.cloudAreaProfilesSucceeded = true;
+          loadedAreas = true;
+        }
       }
     }
 
@@ -754,8 +934,18 @@ class AppState extends ChangeNotifier {
     }
 
     final cloudProperties = await _loadCloudProperties(areas);
-    if (cloudProperties.isNotEmpty) {
-      properties = cloudProperties;
+    result.cloudPropertiesSucceeded = cloudProperties.succeeded;
+    final cloudPropertiesError = cloudProperties.error;
+    if (cloudPropertiesError != null) {
+      openDataLoadMessage = NetworkErrorMapper.messageFor(
+        cloudPropertiesError,
+        action: NetworkErrorAction.load,
+      );
+      if (requireCloudData) {
+        throw cloudPropertiesError;
+      }
+    } else {
+      properties = cloudProperties.properties;
       isUsingCloudProperties = true;
       isUsingProcessedTeduhProperties = false;
     }
@@ -766,23 +956,28 @@ class AppState extends ChangeNotifier {
       marketTrendCacheUpdatedAt = cachedAt;
     }
     _invalidateDataCaches();
+    return result;
   }
 
-  Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
+  Future<_CloudAreaProfilesLoadAttempt> _loadCloudAreaProfiles() async {
     try {
-      return await _areaProfileRepository.getAreaProfiles();
-    } on AreaProfileRepositoryException catch (error) {
-      openDataLoadMessage = error.toString();
-      return const [];
+      return _CloudAreaProfilesLoadAttempt.success(
+        await _areaProfileRepository.getAreaProfiles(),
+      );
+    } catch (error) {
+      return _CloudAreaProfilesLoadAttempt.failure(error);
     }
   }
 
-  Future<List<Property>> _loadCloudProperties(List<AreaData> areas) async {
+  Future<_CloudPropertiesLoadAttempt> _loadCloudProperties(
+    List<AreaData> areas,
+  ) async {
     try {
-      return await _propertyRepository.getProperties(areas);
-    } on PropertyRepositoryException catch (error) {
-      openDataLoadMessage = error.toString();
-      return const [];
+      return _CloudPropertiesLoadAttempt.success(
+        await _propertyRepository.getProperties(areas),
+      );
+    } catch (error) {
+      return _CloudPropertiesLoadAttempt.failure(error);
     }
   }
 
@@ -867,6 +1062,37 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<bool> _restoreMarketTrendCache() async {
+    final cachedMarketTrend = await _loadMarketTrendCache();
+    if (cachedMarketTrend == null || cachedMarketTrend.areas.isEmpty) {
+      return false;
+    }
+
+    areas = _canonicalAreas(cachedMarketTrend.areas);
+    marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingMarketTrendCache = true;
+    isUsingLiveAreaProfiles = false;
+    _invalidateDataCaches();
+    return true;
+  }
+
+  String _marketRefreshFailureMessage(
+    Object error, {
+    required bool hasRetainedMarketData,
+  }) {
+    if (NetworkErrorMapper.isNetworkError(error)) {
+      return hasRetainedMarketData
+          ? 'Refresh failed: no internet connection. Cached market data is still displayed.'
+          : 'Refresh failed: no internet connection. Market data is unavailable.';
+    }
+
+    return hasRetainedMarketData
+        ? 'Latest market data could not be reloaded. Cached data is still displayed.'
+        : 'Latest market data could not be reloaded.';
+  }
+
   Future<void> _saveMarketTrendCache(
     List<AreaData> value,
     DateTime updatedAt,
@@ -917,6 +1143,12 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  void _debugAuthError(String action, Object error, StackTrace stackTrace) {
+    if (!kDebugMode) return;
+    debugPrint('[Auth] Failed to $action: $error');
+    debugPrintStack(label: '[Auth] $action stack', stackTrace: stackTrace);
   }
 
   void _publishFavouriteIds() {

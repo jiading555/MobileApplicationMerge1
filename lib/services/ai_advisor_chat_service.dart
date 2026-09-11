@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/gemini_config.dart';
+import '../core/utils/network_error_mapper.dart';
 import '../models/recommendation.dart';
 import '../models/user_preferences.dart';
 
@@ -61,24 +62,19 @@ class AiAdvisorChatService {
 
       return text;
     } on TimeoutException {
-      throw Exception(
-        'The AI advisor is taking longer than expected. '
-        'Please check your internet connection and try again.',
-      );
+      throw Exception(NetworkErrorMapper.offlineMessage);
     } catch (error) {
       final message = error.toString();
+      if (NetworkErrorMapper.isNetworkError(error)) {
+        throw Exception(NetworkErrorMapper.offlineMessage);
+      }
 
       if (message.contains('AI request limit reached') ||
-          message.contains('AI service is temporarily busy') ||
-          message.contains('Gemini API error') ||
-          message.contains('Gemini returned')) {
+          message.contains('AI service is temporarily busy')) {
         rethrow;
       }
 
-      throw Exception(
-        'Failed to get AI advisor response. '
-        'Please try again.',
-      );
+      throw Exception(NetworkErrorMapper.aiFailureMessage);
     }
   }
 

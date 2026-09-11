@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/property_area_resolver.dart';
@@ -10,6 +11,7 @@ import '../../core/utils/property_filtering.dart';
 import '../../core/utils/property_type_normalizer.dart';
 import '../../core/utils/scheme_normalizer.dart';
 import '../../core/utils/responsive_layout.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/area_data.dart';
@@ -101,6 +103,19 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
         toolbarHeight: compactHeight ? 48 : null,
         title: const Text('Property search'),
         actions: [
+          IconButton(
+            onPressed: state.isRefreshingLatestData
+                ? null
+                : () => _reloadPropertiesFromSupabase(state),
+            tooltip: 'Reload properties from Supabase',
+            icon: state.isRefreshingLatestData
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_download_outlined),
+          ),
           IconButton(
             onPressed: _reset,
             tooltip: 'Reset filters',
@@ -292,6 +307,17 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       selectedType = PropertyTypeNormalizer.anyType;
       selectedScheme = SchemeNormalizer.anyScheme;
     });
+  }
+
+  Future<void> _reloadPropertiesFromSupabase(AppState state) async {
+    final result = await state.refreshLatestData();
+    if (!mounted) return;
+
+    showAppSnackBar(
+      context,
+      message: result.message,
+      type: result.succeeded ? AppFeedbackType.success : AppFeedbackType.error,
+    );
   }
 
   void _onSearchChanged(String value) {

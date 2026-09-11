@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_feedback.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -116,17 +116,13 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _refreshData(BuildContext context) async {
     final state = AppScope.of(context);
-    await state.refreshGovernmentData();
+    final result = await state.refreshGovernmentData();
     if (!context.mounted) return;
 
-    final message =
-        state.governmentDataSyncMessage ?? 'Market snapshot refreshed.';
-    final failed = message.toLowerCase().startsWith('refresh failed');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: failed ? const Color(0xFFB42318) : AppTheme.green,
-      ),
+    showAppSnackBar(
+      context,
+      message: result.message,
+      type: result.succeeded ? AppFeedbackType.success : AppFeedbackType.error,
     );
   }
 }

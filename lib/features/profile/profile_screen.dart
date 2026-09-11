@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/location_normalizer.dart';
 import '../../core/utils/responsive_layout.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_card.dart';
 import '../../models/app_user.dart';
@@ -191,11 +192,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _message(String text, bool error) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: error ? const Color(0xFFB42318) : AppTheme.green,
-      ),
+    showAppSnackBar(
+      context,
+      message: text,
+      type: error ? AppFeedbackType.error : AppFeedbackType.success,
     );
   }
 
@@ -341,9 +341,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final updated = await showModalBottomSheet<UserPreferences>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: false,
-      enableDrag: false,
+      showDragHandle: true,
+      enableDrag: true,
       useSafeArea: true,
+      useRootNavigator: true,
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 320),
+        reverseDuration: Duration(milliseconds: 240),
+      ),
       builder: (context) =>
           _PropertyPreferencesSheet(initialValue: state.preferences),
     );

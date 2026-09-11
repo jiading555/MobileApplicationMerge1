@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/network_error_mapper.dart';
 import '../../models/recommendation.dart';
 import '../../models/user_preferences.dart';
 import '../../services/ai_comparison_service.dart';
@@ -99,7 +100,10 @@ class _AiComparisonCardState extends State<AiComparisonCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          snapshot.error.toString(),
+                          NetworkErrorMapper.cleanMessage(
+                            snapshot.error!,
+                            fallback: NetworkErrorMapper.aiFailureMessage,
+                          ),
                           style: const TextStyle(
                             color: Colors.red,
                             fontSize: 12,

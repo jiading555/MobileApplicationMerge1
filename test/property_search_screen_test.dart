@@ -1045,6 +1045,21 @@ void main() {
     expect(find.text('Any State'), findsOneWidget);
     expect(find.text('1 properties found'), findsOneWidget);
   });
+
+  testWidgets('PropertySearchScreen shows separate reload and reset actions', (
+    tester,
+  ) async {
+    final state = AppState();
+    state.properties = const [];
+    state.areas = const [];
+
+    await _pumpSearch(tester, state);
+
+    expect(find.byTooltip('Reload properties from Supabase'), findsOneWidget);
+    expect(find.byTooltip('Reset filters'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_download_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.restart_alt_rounded), findsOneWidget);
+  });
 }
 
 Future<void> _pumpSearch(WidgetTester tester, AppState state) {

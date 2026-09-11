@@ -6,6 +6,7 @@ import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/responsive_layout.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/line_chart.dart';
 import '../../core/widgets/metric_card.dart';
 import '../../core/widgets/page_container.dart';
@@ -70,7 +71,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         : 'local sample';
     final refreshMessage = state.governmentDataSyncMessage;
     final refreshFailed =
-        refreshMessage?.startsWith('Refresh failed.') ?? false;
+        state.governmentDataRefreshStatus == DataRefreshStatus.failure;
     return Scaffold(
       appBar: AppBar(
         title: const FittedBox(
@@ -432,16 +433,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 
   Future<void> _refreshGovernmentData(AppState state) async {
-    await state.refreshGovernmentData();
+    final result = await state.refreshGovernmentData();
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          state.governmentDataSyncMessage ?? 'Government data refresh done.',
-        ),
-      ),
+    showAppSnackBar(
+      context,
+      message: result.message,
+      type: result.succeeded ? AppFeedbackType.success : AppFeedbackType.error,
     );
   }
 }

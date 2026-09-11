@@ -60,6 +60,9 @@ class _SmartPropertyAdvisorAppState extends State<SmartPropertyAdvisorApp> {
   Future<void> _handleAuthLink(Uri uri) async {
     await appState.handleAuthDeepLink(uri);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       navigatorKey.currentState?.popUntil((route) => route.isFirst);
     });
   }
