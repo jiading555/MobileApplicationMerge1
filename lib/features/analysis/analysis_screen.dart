@@ -436,11 +436,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     if (!mounted) {
       return;
     }
+    final message =
+        state.governmentDataSyncMessage ?? 'Government data refresh done.';
+    final normalizedMessage = message.toLowerCase();
+    final failed =
+        normalizedMessage.contains('failed') ||
+        normalizedMessage.contains('could not') ||
+        normalizedMessage.contains('no internet');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          state.governmentDataSyncMessage ?? 'Government data refresh done.',
-        ),
+        content: Text(message),
+        backgroundColor: failed ? const Color(0xFFB42318) : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
