@@ -100,52 +100,39 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
       appBar: AppBar(
         toolbarHeight: compactHeight ? 48 : null,
         title: const Text('Property search'),
-        actions: [
-          IconButton(
-            onPressed: _reset,
-            tooltip: 'Reset filters',
-            icon: const Icon(Icons.restart_alt_rounded),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: PageContainer(
         padding: pagePadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: searchController,
-              onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search locations, projects, property type...',
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: compactHeight ? 10 : 12,
-                ),
-                prefixIcon: const Icon(Icons.search_rounded),
-                prefixIconConstraints: BoxConstraints(
-                  minWidth: compactHeight ? 40 : 44,
-                  minHeight: compactHeight ? 40 : 44,
-                ),
-                suffixIconConstraints: BoxConstraints(
-                  minWidth: compactHeight ? 40 : 44,
-                  minHeight: compactHeight ? 40 : 44,
-                ),
-                suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: searchController,
-                  builder: (context, value, _) {
-                    if (value.text.isEmpty) {
-                      return const Icon(Icons.tune_rounded);
-                    }
-                    return IconButton(
-                      onPressed: _clearSearch,
-                      icon: const Icon(Icons.close_rounded),
-                    );
-                  },
-                ),
-              ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: searchController,
+              builder: (context, value, _) {
+                return TextField(
+                  controller: searchController,
+                  onChanged: _onSearchChanged,
+                  decoration: InputDecoration(
+                    hintText: 'Search locations, projects, property type...',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: compactHeight ? 10 : 12,
+                    ),
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: compactHeight ? 40 : 44,
+                      minHeight: compactHeight ? 40 : 44,
+                    ),
+                    suffixIcon: value.text.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: _clearSearch,
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                  ),
+                );
+              },
             ),
             SizedBox(height: controlGap),
             SingleChildScrollView(
@@ -153,6 +140,8 @@ class _PropertySearchScreenState extends State<PropertySearchScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
+                  _FilterResetButton(onPressed: _reset),
+                  SizedBox(width: controlGap),
                   _FilterDropdown(
                     buttonKey: const ValueKey('property-filter-state-button'),
                     label: selectedState == 'Any' ? 'Any State' : selectedState,
@@ -615,6 +604,28 @@ class _FilterDropdown extends StatelessWidget {
         enabled: enabled,
         selected: selected,
         width: width,
+      ),
+    );
+  }
+}
+
+class _FilterResetButton extends StatelessWidget {
+  const _FilterResetButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: Color(0xFFDCE3ED)),
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: 'Reset filters',
+        icon: const Icon(Icons.restart_alt_rounded),
       ),
     );
   }

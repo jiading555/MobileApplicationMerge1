@@ -6,12 +6,14 @@ import '../../models/app_user.dart';
 import '../../models/user_preferences.dart';
 
 class UserAccountRepository {
-  const UserAccountRepository();
+  const UserAccountRepository([this._client]);
 
-  SupabaseClient get _client => Supabase.instance.client;
+  final SupabaseClient? _client;
+
+  SupabaseClient get _supabase => _client ?? Supabase.instance.client;
 
   Future<AppUser> loadProfile(User authUser) async {
-    final row = await _client
+    final row = await _supabase
         .from('profiles')
         .select('id, full_name, phone, avatar_url')
         .eq('id', authUser.id)
@@ -28,7 +30,7 @@ class UserAccountRepository {
   }
 
   Future<UserPreferences> loadPreferences(String userId) async {
-    final row = await _client
+    final row = await _supabase
         .from('user_preferences')
         .select()
         .eq('user_id', userId)
@@ -47,7 +49,7 @@ class UserAccountRepository {
   }
 
   Future<void> saveProfile(AppUser user) async {
-    await _client.from('profiles').upsert({
+    await _supabase.from('profiles').upsert({
       'id': user.id,
       'full_name': user.name,
       'phone': user.phone.isEmpty ? null : user.phone,
@@ -57,7 +59,7 @@ class UserAccountRepository {
   }
 
   Future<void> savePreferences(String userId, UserPreferences value) async {
-    await _client.from('user_preferences').upsert({
+    await _supabase.from('user_preferences').upsert({
       'user_id': userId,
       'preferred_state': value.preferredState.isEmpty
           ? null
@@ -75,14 +77,22 @@ class UserAccountRepository {
   }
 
   Future<Set<String>> loadFavouritePropertyIds(String userId) async {
-    final rows = await _client
-        .from('user_favourites')
-        .select('property_id')
-        .eq('user_id', userId);
-    return rows
-        .map((row) => row['property_id']?.toString())
-        .whereType<String>()
-        .toSet();
+    try {
+      final rows = await _supabase
+          .from('user_favourites')
+          .select('property_id')
+          .eq('user_id', userId);
+      return rows
+          .map((row) => row['property_id']?.toString())
+          .whereType<String>()
+          .toSet();
+    } catch (error, stackTrace) {
+      throw UserAccountRepositoryException(
+        'Failed to load favourite properties.',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<void> setFavourite({
@@ -90,19 +100,45 @@ class UserAccountRepository {
     required String propertyId,
     required bool isFavourite,
   }) async {
-    if (isFavourite) {
-      await _client.from('user_favourites').upsert({
-        'user_id': userId,
-        'property_id': propertyId,
-      });
-      return;
+    final trimmedUserId = userId.trim();
+    final trimmedPropertyId = propertyId.trim();
+    if (trimmedUserId.isEmpty || trimmedPropertyId.isEmpty) {
+      throw ArgumentError(
+        'Favourite writes require non-empty user_id and property_id.',
+      );
     }
 
-    await _client
-        .from('user_favourites')
-        .delete()
-        .eq('user_id', userId)
-        .eq('property_id', propertyId);
+    try {
+      if (isFavourite) {
+        final existing = await _supabase
+            .from('user_favourites')
+            .select('property_id')
+            .eq('user_id', trimmedUserId)
+            .eq('property_id', trimmedPropertyId)
+            .limit(1);
+        if (existing.isNotEmpty) {
+          return;
+        }
+
+        await _supabase.from('user_favourites').insert({
+          'user_id': trimmedUserId,
+          'property_id': trimmedPropertyId,
+        });
+        return;
+      }
+
+      await _supabase
+          .from('user_favourites')
+          .delete()
+          .eq('user_id', trimmedUserId)
+          .eq('property_id', trimmedPropertyId);
+    } catch (error, stackTrace) {
+      throw UserAccountRepositoryException(
+        'Failed to update favourite property.',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<String> uploadAvatar({
@@ -112,7 +148,7 @@ class UserAccountRepository {
   }) async {
     final safeExtension = extension.toLowerCase() == 'png' ? 'png' : 'jpg';
     final path = '$userId/avatar.$safeExtension';
-    await _client.storage
+    await _supabase.storage
         .from('avatars')
         .uploadBinary(
           path,
@@ -122,6 +158,21 @@ class UserAccountRepository {
             contentType: safeExtension == 'png' ? 'image/png' : 'image/jpeg',
           ),
         );
-    return '${_client.storage.from('avatars').getPublicUrl(path)}?v=${DateTime.now().millisecondsSinceEpoch}';
+    return '${_supabase.storage.from('avatars').getPublicUrl(path)}?v=${DateTime.now().millisecondsSinceEpoch}';
   }
+}
+
+class UserAccountRepositoryException implements Exception {
+  const UserAccountRepositoryException(
+    this.message,
+    this.cause,
+    this.stackTrace,
+  );
+
+  final String message;
+  final Object cause;
+  final StackTrace stackTrace;
+
+  @override
+  String toString() => '$message Cause: $cause';
 }

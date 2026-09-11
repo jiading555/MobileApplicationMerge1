@@ -5,6 +5,8 @@ import '../../app/app_scope.dart';
 import '../../app/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/location_normalizer.dart';
+import '../../core/utils/refresh_message_classifier.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/line_chart.dart';
 import '../../core/widgets/metric_card.dart';
@@ -26,6 +28,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   String comparisonPropertyType = 'All residential';
   String selectedView = 'Overview';
   bool _initialRefreshScheduled = false;
+  int _appliedAnalysisLocationVersion = -1;
 
   @override
   void didChangeDependencies() {
@@ -47,6 +50,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         body: SafeArea(child: _NoAreasAvailable()),
       );
     }
+    _applyRequestedAnalysisLocation(state);
     selectedAreaId ??= state.areas.first.id;
     var area = state.areaFor(selectedAreaId!);
     final states = state.areas.map((item) => item.state).toSet().toList()
@@ -69,8 +73,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         ? 'processed JSON'
         : 'local sample';
     final refreshMessage = state.governmentDataSyncMessage;
-    final refreshFailed =
-        refreshMessage?.startsWith('Refresh failed.') ?? false;
+    final refreshFailed = refreshMessage == null
+        ? false
+        : isRefreshFailureMessage(refreshMessage);
     return Scaffold(
       appBar: AppBar(
         title: const FittedBox(
@@ -249,7 +254,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          refreshMessage!,
+                          refreshMessage,
                           style: const TextStyle(
                             color: Color(0xFFB3261E),
                             fontWeight: FontWeight.w600,
@@ -436,13 +441,49 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     if (!mounted) {
       return;
     }
+    final message =
+        state.governmentDataSyncMessage ?? 'Government data refresh done.';
+    final failed = isRefreshFailureMessage(message);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          state.governmentDataSyncMessage ?? 'Government data refresh done.',
-        ),
+        content: Text(message),
+        backgroundColor: failed ? const Color(0xFFB42318) : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  void _applyRequestedAnalysisLocation(AppState state) {
+    final version = state.requestedAnalysisLocationVersion;
+    if (_appliedAnalysisLocationVersion == version) {
+      return;
+    }
+    _appliedAnalysisLocationVersion = version;
+
+    final requestedState = state.requestedAnalysisState;
+    final requestedDistrict = state.requestedAnalysisDistrict;
+    if (requestedState == null || requestedDistrict == null) {
+      return;
+    }
+
+    for (final area in state.areas) {
+      if (!LocationNormalizer.stateMatches(area.state, requestedState) ||
+          !LocationNormalizer.districtMatches(
+            area.name,
+            requestedDistrict,
+            state: area.state,
+          )) {
+        continue;
+      }
+
+      selectedState = area.state;
+      selectedAreaId = area.id;
+      selectedMarketArea = 'Overall';
+      selectedPropertyType = 'All residential';
+      comparisonPropertyType = 'All residential';
+      selectedView = 'Overview';
+      return;
+    }
   }
 }
 

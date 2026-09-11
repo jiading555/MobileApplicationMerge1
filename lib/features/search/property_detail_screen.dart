@@ -8,7 +8,6 @@ import '../../core/utils/responsive_layout.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/property_art.dart';
 import '../../models/property.dart';
-import '../../models/recommendation.dart';
 
 class PropertyDetailScreen extends StatelessWidget {
   const PropertyDetailScreen({required this.propertyId, super.key});
@@ -22,12 +21,9 @@ class PropertyDetailScreen extends StatelessWidget {
       (item) => item.id == propertyId,
     );
     final area = state.matchedAreaFor(property);
-    PropertyRecommendation? recommendation;
-    for (final item in state.recommendations) {
-      if (item.property.id == property.id) {
-        recommendation = item;
-      }
-    }
+    final recommendation = state.suitabilityFor(property);
+    final matchesAdvisorPreferences =
+        recommendation != null && state.matchesAdvisorPreferences(property);
     final priceInfo = _priceInfo(property);
     final pricePerSqft = property.pricePerSqft;
     final tenureText = _tenureText(property);
@@ -46,14 +42,43 @@ class PropertyDetailScreen extends StatelessWidget {
             valueListenable: state.favouriteIdsListenable,
             builder: (context, favouriteIds, _) {
               final isFavourite = favouriteIds.contains(property.id);
-              return IconButton(
-                onPressed: () => state.toggleFavourite(property.id),
-                icon: Icon(
-                  isFavourite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  color: isFavourite ? const Color(0xFFE54865) : AppTheme.ink,
-                ),
+              return ValueListenableBuilder<Set<String>>(
+                valueListenable: state.favouriteOperationIdsListenable,
+                builder: (context, operationIds, _) {
+                  final isBusy = operationIds.contains(property.id);
+                  return IconButton(
+                    tooltip: isFavourite
+                        ? 'Remove from favourites'
+                        : 'Add to favourites',
+                    onPressed: isBusy
+                        ? null
+                        : () async {
+                            final error = await state.toggleFavourite(
+                              property.id,
+                            );
+                            if (error == null || !context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(error),
+                                backgroundColor: const Color(0xFFB42318),
+                              ),
+                            );
+                          },
+                    icon: isBusy
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            isFavourite
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: isFavourite
+                                ? const Color(0xFFE54865)
+                                : AppTheme.ink,
+                          ),
+                  );
+                },
               );
             },
           ),
@@ -210,6 +235,8 @@ class PropertyDetailScreen extends StatelessWidget {
                     _AdvisorSummary(
                       score: recommendation?.score,
                       reasons: recommendation?.reasons ?? const [],
+                      hasAreaData: area != null,
+                      matchesAdvisorPreferences: matchesAdvisorPreferences,
                     ),
                     if (property.facilities.isNotEmpty) ...[
                       const SizedBox(height: 20),
@@ -577,7 +604,7 @@ class _AreaProfileUnavailableNotice extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'No matched district area profile is available for this property.',
+              'Area data is unavailable for this property.',
               style: TextStyle(color: AppTheme.muted),
             ),
           ),
@@ -831,13 +858,22 @@ class _Fact extends StatelessWidget {
 }
 
 class _AdvisorSummary extends StatelessWidget {
-  const _AdvisorSummary({required this.score, required this.reasons});
+  const _AdvisorSummary({
+    required this.score,
+    required this.reasons,
+    required this.hasAreaData,
+    required this.matchesAdvisorPreferences,
+  });
 
   final double? score;
   final List<String> reasons;
+  final bool hasAreaData;
+  final bool matchesAdvisorPreferences;
 
   @override
   Widget build(BuildContext context) {
+    final message = _message();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -853,14 +889,36 @@ class _AdvisorSummary extends StatelessWidget {
           CircleAvatar(
             radius: 27,
             backgroundColor: Colors.white,
-            child: Text(
-              score == null ? '-' : score!.round().toString(),
-              style: const TextStyle(
-                color: AppTheme.blue,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+            child: score == null
+                ? const Text(
+                    '-',
+                    style: TextStyle(
+                      color: AppTheme.blue,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        score!.round().toString(),
+                        style: const TextStyle(
+                          color: AppTheme.blue,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Text(
+                        '/100',
+                        style: TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -877,9 +935,7 @@ class _AdvisorSummary extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  score == null
-                      ? 'Change advisor filters to include this property.'
-                      : reasons.take(2).join(' - '),
+                  message,
                   style: const TextStyle(color: Colors.white70, height: 1.4),
                 ),
               ],
@@ -888,6 +944,23 @@ class _AdvisorSummary extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _message() {
+    if (score == null) {
+      return hasAreaData
+          ? 'Insufficient property or area data to calculate suitability.'
+          : 'Area data is unavailable for this property.';
+    }
+
+    if (!matchesAdvisorPreferences) {
+      return 'This property can be scored, but it does not currently match all advisor preferences.';
+    }
+
+    final reasonSummary = reasons.take(2).join(' - ');
+    return reasonSummary.isEmpty
+        ? 'Balanced performance across the selected indicators.'
+        : reasonSummary;
   }
 }
 

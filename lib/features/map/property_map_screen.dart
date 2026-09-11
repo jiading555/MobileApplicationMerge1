@@ -568,29 +568,32 @@ class _OpenStreetMapPropertyMap extends StatelessWidget {
           ),
         ),
         Positioned(
-          top: 16,
-          right: 16,
-          child: Column(
-            children: [
-              _MapControl(
-                tooltip: 'Zoom in',
-                icon: Icons.add_rounded,
-                onTap: onZoomIn,
-              ),
-              const SizedBox(height: 6),
-              _MapControl(
-                tooltip: 'Zoom out',
-                icon: Icons.remove_rounded,
-                onTap: onZoomOut,
-              ),
-              const SizedBox(height: 12),
-              _MapControl(
-                tooltip: 'My location',
-                icon: Icons.my_location_rounded,
-                onTap: onMyLocation,
-                isLoading: isLocating,
-              ),
-            ],
+          top: 0,
+          right: 0,
+          child: SafeArea(
+            minimum: const EdgeInsets.only(top: 12, right: 12),
+            child: Column(
+              children: [
+                _MapControl(
+                  tooltip: 'Zoom in',
+                  icon: Icons.add_rounded,
+                  onTap: onZoomIn,
+                ),
+                const SizedBox(height: 6),
+                _MapControl(
+                  tooltip: 'Zoom out',
+                  icon: Icons.remove_rounded,
+                  onTap: onZoomOut,
+                ),
+                const SizedBox(height: 12),
+                _MapControl(
+                  tooltip: 'My location',
+                  icon: Icons.my_location_rounded,
+                  onTap: onMyLocation,
+                  isLoading: isLocating,
+                ),
+              ],
+            ),
           ),
         ),
         if (properties.isEmpty)
@@ -758,23 +761,31 @@ class _CompactLandscapePhoneMapLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        var selectorMaxWidth = constraints.maxWidth - 96;
+        final safePadding = MediaQuery.paddingOf(context);
+        final selectorAvailableWidth =
+            constraints.maxWidth - safePadding.left - safePadding.right - 96;
+        var selectorMaxWidth = selectorAvailableWidth;
         if (selectorMaxWidth > 300) {
           selectorMaxWidth = 300;
         }
-        if (selectorMaxWidth < 0) {
-          selectorMaxWidth = constraints.maxWidth;
+        if (selectorMaxWidth < 160) {
+          selectorMaxWidth = (constraints.maxWidth - safePadding.horizontal)
+              .clamp(0.0, 160.0)
+              .toDouble();
         }
 
         return Stack(
           children: [
             Positioned.fill(child: map),
             Positioned(
-              left: 12,
-              top: 12,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: selectorMaxWidth),
-                child: areaSelector,
+              left: 0,
+              top: 0,
+              child: SafeArea(
+                minimum: const EdgeInsets.fromLTRB(12, 8, 0, 0),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: selectorMaxWidth),
+                  child: areaSelector,
+                ),
               ),
             ),
             if (hasSelection)

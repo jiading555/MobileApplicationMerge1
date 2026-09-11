@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/refresh_message_classifier.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -121,11 +122,12 @@ class SettingsScreen extends StatelessWidget {
 
     final message =
         state.governmentDataSyncMessage ?? 'Market snapshot refreshed.';
-    final failed = message.toLowerCase().startsWith('refresh failed');
+    final failed = isRefreshFailureMessage(message);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: failed ? const Color(0xFFB42318) : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

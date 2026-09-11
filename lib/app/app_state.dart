@@ -26,6 +26,7 @@ class AppState extends ChangeNotifier {
     RecommendationService recommendationService = const RecommendationService(),
     UserAccountRepository userAccountRepository = const UserAccountRepository(),
     MarketTrendCache? marketTrendCache,
+    String? Function()? currentAuthUserIdProvider,
   }) : this._(
          repository,
          areaProfileRepository,
@@ -33,6 +34,7 @@ class AppState extends ChangeNotifier {
          recommendationService,
          userAccountRepository,
          marketTrendCache,
+         currentAuthUserIdProvider,
        );
 
   AppState._(
@@ -42,6 +44,7 @@ class AppState extends ChangeNotifier {
     this._recommendationService,
     this._userAccountRepository,
     MarketTrendCache? marketTrendCache,
+    this._currentAuthUserIdProvider,
   ) : _marketTrendCache = marketTrendCache ?? MarketTrendCache();
 
   final AssetRepository _repository;
@@ -50,8 +53,12 @@ class AppState extends ChangeNotifier {
   final RecommendationService _recommendationService;
   final UserAccountRepository _userAccountRepository;
   final MarketTrendCache _marketTrendCache;
+  final String? Function()? _currentAuthUserIdProvider;
   final Set<String> _favouriteIds = <String>{};
   final ValueNotifier<Set<String>> _favouriteIdsNotifier =
+      ValueNotifier<Set<String>>(const {});
+  final Set<String> _favouriteOperationsInProgress = <String>{};
+  final ValueNotifier<Set<String>> _favouriteOperationIdsNotifier =
       ValueNotifier<Set<String>>(const {});
 
   bool isLoading = true;
@@ -79,13 +86,24 @@ class AppState extends ChangeNotifier {
   String? accountError;
   bool isPasswordRecovery = false;
   String? accountNotice;
+  String? requestedAnalysisState;
+  String? requestedAnalysisDistrict;
+  int _requestedAnalysisLocationVersion = 0;
 
   bool get isSyncingGovernmentData => isRefreshingGovernmentData;
   String? get governmentDataSyncMessage => governmentDataRefreshMessage;
+  int get requestedAnalysisLocationVersion => _requestedAnalysisLocationVersion;
+
+  static const _noInternetMessage =
+      'No internet connection. Check your network and try again.';
 
   Set<String> get favouriteIds => Set.unmodifiable(_favouriteIds);
   ValueListenable<Set<String>> get favouriteIdsListenable =>
       _favouriteIdsNotifier;
+  Set<String> get favouriteOperationIds =>
+      Set.unmodifiable(_favouriteOperationsInProgress);
+  ValueListenable<Set<String>> get favouriteOperationIdsListenable =>
+      _favouriteOperationIdsNotifier;
 
   List<Property> _cachedFavouriteProperties = const [];
   String _favouriteCacheKey = '';
@@ -138,7 +156,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialise() async {
     try {
-      await _reloadVisibleData(allowMarketCacheFallback: true);
+      await _reloadVisibleData(
+        allowMarketCacheFallback: true,
+        preferMarketCache: true,
+      );
       await _loadCurrentAuthSession();
     } catch (error) {
       loadError = 'Failed to load official app data: $error';
@@ -149,13 +170,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> ensureInitialMarketData() async {
-    if (hasAttemptedInitialMarketRefresh) return;
-    hasAttemptedInitialMarketRefresh = true;
-    if (!SupabaseConfig.isConfigured ||
-        isRefreshingGovernmentData ||
-        areas.any((area) => area.hasMarketHistory)) {
+    if (hasAttemptedInitialMarketRefresh || isRefreshingGovernmentData) {
       return;
     }
+
+    final cacheUpdatedAt = marketTrendCacheUpdatedAt;
+    final hasExpiredCache =
+        isUsingMarketTrendCache &&
+        cacheUpdatedAt != null &&
+        !MarketTrendCacheEntry(
+          areas: areas,
+          updatedAt: cacheUpdatedAt,
+        ).isFreshAt(DateTime.now());
+    final needsMarketData = !areas.any((area) => area.hasMarketHistory);
+
+    if (!hasExpiredCache && !needsMarketData) return;
+    if (!SupabaseConfig.isConfigured) return;
+
+    hasAttemptedInitialMarketRefresh = true;
     await refreshGovernmentData();
   }
 
@@ -177,15 +209,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _reloadVisibleData(
+      final result = await _reloadVisibleData(
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
-      latestDataRefreshMessage =
-          'Latest data refreshed: ${properties.length} properties and '
-          '${areas.length} areas loaded.';
+      latestDataRefreshMessage = result.loadedAreaProfilesFromSupabase
+          ? 'Latest data refreshed: ${properties.length} properties and '
+                '${areas.length} areas loaded from Supabase.'
+          : _marketRefreshFailureMessage(result);
     } catch (error) {
-      latestDataRefreshMessage = 'Latest data refresh failed: $error';
+      latestDataRefreshMessage = _isOfflineError(error)
+          ? 'Refresh failed: no internet connection. Current data is still displayed.'
+          : 'Latest market data could not be reloaded. Current data is still displayed.';
     } finally {
       isRefreshingLatestData = false;
       notifyListeners();
@@ -220,10 +255,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _reloadVisibleData(
+      final result = await _reloadVisibleData(
         allowMarketCacheFallback: true,
         preserveCurrentData: true,
       );
+      if (!result.loadedAreaProfilesFromSupabase) {
+        governmentDataRefreshMessage = _marketRefreshFailureMessage(result);
+        return;
+      }
       if (areas.isEmpty) {
         throw StateError(
           'Supabase returned no area profiles; keeping the previous data.',
@@ -234,8 +273,7 @@ class AppState extends ChangeNotifier {
           ? ''
           : ' Data years: ${years.join(', ')}.';
       governmentDataRefreshMessage =
-          'Latest data reloaded: ${properties.length} properties and '
-          '${areas.length} areas loaded from Supabase.$yearSuffix';
+          'Latest market data reloaded from Supabase.$yearSuffix';
     } catch (error) {
       areas = previousAreas;
       properties = previousProperties;
@@ -247,7 +285,9 @@ class AppState extends ChangeNotifier {
       isUsingProcessedTeduhProperties = previousProcessedTeduhProperties;
       marketTrendCacheUpdatedAt = previousCacheUpdatedAt;
       _invalidateDataCaches();
-      governmentDataRefreshMessage = 'Latest data reload failed: $error';
+      governmentDataRefreshMessage = _isOfflineError(error)
+          ? 'Refresh failed: no internet connection. Current data is still displayed.'
+          : 'Latest market data could not be reloaded. Current data is still displayed.';
     } finally {
       isRefreshingGovernmentData = false;
       notifyListeners();
@@ -269,6 +309,50 @@ class AppState extends ChangeNotifier {
     }
     final sorted = years.toList()..sort();
     return sorted;
+  }
+
+  String _marketRefreshFailureMessage(_VisibleDataReloadResult result) {
+    if (!SupabaseConfig.isConfigured) {
+      return 'Supabase is not configured. Add the project URL and client-safe '
+          'publishable key before reloading latest data.';
+    }
+
+    final hasDisplayedData = result.displayedAreaCount > 0;
+    final hasCachedData = result.loadedFromMarketTrendCache;
+
+    if (_isOfflineError(result.areaProfilesError) ||
+        _isOfflineError(result.propertiesError)) {
+      if (hasCachedData) {
+        return 'Refresh failed: no internet connection. Cached market data is still displayed.';
+      }
+      if (hasDisplayedData) {
+        return 'Refresh failed: no internet connection. Current data is still displayed.';
+      }
+      return 'Refresh failed: no internet connection. No market data is available.';
+    }
+
+    if (hasCachedData) {
+      return 'Latest market data could not be reloaded. Cached data is still displayed.';
+    }
+    if (hasDisplayedData) {
+      return 'Latest market data could not be reloaded. Current data is still displayed.';
+    }
+    return 'Latest market data could not be reloaded. No market data is available.';
+  }
+
+  bool _isOfflineError(Object? error) {
+    if (error == null) return false;
+
+    final message = error.toString().toLowerCase();
+    return message.contains('socketexception') ||
+        message.contains('clientexception') ||
+        message.contains('failed host lookup') ||
+        message.contains('network is unreachable') ||
+        message.contains('connection refused') ||
+        message.contains('connection reset') ||
+        message.contains('connection timed out') ||
+        message.contains('timed out') ||
+        message.contains('timeout');
   }
 
   Future<String?> login(String email, String password) async {
@@ -301,8 +385,14 @@ class AppState extends ChangeNotifier {
       if (message.contains('email not confirmed')) {
         return 'Confirm your email address before signing in.';
       }
+      if (_isOfflineError(error)) {
+        return _noInternetMessage;
+      }
       return error.message;
-    } catch (_) {
+    } catch (error) {
+      if (_isOfflineError(error)) {
+        return _noInternetMessage;
+      }
       return 'Unable to sign in. Please try again.';
     } finally {
       isAccountBusy = false;
@@ -443,7 +533,9 @@ class AppState extends ChangeNotifier {
     }
     isAuthenticated = false;
     _favouriteIds.clear();
+    _favouriteOperationsInProgress.clear();
     _publishFavouriteIds();
+    _publishFavouriteOperationIds();
     notifyListeners();
   }
 
@@ -474,39 +566,130 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleFavourite(String propertyId) async {
-    final wasFavourite = _favouriteIds.contains(propertyId);
+  void requestAnalysisLocation({
+    required String state,
+    required String district,
+  }) {
+    final displayState = LocationNormalizer.nullableDisplayStateName(state);
+    final displayDistrict = LocationNormalizer.nullableDisplayDistrictName(
+      district,
+    );
+
+    if (displayState == null || displayDistrict == null) {
+      return;
+    }
+
+    requestedAnalysisState = displayState;
+    requestedAnalysisDistrict = displayDistrict;
+    _requestedAnalysisLocationVersion += 1;
+    notifyListeners();
+  }
+
+  Future<String?> toggleFavourite(String propertyId) async {
+    final trimmedPropertyId = propertyId.trim();
+    if (trimmedPropertyId.isEmpty) {
+      debugPrint('[FAVOURITE] Invalid property id');
+      return 'Could not add this property to favourites.';
+    }
+    if (_favouriteOperationsInProgress.contains(trimmedPropertyId)) {
+      return null;
+    }
+
+    final wasFavourite = _favouriteIds.contains(trimmedPropertyId);
+    final authUserId = _currentFavouriteAuthUserId();
+    if (authUserId == null || authUserId.isEmpty) {
+      debugPrint(
+        '[FAVOURITE] ${wasFavourite ? 'Remove' : 'Add'} blocked '
+        'propertyId=$trimmedPropertyId: no authenticated Supabase user',
+      );
+      return 'Sign in to save favourite properties.';
+    }
+    if (user.id.isNotEmpty && user.id != authUserId) {
+      debugPrint(
+        '[FAVOURITE] Auth user mismatch '
+        'appUserId=${user.id} authUserId=$authUserId',
+      );
+    }
+
+    _favouriteOperationsInProgress.add(trimmedPropertyId);
+    _publishFavouriteOperationIds();
+
     if (wasFavourite) {
-      _favouriteIds.remove(propertyId);
+      _favouriteIds.remove(trimmedPropertyId);
     } else {
-      _favouriteIds.add(propertyId);
+      _favouriteIds.add(trimmedPropertyId);
     }
     _publishFavouriteIds();
     notifyListeners();
 
-    if (!isAuthenticated || user.id.isEmpty || user.isDemo) {
-      return;
-    }
-
     try {
       await _userAccountRepository.setFavourite(
-        userId: user.id,
-        propertyId: propertyId,
+        userId: authUserId,
+        propertyId: trimmedPropertyId,
         isFavourite: !wasFavourite,
       );
-    } catch (_) {
+      accountError = null;
+      return null;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[FAVOURITE] ${wasFavourite ? 'Remove' : 'Add'} failed '
+        'propertyId=$trimmedPropertyId userId=$authUserId: $error',
+      );
+      debugPrintStack(
+        label: '[FAVOURITE] ${wasFavourite ? 'Remove' : 'Add'} stack',
+        stackTrace: stackTrace,
+      );
+      final message = _favouriteFailureMessage(
+        wasFavourite: wasFavourite,
+        error: error,
+      );
       if (wasFavourite) {
-        _favouriteIds.add(propertyId);
+        _favouriteIds.add(trimmedPropertyId);
       } else {
-        _favouriteIds.remove(propertyId);
+        _favouriteIds.remove(trimmedPropertyId);
       }
-      accountError = 'Unable to update favourite. Please try again.';
+      accountError = message;
       _publishFavouriteIds();
       notifyListeners();
+      return message;
+    } finally {
+      _favouriteOperationsInProgress.remove(trimmedPropertyId);
+      _publishFavouriteOperationIds();
+    }
+  }
+
+  String? _currentFavouriteAuthUserId() {
+    if (!isAuthenticated || user.isDemo) {
+      return null;
+    }
+    final injected = _currentAuthUserIdProvider;
+    if (injected != null) {
+      return injected()?.trim();
+    }
+    if (!SupabaseConfig.isConfigured) {
+      return null;
+    }
+    try {
+      return Supabase.instance.client.auth.currentUser?.id.trim();
+    } catch (error) {
+      debugPrint('[FAVOURITE] Unable to read current auth user: $error');
+      return null;
     }
   }
 
   bool isFavourite(String propertyId) => _favouriteIds.contains(propertyId);
+
+  String _favouriteFailureMessage({
+    required bool wasFavourite,
+    required Object error,
+  }) {
+    if (_isOfflineError(error)) {
+      return 'No internet connection. Favourite changes could not be saved.';
+    }
+    return wasFavourite
+        ? 'Could not remove this property from favourites.'
+        : 'Could not add this property to favourites.';
+  }
 
   AreaData areaFor(String areaId) {
     final lookup = areaLookup;
@@ -516,6 +699,22 @@ class AppState extends ChangeNotifier {
 
   AreaData? matchedAreaFor(Property property) {
     return PropertyAreaResolver.resolve(property: property, areas: areas);
+  }
+
+  PropertyRecommendation? suitabilityFor(Property property) {
+    return _recommendationService.scoreProperty(
+      property: property,
+      areas: areas,
+      preferences: preferences,
+    );
+  }
+
+  bool matchesAdvisorPreferences(Property property) {
+    return _recommendationService.matchesPreferences(
+      property: property,
+      areas: areas,
+      preferences: preferences,
+    );
   }
 
   Map<String, AreaData> get areaLookup {
@@ -683,12 +882,14 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _favouriteIdsNotifier.dispose();
+    _favouriteOperationIdsNotifier.dispose();
     super.dispose();
   }
 
-  Future<void> _reloadVisibleData({
+  Future<_VisibleDataReloadResult> _reloadVisibleData({
     bool allowMarketCacheFallback = false,
     bool preserveCurrentData = false,
+    bool preferMarketCache = false,
   }) async {
     final localAreas = await _loadStaticAreaMetadata();
 
@@ -706,83 +907,109 @@ class AppState extends ChangeNotifier {
     }
     openDataLoadMessage = null;
 
+    MarketTrendCacheEntry? cachedMarketTrend;
+    var cacheApplied = false;
+
+    if (allowMarketCacheFallback) {
+      cachedMarketTrend = await _loadMarketTrendCache();
+      if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
+        if (!preserveCurrentData || areas.isEmpty || isUsingMarketTrendCache) {
+          _applyMarketTrendCache(cachedMarketTrend);
+          cacheApplied = true;
+        }
+      }
+    }
+
+    var loadedAreaProfilesFromSupabase = false;
+    Object? areaProfilesError;
+    final shouldLoadCloudAreaProfiles =
+        SupabaseConfig.isConfigured && !(preferMarketCache && cacheApplied);
+
     if (!SupabaseConfig.isConfigured) {
       openDataLoadMessage =
           'Supabase is not configured. Add the project URL and publishable key '
           'to load official property and area data.';
-      if (preserveCurrentData) {
-        throw StateError(
-          openDataLoadMessage ??
-              'Supabase is not configured to load official data.',
+    } else if (shouldLoadCloudAreaProfiles) {
+      final cloudProfiles = await _loadCloudAreaProfiles();
+      areaProfilesError = cloudProfiles.error;
+
+      if (cloudProfiles.values.isNotEmpty) {
+        final refreshedAreas = _areasFromProfiles(
+          cloudProfiles.values,
+          localAreas,
         );
-      }
-      return;
-    }
-
-    var loadedAreas = false;
-    final cloudProfiles = await _loadCloudAreaProfiles();
-    if (cloudProfiles.isNotEmpty) {
-      final refreshedAreas = _areasFromProfiles(cloudProfiles, localAreas);
-      if (refreshedAreas.isNotEmpty) {
-        areas = refreshedAreas;
-        isUsingCloudAreaProfiles = true;
-        isUsingProcessedAreaProfiles = false;
-        isUsingMarketTrendCache = false;
-        isUsingLiveAreaProfiles = false;
-        loadedAreas = true;
+        if (refreshedAreas.isNotEmpty) {
+          areas = refreshedAreas;
+          isUsingCloudAreaProfiles = true;
+          isUsingProcessedAreaProfiles = false;
+          isUsingMarketTrendCache = false;
+          isUsingLiveAreaProfiles = false;
+          loadedAreaProfilesFromSupabase = true;
+        }
+      } else if (cloudProfiles.succeeded) {
+        openDataLoadMessage =
+            'Supabase returned no area profiles; keeping available data.';
       }
     }
 
-    if (!loadedAreas && allowMarketCacheFallback) {
-      final cachedMarketTrend = await _loadMarketTrendCache();
-      if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
-        areas = _canonicalAreas(cachedMarketTrend.areas);
-        marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
-        isUsingCloudAreaProfiles = false;
-        isUsingProcessedAreaProfiles = false;
-        isUsingMarketTrendCache = true;
-        isUsingLiveAreaProfiles = false;
-        loadedAreas = true;
+    Object? propertiesError;
+    if (SupabaseConfig.isConfigured && areas.isNotEmpty) {
+      final cloudProperties = await _loadCloudProperties(areas);
+      propertiesError = cloudProperties.error;
+      if (cloudProperties.values.isNotEmpty) {
+        properties = cloudProperties.values;
+        isUsingCloudProperties = true;
+        isUsingProcessedTeduhProperties = false;
       }
     }
 
-    if (!loadedAreas && preserveCurrentData) {
-      throw StateError(
-        openDataLoadMessage ??
-            'No area profiles were returned; keeping the current data.',
-      );
-    }
-
-    final cloudProperties = await _loadCloudProperties(areas);
-    if (cloudProperties.isNotEmpty) {
-      properties = cloudProperties;
-      isUsingCloudProperties = true;
-      isUsingProcessedTeduhProperties = false;
-    }
-
-    if (areas.isNotEmpty && isUsingCloudAreaProfiles) {
+    if (areas.isNotEmpty && loadedAreaProfilesFromSupabase) {
       final cachedAt = DateTime.now().toUtc();
       await _saveMarketTrendCache(areas, cachedAt);
       marketTrendCacheUpdatedAt = cachedAt;
     }
     _invalidateDataCaches();
+
+    return _VisibleDataReloadResult(
+      loadedAreaProfilesFromSupabase: loadedAreaProfilesFromSupabase,
+      loadedFromMarketTrendCache:
+          isUsingMarketTrendCache && !loadedAreaProfilesFromSupabase,
+      areaProfilesError: areaProfilesError,
+      propertiesError: propertiesError,
+      displayedAreaCount: areas.length,
+    );
   }
 
-  Future<List<AreaProfile>> _loadCloudAreaProfiles() async {
+  void _applyMarketTrendCache(MarketTrendCacheEntry cachedMarketTrend) {
+    areas = _canonicalAreas(cachedMarketTrend.areas);
+    marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingMarketTrendCache = true;
+    isUsingLiveAreaProfiles = false;
+  }
+
+  Future<_RepositoryLoadResult<AreaProfile>> _loadCloudAreaProfiles() async {
     try {
-      return await _areaProfileRepository.getAreaProfiles();
+      return _RepositoryLoadResult.success(
+        await _areaProfileRepository.getAreaProfiles(),
+      );
     } on AreaProfileRepositoryException catch (error) {
       openDataLoadMessage = error.toString();
-      return const [];
+      return _RepositoryLoadResult.failure(error);
     }
   }
 
-  Future<List<Property>> _loadCloudProperties(List<AreaData> areas) async {
+  Future<_RepositoryLoadResult<Property>> _loadCloudProperties(
+    List<AreaData> areas,
+  ) async {
     try {
-      return await _propertyRepository.getProperties(areas);
+      return _RepositoryLoadResult.success(
+        await _propertyRepository.getProperties(areas),
+      );
     } on PropertyRepositoryException catch (error) {
       openDataLoadMessage = error.toString();
-      return const [];
+      return _RepositoryLoadResult.failure(error);
     }
   }
 
@@ -924,6 +1151,12 @@ class AppState extends ChangeNotifier {
     _favouriteIdsNotifier.value = Set.unmodifiable(_favouriteIds);
   }
 
+  void _publishFavouriteOperationIds() {
+    _favouriteOperationIdsNotifier.value = Set.unmodifiable(
+      _favouriteOperationsInProgress,
+    );
+  }
+
   void _invalidateDataCaches() {
     _cachedAreaSource = null;
     _cachedAreaLength = -1;
@@ -931,4 +1164,30 @@ class AppState extends ChangeNotifier {
     _favouriteCacheKey = '';
     _recommendationCacheKey = '';
   }
+}
+
+class _RepositoryLoadResult<T> {
+  const _RepositoryLoadResult.success(this.values) : error = null;
+  const _RepositoryLoadResult.failure(this.error) : values = const [];
+
+  final List<T> values;
+  final Object? error;
+
+  bool get succeeded => error == null;
+}
+
+class _VisibleDataReloadResult {
+  const _VisibleDataReloadResult({
+    required this.loadedAreaProfilesFromSupabase,
+    required this.loadedFromMarketTrendCache,
+    required this.displayedAreaCount,
+    this.areaProfilesError,
+    this.propertiesError,
+  });
+
+  final bool loadedAreaProfilesFromSupabase;
+  final bool loadedFromMarketTrendCache;
+  final int displayedAreaCount;
+  final Object? areaProfilesError;
+  final Object? propertiesError;
 }

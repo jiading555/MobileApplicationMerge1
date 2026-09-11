@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_property_advisor/app/app_scope.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
 import 'package:smart_property_advisor/features/search/property_detail_screen.dart';
+import 'package:smart_property_advisor/models/area_data.dart';
 import 'package:smart_property_advisor/models/property.dart';
+import 'package:smart_property_advisor/models/user_preferences.dart';
 import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
@@ -109,10 +111,8 @@ void main() {
     expect(find.text('Current area profile'), findsNothing);
     expect(find.textContaining('Unknown'), findsNothing);
     expect(
-      find.text(
-        'No matched district area profile is available for this property.',
-      ),
-      findsOneWidget,
+      find.text('Area data is unavailable for this property.'),
+      findsWidgets,
     );
     expect(find.text('Available units'), findsOneWidget);
     expect(find.text('Unit types'), findsNothing);
@@ -295,7 +295,185 @@ void main() {
       'https://teduh.kpkt.gov.my/api/portal/projects',
     ]);
   });
+
+  testWidgets(
+    'scoreable property with matched area signals shows numeric suitability',
+    (tester) async {
+      final property = _huluProperty(
+        id: 'SCORE_1',
+        state: 'terengganu',
+        district: 'Hulu-Terengganu',
+        areaId: 'TERENGGANU_HULU-TERENGGANU',
+      );
+      final state = _detailState(
+        property: property,
+        areas: const [_huluTerengganuArea],
+      );
+
+      await _pumpDetail(tester, state, property.id);
+
+      expect(find.text('Area signals'), findsOneWidget);
+      expect(find.text('94/100'), findsOneWidget);
+      expect(find.text('Current area profile'), findsOneWidget);
+      expect(find.text('Hulu Terengganu, Terengganu'), findsOneWidget);
+      expect(find.text('78'), findsOneWidget);
+      expect(find.text('/100'), findsOneWidget);
+      expect(find.text('-'), findsNothing);
+      expect(
+        find.text('Change advisor filters to include this property.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'filtered-out property still shows calculated suitability when scoreable',
+    (tester) async {
+      final property = _huluProperty(id: 'FILTERED_1');
+      final state = _detailState(
+        property: property,
+        areas: const [_huluTerengganuArea],
+        preferences: const UserPreferences(propertyType: 'Apartment / Flat'),
+      );
+
+      expect(state.recommendations, isEmpty);
+
+      await _pumpDetail(tester, state, property.id);
+
+      expect(find.text('78'), findsOneWidget);
+      expect(find.text('/100'), findsOneWidget);
+      expect(find.text('-'), findsNothing);
+      expect(
+        find.text(
+          'This property can be scored, but it does not currently match all advisor preferences.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Change advisor filters to include this property.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('property without matching area data keeps neutral dash state', (
+    tester,
+  ) async {
+    final property = _huluProperty(id: 'NO_AREA_1');
+    final state = _detailState(property: property, areas: const []);
+
+    await _pumpDetail(tester, state, property.id);
+
+    expect(find.text('-'), findsOneWidget);
+    expect(find.text('/100'), findsNothing);
+    expect(
+      find.text('Area data is unavailable for this property.'),
+      findsWidgets,
+    );
+    expect(find.text('78'), findsNothing);
+  });
+
+  testWidgets(
+    'matched area with missing optional safety signal still calculates score',
+    (tester) async {
+      final property = _huluProperty(id: 'OPTIONAL_NULL_1');
+      final state = _detailState(
+        property: property,
+        areas: const [_huluTerengganuAreaWithoutSafety],
+      );
+
+      await _pumpDetail(tester, state, property.id);
+
+      expect(find.text('70'), findsOneWidget);
+      expect(find.text('/100'), findsOneWidget);
+      expect(find.text('-'), findsNothing);
+      expect(
+        find.text(
+          'Insufficient property or area data to calculate suitability.',
+        ),
+        findsNothing,
+      );
+    },
+  );
 }
+
+Future<void> _pumpDetail(
+  WidgetTester tester,
+  AppState state,
+  String propertyId,
+) {
+  return tester.pumpWidget(
+    MaterialApp(
+      home: AppScope(
+        notifier: state,
+        child: PropertyDetailScreen(propertyId: propertyId),
+      ),
+    ),
+  );
+}
+
+AppState _detailState({
+  required Property property,
+  required List<AreaData> areas,
+  UserPreferences preferences = const UserPreferences(),
+}) {
+  final state = AppState();
+  state.isLoading = false;
+  state.properties = [property];
+  state.areas = areas;
+  state.preferences = preferences;
+  return state;
+}
+
+Property _huluProperty({
+  required String id,
+  String state = 'Terengganu',
+  String district = 'Hulu Terengganu',
+  String areaId = 'terengganu_hulu_terengganu',
+}) {
+  return Property.fromTeduhJson(
+    {
+      'source_id': id,
+      'project_name': 'Hulu Terengganu Residence',
+      'state': state,
+      'district': district,
+      'property_type': 'Rumah Teres 1 Tingkat',
+      'price_min': 300000,
+    },
+    areaId: areaId,
+    palette: 0,
+  );
+}
+
+const _huluTerengganuArea = AreaData(
+  id: 'terengganu_hulu_terengganu',
+  name: 'Hulu Terengganu',
+  state: 'Terengganu',
+  population: 75000,
+  medianIncome: 5090,
+  safetyScore: 94,
+  transportScore: 80,
+  schools: 10,
+  priceGrowth: 28.1,
+  snapshotDate: '2025',
+  source: 'OpenDOSM; data.gov.my',
+  isGovernmentProfile: true,
+);
+
+const _huluTerengganuAreaWithoutSafety = AreaData(
+  id: 'terengganu_hulu_terengganu',
+  name: 'Hulu Terengganu',
+  state: 'Terengganu',
+  population: 75000,
+  medianIncome: 5090,
+  safetyScore: null,
+  transportScore: 80,
+  schools: 10,
+  priceGrowth: 28.1,
+  snapshotDate: '2025',
+  source: 'OpenDOSM; data.gov.my',
+  isGovernmentProfile: true,
+);
 
 class _FakeUrlLauncher extends UrlLauncherPlatform {
   final launchedUrls = <String>[];

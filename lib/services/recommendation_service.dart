@@ -9,6 +9,44 @@ import '../models/user_preferences.dart';
 class RecommendationService {
   const RecommendationService();
 
+  PropertyRecommendation? scoreProperty({
+    required Property property,
+    required List<AreaData> areas,
+    required UserPreferences preferences,
+  }) {
+    final context = _scoringContext(property: property, areas: areas);
+    if (context == null) {
+      return null;
+    }
+
+    return _score(
+      property: property,
+      price: context.price,
+      area: context.area,
+      areas: areas,
+      preferences: preferences,
+    );
+  }
+
+  bool matchesPreferences({
+    required Property property,
+    required List<AreaData> areas,
+    required UserPreferences preferences,
+  }) {
+    final context = _scoringContext(property: property, areas: areas);
+    if (context == null) {
+      return false;
+    }
+
+    return _matchesPreferences(
+      property: property,
+      price: context.price,
+      area: context.area,
+      areas: areas,
+      preferences: preferences,
+    );
+  }
+
   List<PropertyRecommendation> rank({
     required List<Property> properties,
     required List<AreaData> areas,
@@ -17,18 +55,14 @@ class RecommendationService {
     final results = <PropertyRecommendation>[];
 
     for (final property in properties) {
-      final price = property.price ?? property.priceMin ?? property.priceMax;
-      final area = PropertyAreaResolver.resolve(
-        property: property,
-        areas: areas,
-      );
-      if (price == null || area == null) {
+      final context = _scoringContext(property: property, areas: areas);
+      if (context == null) {
         continue;
       }
       if (!_matchesPreferences(
         property: property,
-        price: price,
-        area: area,
+        price: context.price,
+        area: context.area,
         areas: areas,
         preferences: preferences,
       )) {
@@ -38,8 +72,8 @@ class RecommendationService {
       results.add(
         _score(
           property: property,
-          price: price,
-          area: area,
+          price: context.price,
+          area: context.area,
           areas: areas,
           preferences: preferences,
         ),
@@ -63,6 +97,18 @@ class RecommendationService {
     });
 
     return results;
+  }
+
+  _ScoringContext? _scoringContext({
+    required Property property,
+    required List<AreaData> areas,
+  }) {
+    final price = property.price ?? property.priceMin ?? property.priceMax;
+    final area = PropertyAreaResolver.resolve(property: property, areas: areas);
+    if (price == null || area == null) {
+      return null;
+    }
+    return _ScoringContext(price: price, area: area);
   }
 
   bool _matchesPreferences({
@@ -468,4 +514,11 @@ class _WeightedScore {
   final String label;
   final double? score;
   final double priority;
+}
+
+class _ScoringContext {
+  const _ScoringContext({required this.price, required this.area});
+
+  final int price;
+  final AreaData area;
 }

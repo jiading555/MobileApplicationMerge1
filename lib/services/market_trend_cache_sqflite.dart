@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
@@ -10,6 +11,12 @@ class MarketTrendCacheEntry {
 
   final List<AreaData> areas;
   final DateTime updatedAt;
+
+  bool isFreshAt(DateTime now) {
+    final age = now.toUtc().difference(updatedAt.toUtc());
+
+    return !age.isNegative && age < const Duration(days: 1);
+  }
 }
 
 class MarketTrendCache {
@@ -18,6 +25,10 @@ class MarketTrendCache {
   static const _snapshotId = 1;
 
   Database? _database;
+
+  bool get _isSupportedPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
   Future<Database> _openDatabase() async {
     final existing = _database;
@@ -41,6 +52,8 @@ class MarketTrendCache {
   }
 
   Future<MarketTrendCacheEntry?> load() async {
+    if (!_isSupportedPlatform) return null;
+
     final database = await _openDatabase();
     final rows = await database.query(
       _tableName,
@@ -66,6 +79,8 @@ class MarketTrendCache {
   }
 
   Future<void> save(List<AreaData> areas, {required DateTime updatedAt}) async {
+    if (!_isSupportedPlatform) return;
+
     final database = await _openDatabase();
     await database.insert(_tableName, {
       'id': _snapshotId,

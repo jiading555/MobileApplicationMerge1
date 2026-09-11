@@ -35,6 +35,24 @@ void main() {
     expect(supabaseJson.containsKey('unit_options'), isTrue);
   });
 
+  test('Supabase TEDUH property mapping preserves database uuid id', () {
+    final property = Property.fromTeduhJson(
+      {
+        'id': '6e5b1a0e-47bf-4d63-a631-83f0bb2aa001',
+        'source_id': 'teduh-001',
+        'project_name': 'Residensi Test',
+        'state': 'Selangor',
+        'district': 'Gombak',
+        'source': 'TEDUH - Jabatan Perumahan Negara, KPKT',
+      },
+      areaId: 'selangor_gombak',
+      palette: 1,
+    );
+
+    expect(property.id, '6e5b1a0e-47bf-4d63-a631-83f0bb2aa001');
+    expect(property.sourceId, 'teduh-001');
+  });
+
   test('area profile mapping keeps stable Supabase keys', () {
     final profile = AreaProfile.fromJson({
       'area_id': 'selangor_gombak',

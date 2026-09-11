@@ -4,7 +4,9 @@ import 'package:smart_property_advisor/app/app_scope.dart';
 import 'package:smart_property_advisor/app/app_state.dart';
 import 'package:smart_property_advisor/core/theme/app_theme.dart';
 import 'package:smart_property_advisor/core/utils/location_normalizer.dart';
+import 'package:smart_property_advisor/data/repositories/user_account_repository.dart';
 import 'package:smart_property_advisor/features/search/property_search_screen.dart';
+import 'package:smart_property_advisor/models/app_user.dart';
 import 'package:smart_property_advisor/models/property.dart';
 import 'package:smart_property_advisor/models/area_data.dart';
 
@@ -884,7 +886,16 @@ void main() {
   testWidgets('Favourite action still toggles from property search card', (
     tester,
   ) async {
-    final state = AppState();
+    final state = AppState(
+      userAccountRepository: const _NoopUserAccountRepository(),
+      currentAuthUserIdProvider: () => 'user_a',
+    );
+    state.isAuthenticated = true;
+    state.user = const AppUser(
+      id: 'user_a',
+      name: 'Alex Tan',
+      email: 'alex@example.com',
+    );
     state.properties = [
       _teduhProperty(
         id: 'favourite',
@@ -1045,6 +1056,17 @@ void main() {
     expect(find.text('Any State'), findsOneWidget);
     expect(find.text('1 properties found'), findsOneWidget);
   });
+}
+
+class _NoopUserAccountRepository extends UserAccountRepository {
+  const _NoopUserAccountRepository();
+
+  @override
+  Future<void> setFavourite({
+    required String userId,
+    required String propertyId,
+    required bool isFavourite,
+  }) async {}
 }
 
 Future<void> _pumpSearch(WidgetTester tester, AppState state) {

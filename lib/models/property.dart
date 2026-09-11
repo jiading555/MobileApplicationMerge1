@@ -163,6 +163,7 @@ class Property {
     required int palette,
   }) {
     final sourceId = _stringFromJson(json['source_id'] ?? json['sourceId']);
+    final id = _nullableStringFromJson(json['id']) ?? 'teduh_$sourceId';
     final projectName = _stringFromJson(
       json['project_name'] ?? json['projectName'],
     );
@@ -192,7 +193,7 @@ class Property {
     final location = [?district, ?state].join(', ');
 
     return Property(
-      id: 'teduh_$sourceId',
+      id: id,
       name: projectName,
       areaId: areaId,
       address: address ?? (location.isEmpty ? 'Malaysia' : location),
