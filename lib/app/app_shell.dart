@@ -72,10 +72,7 @@ class _AppShellState extends State<AppShell> {
     final screen = _screenCache[selectedIndex] ??= _buildScreen(selectedIndex);
     return AppNavigationScope(
       selectDestination: _selectDestinationCallback,
-      child: KeyedSubtree(
-        key: ValueKey(selectedIndex),
-        child: screen,
-      ),
+      child: KeyedSubtree(key: ValueKey(selectedIndex), child: screen),
     );
   }
 
@@ -137,8 +134,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final isTablet = ResponsiveLayout.isTablet(context);
-    final compactLandscape =
-        ResponsiveLayout.isCompactLandscapePhone(context);
+    final compactLandscape = ResponsiveLayout.isCompactLandscapePhone(context);
     final extendedRail = ResponsiveLayout.isDesktop(context);
     final content = _buildContent();
 

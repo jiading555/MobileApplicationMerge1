@@ -1176,9 +1176,9 @@ class _DistrictComparisonCard extends StatelessWidget {
           children: [
             Text(
               area.name,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             LayoutBuilder(

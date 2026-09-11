@@ -16,9 +16,7 @@ class AiAdvisorChatService {
     List<Map<String, String>> conversationHistory = const [],
   }) async {
     if (question.trim().isEmpty) {
-      throw Exception(
-        'Question cannot be empty.',
-      );
+      throw Exception('Question cannot be empty.');
     }
 
     if (recommendations.isEmpty) {
@@ -36,29 +34,18 @@ class AiAdvisorChatService {
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke(
-        GeminiConfig.edgeFunctionName,
-        body: {
-          'prompt': prompt,
-        },
-      )
-          .timeout(
-        const Duration(seconds: 90),
-      );
+          .invoke(GeminiConfig.edgeFunctionName, body: {'prompt': prompt})
+          .timeout(const Duration(seconds: 90));
 
       final data = response.data;
 
       if (data is! Map) {
-        throw Exception(
-          'Gemini returned an invalid response.',
-        );
+        throw Exception('Gemini returned an invalid response.');
       }
 
-      final error =
-      data['error']?.toString().trim();
+      final error = data['error']?.toString().trim();
 
-      if (response.status != 200 ||
-          (error != null && error.isNotEmpty)) {
+      if (response.status != 200 || (error != null && error.isNotEmpty)) {
         throw Exception(
           error == null || error.isEmpty
               ? 'Gemini API error: ${response.status}'
@@ -66,201 +53,135 @@ class AiAdvisorChatService {
         );
       }
 
-      final text =
-          data['text']?.toString().trim() ?? '';
+      final text = data['text']?.toString().trim() ?? '';
 
       if (text.isEmpty) {
-        throw Exception(
-          'Gemini returned an empty advisor response.',
-        );
+        throw Exception('Gemini returned an empty advisor response.');
       }
 
       return text;
     } on TimeoutException {
       throw Exception(
         'The AI advisor is taking longer than expected. '
-            'Please check your internet connection and try again.',
+        'Please check your internet connection and try again.',
       );
     } catch (error) {
       final message = error.toString();
 
-      if (message.contains(
-        'AI request limit reached',
-      ) ||
-          message.contains(
-            'AI service is temporarily busy',
-          ) ||
-          message.contains(
-            'Gemini API error',
-          ) ||
-          message.contains(
-            'Gemini returned',
-          )) {
+      if (message.contains('AI request limit reached') ||
+          message.contains('AI service is temporarily busy') ||
+          message.contains('Gemini API error') ||
+          message.contains('Gemini returned')) {
         rethrow;
       }
 
       throw Exception(
         'Failed to get AI advisor response. '
-            'Please try again.',
+        'Please try again.',
       );
     }
   }
 
   String buildPrompt({
     required String question,
-    required List<PropertyRecommendation>
-    recommendations,
+    required List<PropertyRecommendation> recommendations,
     required UserPreferences preferences,
-    List<Map<String, String>>
-    conversationHistory = const [],
+    List<Map<String, String>> conversationHistory = const [],
   }) {
-    final topRecommendations =
-    recommendations.take(3).toList();
+    final topRecommendations = recommendations.take(3).toList();
 
-    final recommendationContext =
-    topRecommendations
+    final recommendationContext = topRecommendations
         .asMap()
         .entries
         .map((entry) {
-      final index = entry.key + 1;
+          final index = entry.key + 1;
 
-      final recommendation =
-          entry.value;
+          final recommendation = entry.value;
 
-      final property =
-          recommendation.property;
+          final property = recommendation.property;
 
-      final sortedFactors =
-      List<ScoreFactor>.from(
-        recommendation.factors,
-      )..sort(
-            (a, b) =>
-            b.weight.compareTo(
-              a.weight,
-            ),
-      );
+          final sortedFactors = List<ScoreFactor>.from(recommendation.factors)
+            ..sort((a, b) => b.weight.compareTo(a.weight));
 
-      final factors =
-      sortedFactors.isEmpty
-          ? 'None supplied'
-          : sortedFactors
-          .map(
-            (factor) =>
-        '- ${factor.label}: '
-            '${factor.score.toStringAsFixed(1)}/100, '
-            'applied weight '
-            '${(factor.weight * 100).toStringAsFixed(1)}%, '
-            'contribution '
-            '${factor.contribution.toStringAsFixed(1)} points',
-      )
-          .join('\n');
+          final factors = sortedFactors.isEmpty
+              ? 'None supplied'
+              : sortedFactors
+                    .map(
+                      (factor) =>
+                          '- ${factor.label}: '
+                          '${factor.score.toStringAsFixed(1)}/100, '
+                          'applied weight '
+                          '${(factor.weight * 100).toStringAsFixed(1)}%, '
+                          'contribution '
+                          '${factor.contribution.toStringAsFixed(1)} points',
+                    )
+                    .join('\n');
 
-      final advantages =
-      recommendation.reasons.isEmpty
-          ? 'None supplied'
-          : recommendation.reasons
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
+          final advantages = recommendation.reasons.isEmpty
+              ? 'None supplied'
+              : recommendation.reasons.map((item) => '- $item').join('\n');
 
-      final cautions =
-      recommendation.cautions.isEmpty
-          ? 'None supplied'
-          : recommendation.cautions
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
+          final cautions = recommendation.cautions.isEmpty
+              ? 'None supplied'
+              : recommendation.cautions.map((item) => '- $item').join('\n');
 
-      final price = _priceText(
-        property.price,
-        property.priceMin,
-        property.priceMax,
-      );
+          final price = _priceText(
+            property.price,
+            property.priceMin,
+            property.priceMax,
+          );
 
-      final normalizedTypes =
-          property.normalizedPropertyTypes;
+          final normalizedTypes = property.normalizedPropertyTypes;
 
-      final propertyType =
-      normalizedTypes.isEmpty
-          ? 'Unavailable'
-          : normalizedTypes.join(', ');
+          final propertyType = normalizedTypes.isEmpty
+              ? 'Unavailable'
+              : normalizedTypes.join(', ');
 
-      final rawUnitTypes =
-      property.unitTypes.isEmpty
-          ? 'Unavailable'
-          : property.unitTypes.join(', ');
+          final rawUnitTypes = property.unitTypes.isEmpty
+              ? 'Unavailable'
+              : property.unitTypes.join(', ');
 
-      final state = _textOrUnavailable(
-        property.state,
-      );
+          final state = _textOrUnavailable(property.state);
 
-      final district = _textOrUnavailable(
-        property.district,
-      );
+          final district = _textOrUnavailable(property.district);
 
-      final scheme = _textOrUnavailable(
-        property.scheme,
-      );
+          final scheme = _textOrUnavailable(property.scheme);
 
-      final projectStatus =
-      _textOrUnavailable(
-        property.projectStatus,
-      );
+          final projectStatus = _textOrUnavailable(property.projectStatus);
 
-      final developer =
-      _textOrUnavailable(
-        property.developerName,
-      );
+          final developer = _textOrUnavailable(property.developerName);
 
-      final tenure = _validTenure(
-        property.tenure,
-      );
+          final tenure = _validTenure(property.tenure);
 
-      final totalUnits =
-      property.totalUnits == null
-          ? 'Unavailable'
-          : property.totalUnits.toString();
+          final totalUnits = property.totalUnits == null
+              ? 'Unavailable'
+              : property.totalUnits.toString();
 
-      final availableUnits =
-      property.availableUnits == null
-          ? 'Unavailable'
-          : property.availableUnits.toString();
+          final availableUnits = property.availableUnits == null
+              ? 'Unavailable'
+              : property.availableUnits.toString();
 
-      final bedrooms =
-      property.bedrooms == null
-          ? 'Unavailable'
-          : property.bedrooms.toString();
+          final bedrooms = property.bedrooms == null
+              ? 'Unavailable'
+              : property.bedrooms.toString();
 
-      final bathrooms =
-      property.bathrooms == null
-          ? 'Unavailable'
-          : property.bathrooms.toString();
+          final bathrooms = property.bathrooms == null
+              ? 'Unavailable'
+              : property.bathrooms.toString();
 
-      final sizeSqft =
-      property.sizeSqft == null
-          ? 'Unavailable'
-          : '${property.sizeSqft} sq ft';
+          final sizeSqft = property.sizeSqft == null
+              ? 'Unavailable'
+              : '${property.sizeSqft} sq ft';
 
-      final unitOptionCount =
-          property.unitOptions.length;
+          final unitOptionCount = property.unitOptions.length;
 
-      final unitOptions =
-      _unitOptionsText(
-        property.unitOptions,
-      );
+          final unitOptions = _unitOptionsText(property.unitOptions);
 
-      final facilities =
-      property.facilities.isEmpty
-          ? 'Unavailable'
-          : property.facilities
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
+          final facilities = property.facilities.isEmpty
+              ? 'Unavailable'
+              : property.facilities.map((item) => '- $item').join('\n');
 
-      return '''
+          return '''
 ============================================================
 PROPERTY $index
 ============================================================
@@ -351,34 +272,26 @@ FACILITIES SUPPLIED BY THE SYSTEM
 
 $facilities
 ''';
-    }).join(
-      '\n\n',
-    );
+        })
+        .join('\n\n');
 
-    final historyText =
-    conversationHistory.isEmpty
+    final historyText = conversationHistory.isEmpty
         ? 'No previous conversation.'
         : conversationHistory
-        .map((message) {
-      final role =
-          message['role'] ??
-              'unknown';
+              .map((message) {
+                final role = message['role'] ?? 'unknown';
 
-      final text =
-          message['text'] ?? '';
+                final text = message['text'] ?? '';
 
-      return '$role: $text';
-    }).join('\n');
+                return '$role: $text';
+              })
+              .join('\n');
 
-    final goal =
-    preferences.goal ==
-        PropertyGoal.ownStay
+    final goal = preferences.goal == PropertyGoal.ownStay
         ? 'Own Stay'
         : 'Investment';
 
-    final preferredArea =
-    preferences.preferredAreaId ==
-        'any'
+    final preferredArea = preferences.preferredAreaId == 'any'
         ? 'Any area'
         : preferences.preferredAreaId;
 
@@ -724,56 +637,39 @@ Remember:
 ''';
   }
 
-  String _unitOptionsText(
-      List<dynamic> options,
-      ) {
+  String _unitOptionsText(List<dynamic> options) {
     if (options.isEmpty) {
       return 'No unit options supplied.';
     }
 
     const maximumOptions = 12;
 
-    final visibleOptions =
-    options.take(maximumOptions).toList();
+    final visibleOptions = options.take(maximumOptions).toList();
 
     final rows = <String>[];
 
-    for (int i = 0;
-    i < visibleOptions.length;
-    i++) {
-      final option =
-      visibleOptions[i];
+    for (int i = 0; i < visibleOptions.length; i++) {
+      final option = visibleOptions[i];
 
-      final unitType =
-      _textOrUnavailable(
-        option.unitType,
-      );
+      final unitType = _textOrUnavailable(option.unitType);
 
       final size = option.sizeSqft != null
           ? '${option.sizeSqft} sq ft'
-          : _textOrUnavailable(
-        option.sizeText,
-      );
+          : _textOrUnavailable(option.sizeText);
 
-      final startingPrice =
-      option.priceStart != null
+      final startingPrice = option.priceStart != null
           ? 'RM ${option.priceStart}'
-          : _textOrUnavailable(
-        option.priceFromText,
-      );
+          : _textOrUnavailable(option.priceFromText);
 
-      rows.add(
-        '''
+      rows.add('''
 Unit option ${i + 1}:
 - Unit type: $unitType
 - Size: $size
 - Starting price: $startingPrice
-''',
-      );
+''');
     }
 
-    if (options.length >
-        maximumOptions) {
+    if (options.length > maximumOptions) {
       rows.add(
         'Additional unit options exist but were omitted from the AI context.',
       );
@@ -782,49 +678,34 @@ Unit option ${i + 1}:
     return rows.join('\n');
   }
 
-  String _priceText(
-      int? price,
-      int? priceMin,
-      int? priceMax,
-      ) {
-    if (priceMin != null &&
-        priceMax != null &&
-        priceMin != priceMax) {
+  String _priceText(int? price, int? priceMin, int? priceMax) {
+    if (priceMin != null && priceMax != null && priceMin != priceMax) {
       return 'RM $priceMin - RM $priceMax';
     }
 
-    final displayPrice =
-        price ?? priceMin ?? priceMax;
+    final displayPrice = price ?? priceMin ?? priceMax;
 
-    return displayPrice == null
-        ? 'Unavailable'
-        : 'RM $displayPrice';
+    return displayPrice == null ? 'Unavailable' : 'RM $displayPrice';
   }
 
-  String _textOrUnavailable(
-      String? value,
-      ) {
+  String _textOrUnavailable(String? value) {
     final text = value?.trim();
 
-    if (text == null ||
-        text.isEmpty) {
+    if (text == null || text.isEmpty) {
       return 'Unavailable';
     }
 
     return text;
   }
 
-  String _validTenure(
-      String value,
-      ) {
+  String _validTenure(String value) {
     final text = value.trim();
 
     if (text.isEmpty) {
       return 'Unavailable';
     }
 
-    final normalized =
-    text.toLowerCase();
+    final normalized = text.toLowerCase();
 
     const unavailableValues = {
       'not available',
@@ -836,9 +717,7 @@ Unit option ${i + 1}:
       'unknown',
     };
 
-    if (unavailableValues.contains(
-      normalized,
-    )) {
+    if (unavailableValues.contains(normalized)) {
       return 'Unavailable';
     }
 

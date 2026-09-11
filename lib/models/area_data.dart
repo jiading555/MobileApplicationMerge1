@@ -123,14 +123,12 @@ class AreaData {
     final populationValue = population!;
     final schoolsPer10k = schools! / populationValue * 10000;
     final bedsPer10k = hospitalBeds! / populationValue * 10000;
-    final schoolScore =
-        (schoolsPer10k / schoolsPer10kAtFullScore * 100)
-            .clamp(0, 100)
-            .toDouble();
-    final bedScore =
-        (bedsPer10k / hospitalBedsPer10kAtFullScore * 100)
-            .clamp(0, 100)
-            .toDouble();
+    final schoolScore = (schoolsPer10k / schoolsPer10kAtFullScore * 100)
+        .clamp(0, 100)
+        .toDouble();
+    final bedScore = (bedsPer10k / hospitalBedsPer10kAtFullScore * 100)
+        .clamp(0, 100)
+        .toDouble();
     final transitScore = transportScore!.clamp(0, 100).toDouble();
 
     return (schoolScore * 0.35 + bedScore * 0.35 + transitScore * 0.30)

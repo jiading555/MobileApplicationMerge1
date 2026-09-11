@@ -47,16 +47,16 @@ class ComparisonScreen extends StatelessWidget {
                     children: recommendations
                         .map(
                           (item) => SizedBox(
-                        width: 300,
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 14),
-                          child: _ComparisonColumn(
-                            recommendation: item,
-                            goal: goal,
+                            width: 300,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 14),
+                              child: _ComparisonColumn(
+                                recommendation: item,
+                                goal: goal,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    )
+                        )
                         .toList(),
                   ),
                 ),
@@ -176,16 +176,10 @@ class _ComparisonColumn extends StatelessWidget {
                   ),
 
                 if (propertyTypeText != null)
-                  _Row(
-                    label: 'Property type',
-                    value: propertyTypeText,
-                  ),
+                  _Row(label: 'Property type', value: propertyTypeText),
 
                 if (tenureText != null)
-                  _Row(
-                    label: 'Tenure',
-                    value: tenureText,
-                  ),
+                  _Row(label: 'Tenure', value: tenureText),
 
                 if (area?.safetyScore != null)
                   _Row(
@@ -203,7 +197,7 @@ class _ComparisonColumn extends StatelessWidget {
                   _Row(
                     label: 'Price growth',
                     value:
-                    '${area!.priceGrowth! >= 0 ? '+' : ''}'
+                        '${area!.priceGrowth! >= 0 ? '+' : ''}'
                         '${area.priceGrowth!.toStringAsFixed(1)}%',
                   ),
 
@@ -225,7 +219,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 8),
 
                 ...recommendation.factors.map(
-                      (factor) => _Row(
+                  (factor) => _Row(
                     label: factor.label,
                     value: '${factor.score.round()}/100',
                   ),
@@ -252,7 +246,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 12),
 
                 ...recommendation.factors.map(
-                      (factor) => _FactorBreakdown(factor: factor),
+                  (factor) => _FactorBreakdown(factor: factor),
                 ),
 
                 const SizedBox(height: 10),
@@ -292,7 +286,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 7),
 
                 ...recommendation.reasons.map(
-                      (item) => _BulletItem(text: item, positive: true),
+                  (item) => _BulletItem(text: item, positive: true),
                 ),
 
                 const SizedBox(height: 14),
@@ -305,7 +299,7 @@ class _ComparisonColumn extends StatelessWidget {
                 const SizedBox(height: 7),
 
                 ...recommendation.cautions.map(
-                      (item) => _BulletItem(text: item, positive: false),
+                  (item) => _BulletItem(text: item, positive: false),
                 ),
 
                 if (property.source.isNotEmpty) ...[
@@ -406,7 +400,7 @@ class _FactorBreakdown extends StatelessWidget {
 
               Text(
                 '${factor.score.round()} x '
-                    '${weightPercent.round()}%',
+                '${weightPercent.round()}%',
                 style: const TextStyle(color: AppTheme.muted, fontSize: 10),
               ),
             ],
@@ -426,7 +420,7 @@ class _FactorBreakdown extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: Text(
               'Contribution: '
-                  '${contribution.toStringAsFixed(1)} pts',
+              '${contribution.toStringAsFixed(1)} pts',
               style: const TextStyle(color: AppTheme.muted, fontSize: 9),
             ),
           ),
