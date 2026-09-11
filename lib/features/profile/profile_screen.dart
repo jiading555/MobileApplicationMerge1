@@ -341,9 +341,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final updated = await showModalBottomSheet<UserPreferences>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: false,
-      enableDrag: false,
+      showDragHandle: true,
+      enableDrag: true,
       useSafeArea: true,
+      useRootNavigator: true,
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 320),
+        reverseDuration: Duration(milliseconds: 240),
+      ),
       builder: (context) =>
           _PropertyPreferencesSheet(initialValue: state.preferences),
     );
