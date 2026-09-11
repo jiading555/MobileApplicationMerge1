@@ -303,6 +303,9 @@ class AppState extends ChangeNotifier {
       return null;
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
+      if (_isNetworkErrorMessage(message)) {
+        return 'No internet connection. Check your network and try again.';
+      }
       if (message.contains('invalid login credentials')) {
         return 'Incorrect email address or password.';
       }
@@ -310,7 +313,10 @@ class AppState extends ChangeNotifier {
         return 'Confirm your email address before signing in.';
       }
       return error.message;
-    } catch (_) {
+    } catch (error) {
+      if (_isNetworkErrorMessage(error.toString())) {
+        return 'No internet connection. Check your network and try again.';
+      }
       return 'Unable to sign in. Please try again.';
     } finally {
       isAccountBusy = false;
@@ -956,6 +962,17 @@ class AppState extends ChangeNotifier {
     try {
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
     } catch (_) {}
+  }
+
+  bool _isNetworkErrorMessage(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('socketexception') ||
+        normalized.contains('clientexception') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('network is unreachable') ||
+        normalized.contains('connection refused') ||
+        normalized.contains('connection reset') ||
+        normalized.contains('connection timed out');
   }
 
   String? _currentAuthEmail() {
