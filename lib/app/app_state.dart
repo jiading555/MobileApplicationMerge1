@@ -138,7 +138,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialise() async {
     try {
-      await _reloadVisibleData(allowMarketCacheFallback: true);
+      await _loadInitialVisibleData();
       await _loadCurrentAuthSession();
     } catch (error) {
       loadError = 'Failed to load official app data: $error';
@@ -151,11 +151,19 @@ class AppState extends ChangeNotifier {
   Future<void> ensureInitialMarketData() async {
     if (hasAttemptedInitialMarketRefresh) return;
     hasAttemptedInitialMarketRefresh = true;
-    if (!SupabaseConfig.isConfigured ||
-        isRefreshingGovernmentData ||
-        areas.any((area) => area.hasMarketHistory)) {
+    if (!SupabaseConfig.isConfigured || isRefreshingGovernmentData) {
       return;
     }
+
+    final cachedAt = marketTrendCacheUpdatedAt;
+    final cacheIsFresh =
+        cachedAt != null &&
+        MarketTrendCacheEntry(
+          areas: const [],
+          updatedAt: cachedAt,
+        ).isFreshAt(DateTime.now().toUtc());
+    if (cacheIsFresh) return;
+
     await refreshGovernmentData();
   }
 
@@ -686,6 +694,31 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
+  Future<void> _loadInitialVisibleData() async {
+    final cachedMarketTrend = await _loadMarketTrendCache();
+    if (cachedMarketTrend == null || cachedMarketTrend.areas.isEmpty) {
+      await _reloadVisibleData(allowMarketCacheFallback: true);
+      return;
+    }
+
+    areas = _canonicalAreas(cachedMarketTrend.areas);
+    marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+    isUsingCloudAreaProfiles = false;
+    isUsingProcessedAreaProfiles = false;
+    isUsingMarketTrendCache = true;
+    isUsingLiveAreaProfiles = false;
+
+    if (SupabaseConfig.isConfigured) {
+      final cloudProperties = await _loadCloudProperties(areas);
+      if (cloudProperties.isNotEmpty) {
+        properties = cloudProperties;
+        isUsingCloudProperties = true;
+        isUsingProcessedTeduhProperties = false;
+      }
+    }
+    _invalidateDataCaches();
+  }
+
   Future<void> _reloadVisibleData({
     bool allowMarketCacheFallback = false,
     bool preserveCurrentData = false,
@@ -707,14 +740,23 @@ class AppState extends ChangeNotifier {
     openDataLoadMessage = null;
 
     if (!SupabaseConfig.isConfigured) {
+      if (allowMarketCacheFallback) {
+        final cachedMarketTrend = await _loadMarketTrendCache();
+        if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
+          areas = _canonicalAreas(cachedMarketTrend.areas);
+          marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+          isUsingMarketTrendCache = true;
+          openDataLoadMessage =
+              'Offline market data loaded from the device cache.';
+          _invalidateDataCaches();
+          return;
+        }
+      }
+
       openDataLoadMessage =
-          'Supabase is not configured. Add the project URL and publishable key '
-          'to load official property and area data.';
+          'Supabase is not configured and no offline market cache is available.';
       if (preserveCurrentData) {
-        throw StateError(
-          openDataLoadMessage ??
-              'Supabase is not configured to load official data.',
-        );
+        throw StateError(openDataLoadMessage!);
       }
       return;
     }
@@ -862,7 +904,9 @@ class AppState extends ChangeNotifier {
   Future<MarketTrendCacheEntry?> _loadMarketTrendCache() async {
     try {
       return await _marketTrendCache.load();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load SQLite market cache: $error');
+      debugPrintStack(stackTrace: stackTrace);
       return null;
     }
   }
@@ -873,7 +917,10 @@ class AppState extends ChangeNotifier {
   ) async {
     try {
       await _marketTrendCache.save(value, updatedAt: updatedAt);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      debugPrint('Failed to save SQLite market cache: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _loadCurrentAuthSession() async {
