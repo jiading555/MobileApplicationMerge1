@@ -121,11 +121,16 @@ class SettingsScreen extends StatelessWidget {
 
     final message =
         state.governmentDataSyncMessage ?? 'Market snapshot refreshed.';
-    final failed = message.toLowerCase().startsWith('refresh failed');
+    final normalizedMessage = message.toLowerCase();
+    final failed =
+        normalizedMessage.contains('failed') ||
+        normalizedMessage.contains('could not') ||
+        normalizedMessage.contains('no internet');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: failed ? const Color(0xFFB42318) : AppTheme.green,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
