@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:smart_property_advisor/core/utils/property_filtering.dart';
+import 'package:smart_property_advisor/models/area_data.dart';
 import 'package:smart_property_advisor/models/area_profile.dart';
 import 'package:smart_property_advisor/models/property.dart';
 import 'package:smart_property_advisor/services/teduh_service.dart';
@@ -501,6 +502,164 @@ void main() {
 
     expect(requestedPages, ['1', '2']);
     expect(projects, hasLength(1));
+  });
+
+  group('area analysis scores', () {
+    test('safety uses a transparent 0 to 2000 crimes per 100k scale', () {
+      AreaData areaFor(int crimes, {int? crimeYear = 2025}) {
+        return AreaData.fromProfile(
+          AreaProfile(
+            areaId: 'test_area',
+            state: 'Test',
+            district: 'Test',
+            population: 100000,
+            crimeCount: crimes,
+            crimeYear: crimeYear,
+          ),
+        );
+      }
+
+      expect(areaFor(0).safetyScore, 100);
+      expect(areaFor(1000).safetyScore, 50);
+      expect(areaFor(2000).safetyScore, 0);
+      expect(areaFor(3000).safetyScore, 0);
+      expect(areaFor(1000, crimeYear: null).safetyScore, isNull);
+    });
+
+    test('transport reaches full score at five stops per 10k residents', () {
+      AreaData areaFor(int stops, {int? transportYear = 2025}) {
+        return AreaData.fromProfile(
+          AreaProfile(
+            areaId: 'test_area',
+            state: 'Test',
+            district: 'Test',
+            population: 100000,
+            transportStopCount: stops,
+            transportYear: transportYear,
+          ),
+        );
+      }
+
+      expect(areaFor(10).transportScore, closeTo(20, 0.001));
+      expect(areaFor(50).transportScore, 100);
+      expect(areaFor(100).transportScore, 100);
+      expect(areaFor(10, transportYear: null).transportScore, isNull);
+    });
+
+    test('infrastructure requires all three dated component sources', () {
+      const complete = AreaData(
+        id: 'complete',
+        name: 'Complete',
+        state: 'Test',
+        population: 100000,
+        schools: 15,
+        educationYear: 2025,
+        hospitalBeds: 200,
+        hospitalYear: 2025,
+        transportScore: 100,
+        transportYear: 2025,
+      );
+      const missingTransport = AreaData(
+        id: 'partial',
+        name: 'Partial',
+        state: 'Test',
+        population: 100000,
+        schools: 15,
+        educationYear: 2025,
+        hospitalBeds: 200,
+        hospitalYear: 2025,
+      );
+
+      expect(complete.hasCompleteInfrastructureData, isTrue);
+      expect(complete.infrastructureScore, 100);
+      expect(missingTransport.hasCompleteInfrastructureData, isFalse);
+      expect(missingTransport.infrastructureScore, isNull);
+    });
+
+    test('infrastructure counts transport once with fixed weights', () {
+      const area = AreaData(
+        id: 'weighted',
+        name: 'Weighted',
+        state: 'Test',
+        population: 100000,
+        schools: 0,
+        educationYear: 2025,
+        hospitalBeds: 0,
+        hospitalYear: 2025,
+        transportScore: 100,
+        transportYear: 2025,
+      );
+
+      expect(area.infrastructureScore, closeTo(30, 0.001));
+    });
+
+    test('market demand is a bounded 60/40 growth momentum score', () {
+      const unchanged = AreaData(
+        id: 'unchanged',
+        name: 'Unchanged',
+        state: 'Test',
+        transactionCount: 100,
+        previousTransactionCount: 100,
+        transactionValueMillion: 100,
+        previousTransactionValueMillion: 100,
+      );
+      const growing = AreaData(
+        id: 'growing',
+        name: 'Growing',
+        state: 'Test',
+        transactionCount: 120,
+        previousTransactionCount: 100,
+        transactionValueMillion: 120,
+        previousTransactionValueMillion: 100,
+      );
+      const declining = AreaData(
+        id: 'declining',
+        name: 'Declining',
+        state: 'Test',
+        transactionCount: 80,
+        previousTransactionCount: 100,
+        transactionValueMillion: 80,
+        previousTransactionValueMillion: 100,
+      );
+      const mixed = AreaData(
+        id: 'mixed',
+        name: 'Mixed',
+        state: 'Test',
+        transactionCount: 120,
+        previousTransactionCount: 100,
+        transactionValueMillion: 80,
+        previousTransactionValueMillion: 100,
+      );
+
+      expect(unchanged.marketDemandScore, 50);
+      expect(growing.marketDemandScore, 100);
+      expect(declining.marketDemandScore, 0);
+      expect(mixed.marketDemandScore, closeTo(60, 0.001));
+    });
+
+    test('market demand rejects impossible or incomplete inputs', () {
+      const invalid = AreaData(
+        id: 'invalid',
+        name: 'Invalid',
+        state: 'Test',
+        transactionCount: -1,
+        previousTransactionCount: 100,
+        transactionValueMillion: 100,
+        previousTransactionValueMillion: 100,
+      );
+      const noBaseline = AreaData(
+        id: 'no_baseline',
+        name: 'No baseline',
+        state: 'Test',
+        transactionCount: 100,
+        previousTransactionCount: 0,
+        transactionValueMillion: 100,
+        previousTransactionValueMillion: 100,
+      );
+
+      expect(invalid.marketDemandScore, isNull);
+      expect(noBaseline.marketDemandScore, isNull);
+    });
   });
 
   test('real property filters behave correctly across common combinations', () {

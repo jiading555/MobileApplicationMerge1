@@ -177,7 +177,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _reloadVisibleData();
+      await _reloadVisibleData(
+        allowMarketCacheFallback: true,
+        preserveCurrentData: true,
+      );
       latestDataRefreshMessage =
           'Latest data refreshed: ${properties.length} properties and '
           '${areas.length} areas loaded.';
@@ -217,7 +220,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _reloadVisibleData();
+      await _reloadVisibleData(
+        allowMarketCacheFallback: true,
+        preserveCurrentData: true,
+      );
+      if (areas.isEmpty) {
+        throw StateError(
+          'Supabase returned no area profiles; keeping the previous data.',
+        );
+      }
       final years = _dataYears(areas);
       final yearSuffix = years.isEmpty
           ? ''
@@ -677,45 +688,76 @@ class AppState extends ChangeNotifier {
 
   Future<void> _reloadVisibleData({
     bool allowMarketCacheFallback = false,
+    bool preserveCurrentData = false,
   }) async {
     final localAreas = await _loadStaticAreaMetadata();
 
-    isUsingCloudAreaProfiles = false;
-    isUsingProcessedAreaProfiles = false;
-    isUsingMarketTrendCache = false;
-    isUsingLiveAreaProfiles = false;
-    isUsingCloudProperties = false;
-    isUsingProcessedTeduhProperties = false;
-    marketTrendCacheUpdatedAt = null;
-    areas = const [];
-    properties = const [];
+    if (!preserveCurrentData) {
+      isUsingCloudAreaProfiles = false;
+      isUsingProcessedAreaProfiles = false;
+      isUsingMarketTrendCache = false;
+      isUsingLiveAreaProfiles = false;
+      isUsingCloudProperties = false;
+      isUsingProcessedTeduhProperties = false;
+      marketTrendCacheUpdatedAt = null;
+      areas = const [];
+      properties = const [];
+      _invalidateDataCaches();
+    }
     openDataLoadMessage = null;
-    _invalidateDataCaches();
 
     if (!SupabaseConfig.isConfigured) {
       openDataLoadMessage =
           'Supabase is not configured. Add the project URL and publishable key '
           'to load official property and area data.';
+      if (preserveCurrentData) {
+        throw StateError(
+          openDataLoadMessage ??
+              'Supabase is not configured to load official data.',
+        );
+      }
       return;
     }
 
+    var loadedAreas = false;
     final cloudProfiles = await _loadCloudAreaProfiles();
     if (cloudProfiles.isNotEmpty) {
-      areas = _areasFromProfiles(cloudProfiles, localAreas);
-      isUsingCloudAreaProfiles = true;
-    } else if (allowMarketCacheFallback) {
+      final refreshedAreas = _areasFromProfiles(cloudProfiles, localAreas);
+      if (refreshedAreas.isNotEmpty) {
+        areas = refreshedAreas;
+        isUsingCloudAreaProfiles = true;
+        isUsingProcessedAreaProfiles = false;
+        isUsingMarketTrendCache = false;
+        isUsingLiveAreaProfiles = false;
+        loadedAreas = true;
+      }
+    }
+
+    if (!loadedAreas && allowMarketCacheFallback) {
       final cachedMarketTrend = await _loadMarketTrendCache();
       if (cachedMarketTrend != null && cachedMarketTrend.areas.isNotEmpty) {
         areas = _canonicalAreas(cachedMarketTrend.areas);
         marketTrendCacheUpdatedAt = cachedMarketTrend.updatedAt;
+        isUsingCloudAreaProfiles = false;
+        isUsingProcessedAreaProfiles = false;
         isUsingMarketTrendCache = true;
+        isUsingLiveAreaProfiles = false;
+        loadedAreas = true;
       }
+    }
+
+    if (!loadedAreas && preserveCurrentData) {
+      throw StateError(
+        openDataLoadMessage ??
+            'No area profiles were returned; keeping the current data.',
+      );
     }
 
     final cloudProperties = await _loadCloudProperties(areas);
     if (cloudProperties.isNotEmpty) {
       properties = cloudProperties;
       isUsingCloudProperties = true;
+      isUsingProcessedTeduhProperties = false;
     }
 
     if (areas.isNotEmpty && isUsingCloudAreaProfiles) {
@@ -831,9 +873,7 @@ class AppState extends ChangeNotifier {
   ) async {
     try {
       await _marketTrendCache.save(value, updatedAt: updatedAt);
-    } catch (_) {
-      // A cache write must never discard successfully downloaded data.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadCurrentAuthSession() async {
@@ -846,9 +886,7 @@ class AppState extends ChangeNotifier {
         await _loadAccount(authUser);
         isAuthenticated = true;
       }
-    } catch (_) {
-      // Unit tests and uninitialized local tooling may not have Supabase ready.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadAccount(User authUser) async {
@@ -870,9 +908,7 @@ class AppState extends ChangeNotifier {
     }
     try {
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
-    } catch (_) {
-      // Signing out should not block local state cleanup.
-    }
+    } catch (_) {}
   }
 
   String? _currentAuthEmail() {

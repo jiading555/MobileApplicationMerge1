@@ -16,9 +16,7 @@ class AiAdvisorChatService {
     List<Map<String, String>> conversationHistory = const [],
   }) async {
     if (question.trim().isEmpty) {
-      throw Exception(
-        'Question cannot be empty.',
-      );
+      throw Exception('Question cannot be empty.');
     }
 
     if (recommendations.isEmpty) {
@@ -36,29 +34,18 @@ class AiAdvisorChatService {
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke(
-        GeminiConfig.edgeFunctionName,
-        body: {
-          'prompt': prompt,
-        },
-      )
-          .timeout(
-        const Duration(seconds: 90),
-      );
+          .invoke(GeminiConfig.edgeFunctionName, body: {'prompt': prompt})
+          .timeout(const Duration(seconds: 90));
 
       final data = response.data;
 
       if (data is! Map) {
-        throw Exception(
-          'Gemini returned an invalid response.',
-        );
+        throw Exception('Gemini returned an invalid response.');
       }
 
-      final error =
-      data['error']?.toString().trim();
+      final error = data['error']?.toString().trim();
 
-      if (response.status != 200 ||
-          (error != null && error.isNotEmpty)) {
+      if (response.status != 200 || (error != null && error.isNotEmpty)) {
         throw Exception(
           error == null || error.isEmpty
               ? 'Gemini API error: ${response.status}'
@@ -66,225 +53,135 @@ class AiAdvisorChatService {
         );
       }
 
-      final text =
-          data['text']?.toString().trim() ?? '';
+      final text = data['text']?.toString().trim() ?? '';
 
       if (text.isEmpty) {
-        throw Exception(
-          'Gemini returned an empty advisor response.',
-        );
+        throw Exception('Gemini returned an empty advisor response.');
       }
 
       return text;
     } on TimeoutException {
       throw Exception(
         'The AI advisor is taking longer than expected. '
-            'Please check your internet connection and try again.',
+        'Please check your internet connection and try again.',
       );
     } catch (error) {
       final message = error.toString();
 
-      if (message.contains(
-        'AI request limit reached',
-      ) ||
-          message.contains(
-            'AI service is temporarily busy',
-          ) ||
-          message.contains(
-            'Gemini API error',
-          ) ||
-          message.contains(
-            'Gemini returned',
-          )) {
+      if (message.contains('AI request limit reached') ||
+          message.contains('AI service is temporarily busy') ||
+          message.contains('Gemini API error') ||
+          message.contains('Gemini returned')) {
         rethrow;
       }
 
       throw Exception(
         'Failed to get AI advisor response. '
-            'Please try again.',
+        'Please try again.',
       );
     }
   }
 
   String buildPrompt({
     required String question,
-    required List<PropertyRecommendation>
-    recommendations,
+    required List<PropertyRecommendation> recommendations,
     required UserPreferences preferences,
-    List<Map<String, String>>
-    conversationHistory = const [],
+    List<Map<String, String>> conversationHistory = const [],
   }) {
-    final topRecommendations =
-    recommendations.take(3).toList();
+    final topRecommendations = recommendations.take(3).toList();
 
-    final recommendationContext =
-    topRecommendations
+    final recommendationContext = topRecommendations
         .asMap()
         .entries
         .map((entry) {
-      final index = entry.key + 1;
+          final index = entry.key + 1;
 
-      final recommendation =
-          entry.value;
+          final recommendation = entry.value;
 
-      final property =
-          recommendation.property;
+          final property = recommendation.property;
 
-      // -------------------------------------------------------
-      // SCORING FACTORS
-      // -------------------------------------------------------
+          final sortedFactors = List<ScoreFactor>.from(recommendation.factors)
+            ..sort((a, b) => b.weight.compareTo(a.weight));
 
-      final sortedFactors =
-      List<ScoreFactor>.from(
-        recommendation.factors,
-      )..sort(
-            (a, b) =>
-            b.weight.compareTo(
-              a.weight,
-            ),
-      );
+          final factors = sortedFactors.isEmpty
+              ? 'None supplied'
+              : sortedFactors
+                    .map(
+                      (factor) =>
+                          '- ${factor.label}: '
+                          '${factor.score.toStringAsFixed(1)}/100, '
+                          'applied weight '
+                          '${(factor.weight * 100).toStringAsFixed(1)}%, '
+                          'contribution '
+                          '${factor.contribution.toStringAsFixed(1)} points',
+                    )
+                    .join('\n');
 
-      final factors =
-      sortedFactors.isEmpty
-          ? 'None supplied'
-          : sortedFactors
-          .map(
-            (factor) =>
-        '- ${factor.label}: '
-            '${factor.score.toStringAsFixed(1)}/100, '
-            'applied weight '
-            '${(factor.weight * 100).toStringAsFixed(1)}%, '
-            'contribution '
-            '${factor.contribution.toStringAsFixed(1)} points',
-      )
-          .join('\n');
+          final advantages = recommendation.reasons.isEmpty
+              ? 'None supplied'
+              : recommendation.reasons.map((item) => '- $item').join('\n');
 
-      // -------------------------------------------------------
-      // RECOMMENDATION REASONS
-      // -------------------------------------------------------
+          final cautions = recommendation.cautions.isEmpty
+              ? 'None supplied'
+              : recommendation.cautions.map((item) => '- $item').join('\n');
 
-      final advantages =
-      recommendation.reasons.isEmpty
-          ? 'None supplied'
-          : recommendation.reasons
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
+          final price = _priceText(
+            property.price,
+            property.priceMin,
+            property.priceMax,
+          );
 
-      final cautions =
-      recommendation.cautions.isEmpty
-          ? 'None supplied'
-          : recommendation.cautions
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
+          final normalizedTypes = property.normalizedPropertyTypes;
 
-      // -------------------------------------------------------
-      // PROPERTY BASIC DATA
-      // -------------------------------------------------------
+          final propertyType = normalizedTypes.isEmpty
+              ? 'Unavailable'
+              : normalizedTypes.join(', ');
 
-      final price = _priceText(
-        property.price,
-        property.priceMin,
-        property.priceMax,
-      );
+          final rawUnitTypes = property.unitTypes.isEmpty
+              ? 'Unavailable'
+              : property.unitTypes.join(', ');
 
-      final normalizedTypes =
-          property.normalizedPropertyTypes;
+          final state = _textOrUnavailable(property.state);
 
-      final propertyType =
-      normalizedTypes.isEmpty
-          ? 'Unavailable'
-          : normalizedTypes.join(', ');
+          final district = _textOrUnavailable(property.district);
 
-      final rawUnitTypes =
-      property.unitTypes.isEmpty
-          ? 'Unavailable'
-          : property.unitTypes.join(', ');
+          final scheme = _textOrUnavailable(property.scheme);
 
-      final state = _textOrUnavailable(
-        property.state,
-      );
+          final projectStatus = _textOrUnavailable(property.projectStatus);
 
-      final district = _textOrUnavailable(
-        property.district,
-      );
+          final developer = _textOrUnavailable(property.developerName);
 
-      final scheme = _textOrUnavailable(
-        property.scheme,
-      );
+          final tenure = _validTenure(property.tenure);
 
-      final projectStatus =
-      _textOrUnavailable(
-        property.projectStatus,
-      );
+          final totalUnits = property.totalUnits == null
+              ? 'Unavailable'
+              : property.totalUnits.toString();
 
-      final developer =
-      _textOrUnavailable(
-        property.developerName,
-      );
+          final availableUnits = property.availableUnits == null
+              ? 'Unavailable'
+              : property.availableUnits.toString();
 
-      final tenure = _validTenure(
-        property.tenure,
-      );
+          final bedrooms = property.bedrooms == null
+              ? 'Unavailable'
+              : property.bedrooms.toString();
 
-      final totalUnits =
-      property.totalUnits == null
-          ? 'Unavailable'
-          : property.totalUnits.toString();
+          final bathrooms = property.bathrooms == null
+              ? 'Unavailable'
+              : property.bathrooms.toString();
 
-      final availableUnits =
-      property.availableUnits == null
-          ? 'Unavailable'
-          : property.availableUnits.toString();
+          final sizeSqft = property.sizeSqft == null
+              ? 'Unavailable'
+              : '${property.sizeSqft} sq ft';
 
-      final bedrooms =
-      property.bedrooms == null
-          ? 'Unavailable'
-          : property.bedrooms.toString();
+          final unitOptionCount = property.unitOptions.length;
 
-      final bathrooms =
-      property.bathrooms == null
-          ? 'Unavailable'
-          : property.bathrooms.toString();
+          final unitOptions = _unitOptionsText(property.unitOptions);
 
-      final sizeSqft =
-      property.sizeSqft == null
-          ? 'Unavailable'
-          : '${property.sizeSqft} sq ft';
+          final facilities = property.facilities.isEmpty
+              ? 'Unavailable'
+              : property.facilities.map((item) => '- $item').join('\n');
 
-      // -------------------------------------------------------
-      // UNIT OPTIONS
-      //
-      // Important:
-      // unitOptions.length = number of listed configurations.
-      // It is NOT the total available-unit inventory.
-      // -------------------------------------------------------
-
-      final unitOptionCount =
-          property.unitOptions.length;
-
-      final unitOptions =
-      _unitOptionsText(
-        property.unitOptions,
-      );
-
-      // -------------------------------------------------------
-      // FACILITIES
-      // -------------------------------------------------------
-
-      final facilities =
-      property.facilities.isEmpty
-          ? 'Unavailable'
-          : property.facilities
-          .map(
-            (item) => '- $item',
-      )
-          .join('\n');
-
-      return '''
+          return '''
 ============================================================
 PROPERTY $index
 ============================================================
@@ -305,7 +202,6 @@ $advantages
 
 Cautions identified by the deterministic recommendation system:
 $cautions
-
 
 PROPERTY FACTUAL INFORMATION
 
@@ -351,7 +247,6 @@ $bathrooms
 Property size:
 $sizeSqft
 
-
 UNIT AVAILABILITY INFORMATION
 
 Total project units:
@@ -373,53 +268,32 @@ available units.
 Listed unit options:
 $unitOptions
 
-
 FACILITIES SUPPLIED BY THE SYSTEM
 
 $facilities
 ''';
-    }).join(
-      '\n\n',
-    );
+        })
+        .join('\n\n');
 
-    // ---------------------------------------------------------
-    // PREVIOUS CHAT
-    // ---------------------------------------------------------
-
-    final historyText =
-    conversationHistory.isEmpty
+    final historyText = conversationHistory.isEmpty
         ? 'No previous conversation.'
         : conversationHistory
-        .map((message) {
-      final role =
-          message['role'] ??
-              'unknown';
+              .map((message) {
+                final role = message['role'] ?? 'unknown';
 
-      final text =
-          message['text'] ?? '';
+                final text = message['text'] ?? '';
 
-      return '$role: $text';
-    }).join('\n');
+                return '$role: $text';
+              })
+              .join('\n');
 
-    // ---------------------------------------------------------
-    // USER PREFERENCES
-    // ---------------------------------------------------------
-
-    final goal =
-    preferences.goal ==
-        PropertyGoal.ownStay
+    final goal = preferences.goal == PropertyGoal.ownStay
         ? 'Own Stay'
         : 'Investment';
 
-    final preferredArea =
-    preferences.preferredAreaId ==
-        'any'
+    final preferredArea = preferences.preferredAreaId == 'any'
         ? 'Any area'
         : preferences.preferredAreaId;
-
-    // ---------------------------------------------------------
-    // COMPLETE GEMINI PROMPT
-    // ---------------------------------------------------------
 
     return '''
 You are an AI Property Advisor for a Malaysian smart property recommendation application.
@@ -431,7 +305,6 @@ The application has already retrieved the property data and calculated the recom
 You do NOT calculate the recommendation ranking.
 You do NOT replace the application's recommendation algorithm.
 You do NOT independently search for other properties.
-
 
 ============================================================
 STRICT SCORING RULES
@@ -456,7 +329,6 @@ STRICT SCORING RULES
 9. If two or more properties have the same factor score, clearly state that none gains an advantage on that factor.
 
 10. If overall suitability scores are tied, do not invent a winner.
-
 
 ============================================================
 PROPERTY FACTUAL DATA RULES
@@ -497,7 +369,6 @@ PROPERTY FACTUAL DATA RULES
 
 19. If the required information is unavailable, clearly say that the current system data does not provide it.
 
-
 ============================================================
 AVAILABLE UNIT RULES
 ============================================================
@@ -537,7 +408,6 @@ you may use Number of listed unit options/configurations.
 
 30. Do not assume that a lower starting price means that every unit of that type is available at that exact price.
 
-
 ============================================================
 IMPORTANT PROPERTY RESTRICTIONS
 ============================================================
@@ -563,7 +433,6 @@ IMPORTANT PROPERTY RESTRICTIONS
 "best investment",
 "certain return",
 or similar absolute claims unless explicitly supported.
-
 
 ============================================================
 MULTIPLE PROPERTY RULES
@@ -593,7 +462,6 @@ may be discussed when explicitly supplied.
 46. These factual differences must not be used to secretly recalculate or replace the recommendation ranking.
 
 47. If properties have equal overall scores, explain the tie instead of inventing a winner.
-
 
 ============================================================
 STRICT CURRENT RECOMMENDATION SCOPE
@@ -633,7 +501,6 @@ in the Smart Property Advisor and generate a new recommendation set.
 
 58. Only the application's recommendation system can create a new recommendation set.
 
-
 ============================================================
 PREVIOUS CHAT RULES
 ============================================================
@@ -652,7 +519,6 @@ PREVIOUS CHAT RULES
 
 65. If the user refers to an old property that is no longer part of the current recommendation results, explain that it is not part of the current recommendation set.
 
-
 ============================================================
 OUT-OF-SCOPE RULES
 ============================================================
@@ -670,7 +536,6 @@ OUT-OF-SCOPE RULES
 71. Do NOT claim that you checked external sources.
 
 72. If the user needs another property or location, direct them back to the Smart Property Advisor to regenerate recommendations.
-
 
 ============================================================
 ANSWER STYLE
@@ -714,7 +579,6 @@ Do not unnecessarily explain the scoring algorithm.
 
 83. Simple numbered points are allowed when useful.
 
-
 ============================================================
 USER PREFERENCES
 ============================================================
@@ -737,13 +601,11 @@ $preferredArea
 Preferred property type:
 ${preferences.propertyType}
 
-
 ============================================================
 CURRENT SMART RECOMMENDATION RESULTS
 ============================================================
 
 $recommendationContext
-
 
 ============================================================
 PREVIOUS CHAT
@@ -751,13 +613,11 @@ PREVIOUS CHAT
 
 $historyText
 
-
 ============================================================
 CURRENT USER QUESTION
 ============================================================
 
 $question
-
 
 Answer the current user question as a property decision-support advisor.
 
@@ -777,61 +637,39 @@ Remember:
 ''';
   }
 
-  // ===========================================================
-  // UNIT OPTION CONTEXT
-  // ===========================================================
-
-  String _unitOptionsText(
-      List<dynamic> options,
-      ) {
+  String _unitOptionsText(List<dynamic> options) {
     if (options.isEmpty) {
       return 'No unit options supplied.';
     }
 
-    // Prevent the prompt becoming unnecessarily large.
     const maximumOptions = 12;
 
-    final visibleOptions =
-    options.take(maximumOptions).toList();
+    final visibleOptions = options.take(maximumOptions).toList();
 
     final rows = <String>[];
 
-    for (int i = 0;
-    i < visibleOptions.length;
-    i++) {
-      final option =
-      visibleOptions[i];
+    for (int i = 0; i < visibleOptions.length; i++) {
+      final option = visibleOptions[i];
 
-      final unitType =
-      _textOrUnavailable(
-        option.unitType,
-      );
+      final unitType = _textOrUnavailable(option.unitType);
 
       final size = option.sizeSqft != null
           ? '${option.sizeSqft} sq ft'
-          : _textOrUnavailable(
-        option.sizeText,
-      );
+          : _textOrUnavailable(option.sizeText);
 
-      final startingPrice =
-      option.priceStart != null
+      final startingPrice = option.priceStart != null
           ? 'RM ${option.priceStart}'
-          : _textOrUnavailable(
-        option.priceFromText,
-      );
+          : _textOrUnavailable(option.priceFromText);
 
-      rows.add(
-        '''
+      rows.add('''
 Unit option ${i + 1}:
 - Unit type: $unitType
 - Size: $size
 - Starting price: $startingPrice
-''',
-      );
+''');
     }
 
-    if (options.length >
-        maximumOptions) {
+    if (options.length > maximumOptions) {
       rows.add(
         'Additional unit options exist but were omitted from the AI context.',
       );
@@ -840,61 +678,34 @@ Unit option ${i + 1}:
     return rows.join('\n');
   }
 
-  // ===========================================================
-  // PRICE
-  // ===========================================================
-
-  String _priceText(
-      int? price,
-      int? priceMin,
-      int? priceMax,
-      ) {
-    if (priceMin != null &&
-        priceMax != null &&
-        priceMin != priceMax) {
+  String _priceText(int? price, int? priceMin, int? priceMax) {
+    if (priceMin != null && priceMax != null && priceMin != priceMax) {
       return 'RM $priceMin - RM $priceMax';
     }
 
-    final displayPrice =
-        price ?? priceMin ?? priceMax;
+    final displayPrice = price ?? priceMin ?? priceMax;
 
-    return displayPrice == null
-        ? 'Unavailable'
-        : 'RM $displayPrice';
+    return displayPrice == null ? 'Unavailable' : 'RM $displayPrice';
   }
 
-  // ===========================================================
-  // NULLABLE TEXT
-  // ===========================================================
-
-  String _textOrUnavailable(
-      String? value,
-      ) {
+  String _textOrUnavailable(String? value) {
     final text = value?.trim();
 
-    if (text == null ||
-        text.isEmpty) {
+    if (text == null || text.isEmpty) {
       return 'Unavailable';
     }
 
     return text;
   }
 
-  // ===========================================================
-  // TENURE
-  // ===========================================================
-
-  String _validTenure(
-      String value,
-      ) {
+  String _validTenure(String value) {
     final text = value.trim();
 
     if (text.isEmpty) {
       return 'Unavailable';
     }
 
-    final normalized =
-    text.toLowerCase();
+    final normalized = text.toLowerCase();
 
     const unavailableValues = {
       'not available',
@@ -906,9 +717,7 @@ Unit option ${i + 1}:
       'unknown',
     };
 
-    if (unavailableValues.contains(
-      normalized,
-    )) {
+    if (unavailableValues.contains(normalized)) {
       return 'Unavailable';
     }
 

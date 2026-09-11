@@ -163,38 +163,23 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
             property: selected,
             compact: compactLandscapePhone,
           );
+          final areaSelector = _buildAreaSelector(
+            compact: compactLandscapePhone,
+            floating: compactLandscapePhone,
+          );
+          if (!wide && compactLandscapePhone) {
+            return _CompactLandscapePhoneMapLayout(
+              map: map,
+              areaSelector: areaSelector,
+              panel: panel,
+              hasSelection: selected != null,
+            );
+          }
           return Column(
             children: [
               Padding(
-                padding: compactLandscapePhone
-                    ? const EdgeInsets.fromLTRB(10, 2, 10, 6)
-                    : const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                child: DropdownButtonFormField<String>(
-                  initialValue: selectedAreaId,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.location_on_outlined),
-                    prefixIconConstraints: BoxConstraints(
-                      minWidth: compactLandscapePhone ? 40 : 44,
-                      minHeight: compactLandscapePhone ? 40 : 44,
-                    ),
-                    labelText: 'Explore area',
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: compactLandscapePhone ? 10 : 12,
-                    ),
-                  ),
-                  isExpanded: true,
-                  items: [
-                    ..._areaOptions.map(
-                      (option) => DropdownMenuItem(
-                        value: option.value,
-                        child: Text(option.label),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) => _selectArea(value ?? allMapAreasId),
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                child: areaSelector,
               ),
               Expanded(
                 child: wide
@@ -215,6 +200,51 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildAreaSelector({required bool compact, required bool floating}) {
+    final dropdown = DropdownButtonFormField<String>(
+      key: const ValueKey('property-map-area-selector'),
+      initialValue: selectedAreaId,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.location_on_outlined),
+        prefixIconConstraints: BoxConstraints(
+          minWidth: compact ? 38 : 44,
+          minHeight: compact ? 38 : 44,
+        ),
+        labelText: 'Explore area',
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 14,
+          vertical: compact ? 8 : 12,
+        ),
+      ),
+      isExpanded: true,
+      items: [
+        ..._areaOptions.map(
+          (option) => DropdownMenuItem(
+            value: option.value,
+            child: Text(
+              option.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (value) => _selectArea(value ?? allMapAreasId),
+    );
+
+    if (!floating) {
+      return dropdown;
+    }
+
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: dropdown,
     );
   }
 
@@ -704,6 +734,59 @@ class _PhoneMapLayout extends StatelessWidget {
           children: [
             Expanded(child: map),
             SizedBox(height: panelHeight, child: panel),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CompactLandscapePhoneMapLayout extends StatelessWidget {
+  const _CompactLandscapePhoneMapLayout({
+    required this.map,
+    required this.areaSelector,
+    required this.panel,
+    required this.hasSelection,
+  });
+
+  final Widget map;
+  final Widget areaSelector;
+  final Widget panel;
+  final bool hasSelection;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var selectorMaxWidth = constraints.maxWidth - 96;
+        if (selectorMaxWidth > 300) {
+          selectorMaxWidth = 300;
+        }
+        if (selectorMaxWidth < 0) {
+          selectorMaxWidth = constraints.maxWidth;
+        }
+
+        return Stack(
+          children: [
+            Positioned.fill(child: map),
+            Positioned(
+              left: 12,
+              top: 12,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: selectorMaxWidth),
+                child: areaSelector,
+              ),
+            ),
+            if (hasSelection)
+              Positioned.fill(
+                child: SafeArea(
+                  top: false,
+                  left: false,
+                  right: false,
+                  minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: Align(alignment: Alignment.bottomCenter, child: panel),
+                ),
+              ),
           ],
         );
       },

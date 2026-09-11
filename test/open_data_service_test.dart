@@ -66,7 +66,6 @@ void main() {
       populationGrowth: 9,
       medianIncome: 1,
       safetyScore: 90,
-      connectivityScore: 90,
       transportScore: 90,
       schools: 99,
       hospitals: 9,

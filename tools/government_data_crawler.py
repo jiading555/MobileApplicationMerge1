@@ -17,8 +17,8 @@ import requests
 API_BASE = "https://api.data.gov.my/data-catalogue"
 POPULATION_CSV = "https://storage.dosm.gov.my/population/population_district.csv"
 BOUNDARIES_URL = (
-    "https://raw.githubusercontent.com/dosm-malaysia/kawasanku-front/main/"
-    "geojson/district_mobile.json"
+    "https://raw.githubusercontent.com/dosm-malaysia/data-open/main/"
+    "datasets/geodata/administrative_2_district.geojson"
 )
 GTFS_FEEDS = (
     "https://api.data.gov.my/gtfs-static/ktmb",
@@ -201,9 +201,6 @@ def crime_rows(rows: list[dict], state: str, district: str) -> list[dict]:
         if normalise(row.get("district")) in alias_keys
     ]
 
-    # "All" is a catalogue/UI aggregate and is not guaranteed to be a
-    # physical row. For a state-level target such as W.P. Kuala Lumpur,
-    # aggregate every police district when that row is absent.
     if alias_keys == {"all"} and not matched:
         matched = state_rows
 
@@ -245,11 +242,15 @@ def read_polygons(geometry: dict) -> list[list[list[tuple[float, float]]]]:
         for ring in value:
             if not isinstance(ring, list):
                 continue
-            points = [
-                (float(point[0]), float(point[1]))
-                for point in ring
-                if isinstance(point, list) and len(point) >= 2
-            ]
+            points = []
+            for point in ring:
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                first, second = float(point[0]), float(point[1])
+                if abs(first) <= 15 and 90 <= abs(second) <= 125:
+                    points.append((second, first))
+                else:
+                    points.append((first, second))
             if len(points) >= 3:
                 output.append(points)
         return output
@@ -304,16 +305,22 @@ def transport_counts(
             location_key(state, district)
         )
 
+    boundary_features = response.json().get("features", [])
+    print(json.dumps({
+        "boundary_features": len(boundary_features),
+        "boundary_sample_properties": (
+            (boundary_features[0].get("properties") or {})
+            if boundary_features else {}
+        ),
+    }), flush=True)
     boundaries = {}
-    for feature in response.json().get("features", []):
+    for feature in boundary_features:
         properties = feature.get("properties") or {}
         state = str(properties.get("state") or "")
         district = str(
             properties.get("district") or feature.get("id") or ""
         )
 
-        # Prefer an exact state + district match. Fall back to the district name
-        # only when it is unique across Malaysia.
         boundary_key = location_key(state, district)
         if boundary_key not in target_keys:
             candidates = target_keys_by_district.get(normalise(district), [])
@@ -324,8 +331,15 @@ def transport_counts(
         polygons = read_polygons(feature.get("geometry") or {})
         if polygons:
             boundaries[boundary_key] = polygons
+    print(json.dumps({
+        "target_districts": len(targets),
+        "matched_boundaries": len(boundaries),
+    }), flush=True)
     if not boundaries:
-        print("warning: no district boundaries matched; transport is unavailable")
+        print(
+            "warning: no district boundaries matched; transport is unavailable",
+            flush=True,
+        )
         return {}
 
     stops: dict[tuple[float, float], tuple[float, float]] = {}
@@ -351,9 +365,50 @@ def transport_counts(
             successful_feeds += 1
         except Exception as error:
             print(f"warning: GTFS feed skipped: {feed}: {error}")
+    print(json.dumps({
+        "successful_gtfs_feeds": successful_feeds,
+        "unique_gtfs_stops": len(stops),
+    }), flush=True)
     if successful_feeds == 0:
-        print("warning: all official GTFS feeds failed; transport is unavailable")
+        print(
+            "warning: all official GTFS feeds failed; transport is unavailable",
+            flush=True,
+        )
         return {}
+
+    boundary_points = [
+        point
+        for polygons in boundaries.values()
+        for polygon in polygons
+        for ring in polygon
+        for point in ring
+    ]
+    stop_points = list(stops.values())
+    print(json.dumps({
+        "boundary_coordinate_range": {
+            "longitude": [
+                min(point[0] for point in boundary_points),
+                max(point[0] for point in boundary_points),
+            ],
+            "latitude": [
+                min(point[1] for point in boundary_points),
+                max(point[1] for point in boundary_points),
+            ],
+        },
+        "gtfs_coordinate_range": {
+            "latitude": [
+                min(point[0] for point in stop_points),
+                max(point[0] for point in stop_points),
+            ],
+            "longitude": [
+                min(point[1] for point in stop_points),
+                max(point[1] for point in stop_points),
+            ],
+        },
+        "sample_boundary_key": next(iter(boundaries)),
+        "sample_boundary_point": boundary_points[0],
+        "sample_gtfs_stop": stop_points[0],
+    }), flush=True)
 
     counts = {key: 0 for key in boundaries}
     boxes = {}

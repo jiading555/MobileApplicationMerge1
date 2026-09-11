@@ -11,14 +11,42 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
+    expect(
+      find.byKey(const ValueKey('compact-side-navigation')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('landscape phone uses side navigation', (tester) async {
+  testWidgets('landscape phone uses scrollable compact side navigation', (
+    tester,
+  ) async {
     await _pumpShell(tester, const Size(844, 390));
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(NavigationRail), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(
+      find.byKey(const ValueKey('compact-side-navigation')),
+      findsOneWidget,
+    );
+    expect(find.byType(ListView), findsWidgets);
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
+  });
+
+  testWidgets('compact side navigation changes destination without overflow', (
+    tester,
+  ) async {
+    await _pumpShell(tester, const Size(844, 390));
+
+    await tester.tap(find.byKey(const ValueKey('compact-nav-Profile')));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const ValueKey('compact-nav-Profile')))
+          .isSelected,
+      isTrue,
+    );
   });
 }
 
