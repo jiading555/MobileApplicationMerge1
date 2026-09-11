@@ -218,13 +218,16 @@ void main() {
     expect(map, findsOneWidget);
     expect(preview, findsOneWidget);
     expect(viewDetails, findsOneWidget);
+
+    final appBarRect = tester.getRect(find.byType(AppBar));
+    final selectorRect = tester.getRect(selector);
+    expect(selectorRect.top, greaterThan(appBarRect.bottom));
+    expect(selectorRect.top - appBarRect.bottom, greaterThanOrEqualTo(8));
     expect(zoomIn, findsOneWidget);
     expect(zoomOut, findsOneWidget);
     expect(myLocation, findsOneWidget);
 
-    final appBarRect = tester.getRect(find.byType(AppBar));
     final mapRect = tester.getRect(map);
-    final selectorRect = tester.getRect(selector);
     final previewRect = tester.getRect(preview);
     final viewDetailsRect = tester.getRect(viewDetails);
     final zoomInRect = tester.getRect(zoomIn);

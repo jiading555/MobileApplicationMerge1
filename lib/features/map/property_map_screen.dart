@@ -204,6 +204,11 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
   }
 
   Widget _buildAreaSelector({required bool compact, required bool floating}) {
+    final textTheme = Theme.of(context).textTheme;
+    final labelStyle = textTheme.labelLarge?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: AppTheme.navy,
+    );
     final dropdown = DropdownButtonFormField<String>(
       key: const ValueKey('property-map-area-selector'),
       initialValue: selectedAreaId,
@@ -213,7 +218,8 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
           minWidth: compact ? 38 : 44,
           minHeight: compact ? 38 : 44,
         ),
-        labelText: 'Explore area',
+        labelText: floating ? null : 'Explore area',
+        hintText: floating ? 'All areas' : null,
         isDense: true,
         contentPadding: EdgeInsets.symmetric(
           horizontal: compact ? 12 : 14,
@@ -240,11 +246,21 @@ class _PropertyMapScreenState extends State<PropertyMapScreen> {
       return dropdown;
     }
 
-    return Material(
-      elevation: 4,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: dropdown,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 4),
+          child: Text('Explore area', style: labelStyle),
+        ),
+        Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(8),
+          clipBehavior: Clip.none,
+          child: dropdown,
+        ),
+      ],
     );
   }
 
@@ -766,28 +782,38 @@ class _CompactLandscapePhoneMapLayout extends StatelessWidget {
           selectorMaxWidth = constraints.maxWidth;
         }
 
-        return Stack(
-          children: [
-            Positioned.fill(child: map),
-            Positioned(
-              left: 12,
-              top: 12,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: selectorMaxWidth),
-                child: areaSelector,
-              ),
-            ),
-            if (hasSelection)
-              Positioned.fill(
-                child: SafeArea(
-                  top: false,
-                  left: false,
-                  right: false,
-                  minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                  child: Align(alignment: Alignment.bottomCenter, child: panel),
+        final topInset = MediaQuery.paddingOf(context).top;
+        final selectorTopInset = topInset > 0 ? topInset + 8.0 : 8.0;
+
+        return SafeArea(
+          top: true,
+          bottom: false,
+          child: Stack(
+            children: [
+              Positioned.fill(child: map),
+              Positioned(
+                left: 12,
+                top: selectorTopInset,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: selectorMaxWidth),
+                  child: areaSelector,
                 ),
               ),
-          ],
+              if (hasSelection)
+                Positioned.fill(
+                  child: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: panel,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
